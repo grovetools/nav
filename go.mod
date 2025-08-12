@@ -3,12 +3,11 @@ module github.com/mattsolo1/grove-tmux
 go 1.24.4
 
 require (
-	github.com/mattsolo1/grove-core v0.2.9
-	github.com/mattsolo1/grove-tend v0.2.5
+	github.com/mattsolo1/grove-core v0.2.10
+	github.com/mattsolo1/grove-tend v0.2.6
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1
 )
-
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
