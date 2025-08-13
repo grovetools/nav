@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -63,9 +62,9 @@ func GtmuxListScenario() *harness.Scenario {
 		Steps: []harness.Step{
 			harness.NewStep("Setup mock tmux config", setupMockTmuxConfig),
 			harness.NewStep("Run 'gtmux list'", func(ctx *harness.Context) error {
-				gtmuxBinary := os.Getenv("GTMUX_BINARY")
-				if gtmuxBinary == "" {
-					return fmt.Errorf("GTMUX_BINARY environment variable not set")
+				gtmuxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
 				}
 				
 				configDir := ctx.GetString("config_dir")
@@ -134,9 +133,9 @@ func GtmuxStatusScenario() *harness.Scenario {
 				return nil
 			}),
 			harness.NewStep("Run 'gtmux status'", func(ctx *harness.Context) error {
-				gtmuxBinary := os.Getenv("GTMUX_BINARY")
-				if gtmuxBinary == "" {
-					return fmt.Errorf("GTMUX_BINARY environment variable not set")
+				gtmuxBinary, err := FindProjectBinary()
+				if err != nil {
+					return err
 				}
 				
 				configDir := ctx.GetString("config_dir")
