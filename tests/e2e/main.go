@@ -11,8 +11,17 @@ import (
 
 func main() {
 	scenarios := []*harness.Scenario{
+		// Original scenarios
 		GtmuxListScenario(),
 		GtmuxStatusScenario(),
+		
+		// Tmux-specific scenarios (only run locally with tmux installed)
+		GtmuxSessionExistsScenario(),
+		GtmuxSessionKillScenario(),
+		GtmuxSessionCaptureScenario(),
+		GtmuxLaunchScenario(),
+		GtmuxWaitScenario(),
+		GtmuxStartScenario(),
 	}
 
 	if err := app.Execute(context.Background(), scenarios); err != nil {

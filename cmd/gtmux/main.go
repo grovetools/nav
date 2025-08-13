@@ -116,6 +116,10 @@ func init() {
 	// Add commands
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(sessionCmd)
+	rootCmd.AddCommand(launchCmd)
+	rootCmd.AddCommand(waitCmd)
+	rootCmd.AddCommand(startCmd)
 }
 
 func main() {
