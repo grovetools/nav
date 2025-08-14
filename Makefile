@@ -1,6 +1,6 @@
-# Makefile for grove-tmux (gtmux)
+# Makefile for grove-tmux (gmux)
 
-BINARY_NAME=gtmux
+BINARY_NAME=gmux
 E2E_BINARY_NAME=tend
 BIN_DIR=bin
 VERSION_PKG=github.com/mattsolo1/grove-core/version
@@ -94,7 +94,7 @@ test-e2e-build:
 	@echo "Building E2E test binary $(E2E_BINARY_NAME)..."
 	@go build $(LDFLAGS) -o $(BIN_DIR)/$(E2E_BINARY_NAME) ./tests/e2e
 
-# Run E2E tests. Depends on the main 'gtmux' binary and the test runner.
+# Run E2E tests. Depends on the main 'gmux' binary and the test runner.
 # Pass arguments via ARGS, e.g., make test-e2e ARGS="run -i"
 test-e2e: build test-e2e-build
 	@echo "Running E2E tests..."
@@ -114,4 +114,4 @@ help:
 	@echo "  make dev         - Build with race detector"
 	@echo "  make build-all   - Build for multiple platforms"
 	@echo "  make test-e2e-build   - Build the E2E test runner binary"
-	@echo "  make test-e2e ARGS=...- Run E2E tests (e.g., ARGS=\"run -i gtmux-basic-generation\")"
+	@echo "  make test-e2e ARGS=...- Run E2E tests (e.g., ARGS=\"run -i gmux-basic-generation\")"

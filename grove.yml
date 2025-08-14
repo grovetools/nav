@@ -1,5 +1,5 @@
 name: grove-tmux
 description: Tmux session management for Grove ecosystem
 binary:
-  name: gtmux
-  path: ./bin/gtmux
+  name: gmux
+  path: ./bin/gmux
