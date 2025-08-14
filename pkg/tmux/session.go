@@ -51,3 +51,8 @@ func (c *Client) SelectWindow(ctx context.Context, target string) error {
 	_, err := c.run(ctx, "select-window", "-t", target)
 	return err
 }
+
+func (c *Client) SwitchClient(ctx context.Context, target string) error {
+	_, err := c.run(ctx, "switch-client", "-t", target)
+	return err
+}

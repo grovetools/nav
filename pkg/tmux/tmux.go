@@ -61,3 +61,13 @@ func (m *Manager) Sessionize(path string) error {
 func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 	return m.mgr.DetectTmuxKeyForPath(workingDir)
 }
+
+// GetAvailableKeys returns all available keys from configuration
+func (m *Manager) GetAvailableKeys() []string {
+	return m.mgr.GetAvailableKeys()
+}
+
+// UpdateSessionKey updates the key for a specific session
+func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
+	return m.mgr.UpdateSessionKey(oldKey, newKey)
+}

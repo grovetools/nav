@@ -61,10 +61,30 @@ func NewManager(configDir string, sessionsFile string) *Manager {
 		sessionsFile = expandPath(sessionsFile)
 	}
 
+	// Try multiple locations for search paths file
+	searchPathsFile := ""
+	possiblePaths := []string{
+		filepath.Join(configDir, "project-search-paths.yaml"),
+		expandPath("~/.config/tmux/project-search-paths.yaml"),
+		expandPath("~/.config/grove/project-search-paths.yaml"),
+	}
+	
+	for _, path := range possiblePaths {
+		if _, err := os.Stat(path); err == nil {
+			searchPathsFile = path
+			break
+		}
+	}
+	
+	// Default to grove config dir if none found
+	if searchPathsFile == "" {
+		searchPathsFile = filepath.Join(configDir, "project-search-paths.yaml")
+	}
+
 	return &Manager{
 		configDir:       configDir,
 		sessionsFile:    sessionsFile,
-		searchPathsFile: filepath.Join(configDir, "project-search-paths.yaml"),
+		searchPathsFile: searchPathsFile,
 	}
 }
 
@@ -597,4 +617,83 @@ func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 	}
 
 	return ""
+}
+
+// GetAvailableKeys returns all available keys from configuration
+func (m *Manager) GetAvailableKeys() []string {
+	data, err := os.ReadFile(m.sessionsFile)
+	if err != nil {
+		return []string{}
+	}
+
+	var config struct {
+		AvailableKeys []string `yaml:"available_keys"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return []string{}
+	}
+
+	return config.AvailableKeys
+}
+
+// UpdateSessionKey updates the key for a specific session
+func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
+	if oldKey == newKey {
+		return nil // No change needed
+	}
+
+	// Read current configuration
+	data, err := os.ReadFile(m.sessionsFile)
+	if err != nil {
+		return fmt.Errorf("failed to read sessions file: %w", err)
+	}
+
+	var config struct {
+		AvailableKeys []string `yaml:"available_keys"`
+		Sessions      map[string]struct {
+			Path        string `yaml:"path"`
+			Repo        string `yaml:"repo"`
+			Description string `yaml:"description"`
+		} `yaml:"sessions"`
+	}
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse sessions file: %w", err)
+	}
+
+	// Check if old key exists
+	session, exists := config.Sessions[oldKey]
+	if !exists {
+		return fmt.Errorf("session with key '%s' not found", oldKey)
+	}
+
+	// Check if new key is valid
+	validKey := false
+	for _, k := range config.AvailableKeys {
+		if k == newKey {
+			validKey = true
+			break
+		}
+	}
+	if !validKey {
+		return fmt.Errorf("'%s' is not a valid key", newKey)
+	}
+
+	// Check if new key is already in use (unless it's the same session)
+	if _, exists := config.Sessions[newKey]; exists && newKey != oldKey {
+		return fmt.Errorf("key '%s' is already in use", newKey)
+	}
+
+	// Update the session key
+	if oldKey != newKey {
+		config.Sessions[newKey] = session
+		delete(config.Sessions, oldKey)
+	}
+
+	// Write back to file
+	newData, err := yaml.Marshal(&config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sessions: %w", err)
+	}
+
+	return os.WriteFile(m.sessionsFile, newData, 0644)
 }

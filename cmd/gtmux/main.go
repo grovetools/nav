@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/mattsolo1/grove-core/version"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
@@ -37,33 +39,55 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		// Find the longest key for alignment
-		maxKeyLen := 0
-		for _, s := range sessions {
-			if len(s.Key) > maxKeyLen {
-				maxKeyLen = len(s.Key)
-			}
-		}
+		// Define styles
+		re := lipgloss.NewRenderer(os.Stdout)
+		baseStyle := re.NewStyle().Padding(0, 1)
+		headerStyle := baseStyle.Copy().Bold(true).Foreground(lipgloss.Color("255"))
+		keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
+		repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
+		pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95e1d3"))
 
-		fmt.Printf("%-*s  %-30s  %-40s  %s\n", maxKeyLen, "Key", "Repository", "Path", "Description")
-		fmt.Printf("%s  %s  %s  %s\n", 
-			strings.Repeat("-", maxKeyLen),
-			strings.Repeat("-", 30),
-			strings.Repeat("-", 40),
-			strings.Repeat("-", 20))
-
+		// Build rows
+		var rows [][]string
 		for _, s := range sessions {
 			path := s.Path
+			
+			// Style the key
+			styledKey := keyStyle.Render(s.Key)
+			
+			// Extract repository name from path
+			var repo string
 			if path == "" {
-				path = "<not configured>"
+				// Leave empty for unconfigured sessions
+				path = ""
+				repo = ""
+			} else {
+				// Extract last component of path as repo name
+				repo = filepath.Base(path)
+				repo = repoStyle.Render(repo)
+				path = pathStyle.Render(path)
 			}
-			repo := s.Repository
-			if repo == "" {
-				repo = "<not configured>"
-			}
-			fmt.Printf("%-*s  %-30s  %-40s  %s\n", maxKeyLen, s.Key, repo, path, s.Description)
+			
+			rows = append(rows, []string{styledKey, repo, path})
 		}
 
+		// Create the table
+		t := table.New().
+			Border(lipgloss.NormalBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+			Headers("Key", "Repository", "Path").
+			Rows(rows...)
+
+		// Apply styling - only for headers since content is pre-styled
+		t.StyleFunc(func(row, col int) lipgloss.Style {
+			if row == 0 {
+				return headerStyle
+			}
+			// Return minimal style to preserve pre-styled content
+			return lipgloss.NewStyle().Padding(0, 1)
+		})
+
+		fmt.Println(t)
 		return nil
 	},
 }
@@ -102,6 +126,13 @@ var statusCmd = &cobra.Command{
 	},
 }
 
+// kmCmd is an alias for key manage
+var kmCmd = &cobra.Command{
+	Use:   "km",
+	Short: "Alias for 'key manage' - Interactively manage tmux session key mappings",
+	RunE:  keyManageCmd.RunE,
+}
+
 func init() {
 	vInfo := version.GetInfo()
 	rootCmd.Version = vInfo.Version
@@ -120,6 +151,8 @@ func init() {
 	rootCmd.AddCommand(launchCmd)
 	rootCmd.AddCommand(waitCmd)
 	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(keyCmd)
+	rootCmd.AddCommand(kmCmd)
 }
 
 func main() {
