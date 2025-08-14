@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 	"github.com/mattsolo1/grove-core/version"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
@@ -26,7 +25,7 @@ var rootCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List tmux sessions from configuration",
+	Short: "List tmux sessions from configuration (alias for 'key list')",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := tmux.NewManager(configDir, sessionsFile)
 		sessions, err := mgr.GetSessions()
@@ -39,55 +38,25 @@ var listCmd = &cobra.Command{
 			return nil
 		}
 
-		// Define styles
-		re := lipgloss.NewRenderer(os.Stdout)
-		baseStyle := re.NewStyle().Padding(0, 1)
-		headerStyle := baseStyle.Copy().Bold(true).Foreground(lipgloss.Color("255"))
-		keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
-		repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
-		pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95e1d3"))
+		// Check the style flag to determine output format
+		if listStyle == "compact" {
+			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
+			repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
 
-		// Build rows
-		var rows [][]string
-		for _, s := range sessions {
-			path := s.Path
-			
-			// Style the key
-			styledKey := keyStyle.Render(s.Key)
-			
-			// Extract repository name from path
-			var repo string
-			if path == "" {
-				// Leave empty for unconfigured sessions
-				path = ""
-				repo = ""
-			} else {
-				// Extract last component of path as repo name
-				repo = filepath.Base(path)
-				repo = repoStyle.Render(repo)
-				path = pathStyle.Render(path)
+			var outputLines []string
+			for _, s := range sessions {
+				// Only show mapped sessions in compact view
+				if s.Path != "" {
+					repo := filepath.Base(s.Path)
+					line := fmt.Sprintf("%s: %s", keyStyle.Render(s.Key), repoStyle.Render(repo))
+					outputLines = append(outputLines, line)
+				}
 			}
-			
-			rows = append(rows, []string{styledKey, repo, path})
+			fmt.Println(strings.Join(outputLines, "\n"))
+		} else {
+			// Default to the existing table display
+			displaySessionsTable(sessions)
 		}
-
-		// Create the table
-		t := table.New().
-			Border(lipgloss.NormalBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
-			Headers("Key", "Repository", "Path").
-			Rows(rows...)
-
-		// Apply styling - only for headers since content is pre-styled
-		t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == 0 {
-				return headerStyle
-			}
-			// Return minimal style to preserve pre-styled content
-			return lipgloss.NewStyle().Padding(0, 1)
-		})
-
-		fmt.Println(t)
 		return nil
 	},
 }
@@ -144,6 +113,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", defaultConfigDir, "Configuration directory")
 	rootCmd.PersistentFlags().StringVar(&sessionsFile, "sessions-file", "", "Sessions file path (default: <config-dir>/tmux-sessions.yaml)")
 
+	// Add the --style flag to the alias command as well, so Cobra recognizes it.
+	// It will modify the `listStyle` variable from the key.go file.
+	listCmd.Flags().StringVar(&listStyle, "style", "table", "Output style: table or compact")
+
 	// Add commands
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -161,3 +134,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+

@@ -15,6 +15,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	// This variable will be shared by listCmd and keyListCmd
+	listStyle string
+)
+
 var keyCmd = &cobra.Command{
 	Use:   "key",
 	Short: "Manage tmux session key bindings",
@@ -81,7 +86,40 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 var keyListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all configured session keys",
-	RunE:  listCmd.RunE, // Use the same handler as the root list command
+	// The new RunE function handles both styles
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr := tmux.NewManager(configDir, sessionsFile)
+		sessions, err := mgr.GetSessions()
+		if err != nil {
+			return fmt.Errorf("failed to get sessions: %w", err)
+		}
+
+		if len(sessions) == 0 {
+			fmt.Println("No sessions configured")
+			return nil
+		}
+
+		// Check the style flag to determine output format
+		if listStyle == "compact" {
+			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
+			repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
+
+			var outputLines []string
+			for _, s := range sessions {
+				// Only show mapped sessions in compact view
+				if s.Path != "" {
+					repo := filepath.Base(s.Path)
+					line := fmt.Sprintf("%s: %s", keyStyle.Render(s.Key), repoStyle.Render(repo))
+					outputLines = append(outputLines, line)
+				}
+			}
+			fmt.Println(strings.Join(outputLines, "\n"))
+		} else {
+			// Default to the existing table display
+			displaySessionsTable(sessions)
+		}
+		return nil
+	},
 }
 
 var keyUpdateCmd = &cobra.Command{
@@ -601,6 +639,9 @@ var keyUnmapCmd = &cobra.Command{
 }
 
 func init() {
+	// Add the new --style flag to the command
+	keyListCmd.Flags().StringVar(&listStyle, "style", "table", "Output style: table or compact")
+
 	keyCmd.AddCommand(keyListCmd)
 	keyCmd.AddCommand(keyUpdateCmd)
 	keyCmd.AddCommand(keyEditCmd)

@@ -138,12 +138,12 @@ var keys = keyMap{
 		key.WithHelp("space", "quick toggle"),
 	),
 	Edit: key.NewBinding(
-		key.WithKeys("e", "enter"),
-		key.WithHelp("e/enter", "edit/map with fuzzy search"),
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit/map with fuzzy search"),
 	),
 	Open: key.NewBinding(
-		key.WithKeys("o"),
-		key.WithHelp("o", "open/switch to session"),
+		key.WithKeys("o", "enter"),
+		key.WithHelp("enter/o", "switch to session"),
 	),
 	Delete: key.NewBinding(
 		key.WithKeys("d", "delete"),
