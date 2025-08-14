@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -63,10 +64,14 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		// Check if a project was selected
-		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected != "" {
+		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected.Path != "" {
 			// Record the access before switching
-			mgr.RecordProjectAccess(sm.selected)
-			return sessionizeProject(sm.selected)
+			mgr.RecordProjectAccess(sm.selected.Path)
+			// If it's a worktree, also record access for the parent
+			if sm.selected.IsWorktree && sm.selected.ParentPath != "" {
+				mgr.RecordProjectAccess(sm.selected.ParentPath)
+			}
+			return sessionizeProject(sm.selected.Path)
 		}
 
 		return nil
@@ -75,9 +80,9 @@ var sessionizeCmd = &cobra.Command{
 
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
-	projects     []string
-	filtered     []string
-	selected     string
+	projects     []manager.DiscoveredProject
+	filtered     []manager.DiscoveredProject
+	selected     manager.DiscoveredProject
 	cursor       int
 	filterInput  textinput.Model
 	searchPaths  []string
@@ -93,7 +98,7 @@ type sessionizeModel struct {
 	sessions     []models.TmuxSession
 }
 
-func newSessionizeModel(projects []string, searchPaths []string, mgr *tmux.Manager) sessionizeModel {
+func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager) sessionizeModel {
 	// Create text input for filtering
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter..."
@@ -204,11 +209,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				// Assign the selected key to the project
 				if m.cursor < len(m.filtered) && m.keyCursor < len(m.availableKeys) {
-					selectedPath := m.filtered[m.cursor]
+					selectedProject := m.filtered[m.cursor]
 					selectedKey := m.availableKeys[m.keyCursor]
 					
 					// Update the session
-					m.updateKeyMapping(selectedPath, selectedKey)
+					m.updateKeyMapping(selectedProject.Path, selectedKey)
 					
 					// Refresh sessions to reflect changes
 					if sessions, err := m.manager.GetSessions(); err == nil {
@@ -338,7 +343,7 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 
 func (m *sessionizeModel) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
-	m.filtered = []string{}
+	m.filtered = []manager.DiscoveredProject{}
 	
 	if filter == "" {
 		// No filter, return all projects
@@ -347,15 +352,14 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 	
 	// Separate matches into priority groups
-	var exactNameMatches []string   // Exact match on project name
-	var prefixNameMatches []string  // Prefix match on project name
-	var containsNameMatches []string // Contains in project name
-	var pathMatches []string        // Matches elsewhere in the path
+	var exactNameMatches []manager.DiscoveredProject   // Exact match on project name
+	var prefixNameMatches []manager.DiscoveredProject  // Prefix match on project name
+	var containsNameMatches []manager.DiscoveredProject // Contains in project name
+	var pathMatches []manager.DiscoveredProject        // Matches elsewhere in the path
 	
 	for _, p := range m.projects {
-		name := filepath.Base(p)
-		lowerName := strings.ToLower(name)
-		lowerPath := strings.ToLower(p)
+		lowerName := strings.ToLower(p.Name)
+		lowerPath := strings.ToLower(p.Path)
 		
 		if lowerName == filter {
 			// Exact match on name - highest priority
@@ -373,7 +377,7 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 	
 	// Combine results in priority order
-	m.filtered = []string{}
+	m.filtered = []manager.DiscoveredProject{}
 	m.filtered = append(m.filtered, exactNameMatches...)
 	m.filtered = append(m.filtered, prefixNameMatches...)
 	m.filtered = append(m.filtered, containsNameMatches...)
@@ -429,11 +433,10 @@ func (m sessionizeModel) View() string {
 	// Render visible projects
 	for i := start; i < end && i < len(m.filtered); i++ {
 		project := m.filtered[i]
-		name := filepath.Base(project)
 		
 		// Check if this project has a key mapping
 		keyMapping := ""
-		cleanPath := filepath.Clean(project)
+		cleanPath := filepath.Clean(project.Path)
 		if key, hasKey := m.keyMap[cleanPath]; hasKey {
 			keyMapping = key
 		} else {
@@ -447,7 +450,14 @@ func (m sessionizeModel) View() string {
 		}
 		
 		// Check if session exists for this project
-		sessionExists := m.getSessionExists(project)
+		sessionExists := m.getSessionExists(project.Path)
+		
+		// Prepare prefix for worktrees
+		prefix := ""
+		displayName := project.Name
+		if project.IsWorktree {
+			prefix = "  └─ "
+		}
 		
 		if i == m.cursor {
 			// Highlight selected line
@@ -477,12 +487,13 @@ func (m sessionizeModel) View() string {
 					Render("●")
 			}
 			
-			b.WriteString(fmt.Sprintf("%s%s%s %s  %s", 
+			b.WriteString(fmt.Sprintf("%s%s%s %s%s  %s", 
 				indicator,
 				keyIndicator,
 				sessionIndicator,
-				nameStyle.Render(fmt.Sprintf("%-26s", name)),
-				pathStyle.Render(project)))
+				prefix,
+				nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+				pathStyle.Render(project.Path)))
 		} else {
 			// Normal line with colored name
 			nameStyle := lipgloss.NewStyle().
@@ -506,11 +517,12 @@ func (m sessionizeModel) View() string {
 					Render("●")
 			}
 			
-			b.WriteString(fmt.Sprintf("  %s%s %s  %s", 
+			b.WriteString(fmt.Sprintf("  %s%s %s%s  %s", 
 				keyIndicator,
 				sessionIndicator,
-				nameStyle.Render(fmt.Sprintf("%-26s", name)),
-				pathStyle.Render(project)))
+				prefix,
+				nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+				pathStyle.Render(project.Path)))
 		}
 		b.WriteString("\n")
 	}
@@ -549,8 +561,9 @@ func (m sessionizeModel) viewKeyEditor() string {
 	selectedProject := ""
 	selectedPath := ""
 	if m.cursor < len(m.filtered) {
-		selectedPath = m.filtered[m.cursor]
-		selectedProject = filepath.Base(selectedPath)
+		project := m.filtered[m.cursor]
+		selectedPath = project.Path
+		selectedProject = project.Name
 	}
 	
 	b.WriteString(titleStyle.Render(fmt.Sprintf("Select key for: %s", selectedProject)))

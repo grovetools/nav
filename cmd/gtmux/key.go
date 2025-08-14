@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -401,9 +402,9 @@ var keyAddCmd = &cobra.Command{
 			}
 		}
 
-		var availableProjects []string
+		var availableProjects []manager.DiscoveredProject
 		for _, p := range projects {
-			absPath, _ := filepath.Abs(expandPath(p))
+			absPath, _ := filepath.Abs(expandPath(p.Path))
 			if !existingPaths[absPath] {
 				availableProjects = append(availableProjects, p)
 			}
@@ -428,8 +429,8 @@ var keyAddCmd = &cobra.Command{
 		var rows [][]string
 		for i, p := range availableProjects {
 			index := indexStyle.Render(fmt.Sprintf("%d", i+1))
-			project := projectStyle.Render(filepath.Base(p))
-			path := pathStyle.Render(p)
+			project := projectStyle.Render(p.Name)
+			path := pathStyle.Render(p.Path)
 			rows = append(rows, []string{index, project, path})
 		}
 
@@ -471,7 +472,7 @@ var keyAddCmd = &cobra.Command{
 		selectedProject := availableProjects[projectIndex-1]
 		
 		// Show available keys
-		fmt.Printf("\nSelected project: %s\n", selectedProject)
+		fmt.Printf("\nSelected project: %s\n", selectedProject.Name)
 		fmt.Printf("Available keys: %s\n", strings.Join(freeKeys, ", "))
 		fmt.Print("\nEnter key to assign (or press Enter to cancel): ")
 		
@@ -501,7 +502,7 @@ var keyAddCmd = &cobra.Command{
 		// Create new session
 		newSession := models.TmuxSession{
 			Key:         keyInput,
-			Path:        selectedProject,
+			Path:        selectedProject.Path,
 			Repository:  "", // Will be extracted from path
 			Description: "", // No longer used
 		}
@@ -514,8 +515,8 @@ var keyAddCmd = &cobra.Command{
 
 		fmt.Printf("\nSuccessfully added session:\n")
 		fmt.Printf("  Key: %s\n", keyInput)
-		fmt.Printf("  Project: %s\n", filepath.Base(selectedProject))
-		fmt.Printf("  Path: %s\n", selectedProject)
+		fmt.Printf("  Project: %s\n", selectedProject.Name)
+		fmt.Printf("  Path: %s\n", selectedProject.Path)
 
 		// Regenerate bindings
 		fmt.Println("\nRegenerating tmux bindings...")

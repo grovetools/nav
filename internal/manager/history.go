@@ -83,31 +83,74 @@ func (h *AccessHistory) RecordAccess(path string) {
 }
 
 // SortProjectsByAccess sorts projects by last access time (most recent first)
-func (h *AccessHistory) SortProjectsByAccess(projects []string) []string {
+// For worktrees, uses the parent's access time to keep groups together
+func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []DiscoveredProject {
 	// Create a copy to avoid modifying the original
-	sorted := make([]string, len(projects))
+	sorted := make([]DiscoveredProject, len(projects))
 	copy(sorted, projects)
 	
-	sort.Slice(sorted, func(i, j int) bool {
-		// Get access info for both projects
-		accessI, hasI := h.Projects[sorted[i]]
-		accessJ, hasJ := h.Projects[sorted[j]]
+	// Helper function to get the group's last access time
+	getGroupAccessTime := func(p DiscoveredProject) *time.Time {
+		// For worktrees, use parent's access time
+		pathToCheck := p.Path
+		if p.IsWorktree && p.ParentPath != "" {
+			pathToCheck = p.ParentPath
+		}
 		
-		// If neither has been accessed, maintain original order
-		if !hasI && !hasJ {
+		if access, exists := h.Projects[pathToCheck]; exists {
+			return &access.LastAccessed
+		}
+		return nil
+	}
+	
+	sort.Slice(sorted, func(i, j int) bool {
+		projectI := sorted[i]
+		projectJ := sorted[j]
+		
+		// Get group access times
+		accessTimeI := getGroupAccessTime(projectI)
+		accessTimeJ := getGroupAccessTime(projectJ)
+		
+		// If neither group has been accessed, maintain original order
+		if accessTimeI == nil && accessTimeJ == nil {
 			return i < j
 		}
 		
-		// If only one has been accessed, it comes first
-		if hasI && !hasJ {
+		// If only one group has been accessed, it comes first
+		if accessTimeI != nil && accessTimeJ == nil {
 			return true
 		}
-		if !hasI && hasJ {
+		if accessTimeI == nil && accessTimeJ != nil {
 			return false
 		}
 		
-		// Both have been accessed, sort by most recent
-		return accessI.LastAccessed.After(accessJ.LastAccessed)
+		// Both groups have been accessed
+		// First, compare group access times
+		if !accessTimeI.Equal(*accessTimeJ) {
+			return accessTimeI.After(*accessTimeJ)
+		}
+		
+		// Same group access time - check if they're in the same group
+		groupI := projectI.Path
+		if projectI.IsWorktree && projectI.ParentPath != "" {
+			groupI = projectI.ParentPath
+		}
+		groupJ := projectJ.Path
+		if projectJ.IsWorktree && projectJ.ParentPath != "" {
+			groupJ = projectJ.ParentPath
+		}
+		
+		if groupI == groupJ {
+			// Same group - parent repos come before worktrees
+			if projectI.IsWorktree != projectJ.IsWorktree {
+				return !projectI.IsWorktree
+			}
+			// Both are worktrees or both are repos - sort alphabetically by name
+			return projectI.Name < projectJ.Name
+		}
+		
+		// Different groups with same access time - maintain original order
+		return i < j
 	})
 	
 	return sorted

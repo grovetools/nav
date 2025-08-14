@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -93,8 +94,8 @@ type manageModel struct {
 	searching    bool
 	searchInput  textinput.Model
 	projectList  list.Model
-	projects     []string
-	filteredProj []string
+	projects     []manager.DiscoveredProject
+	filteredProj []manager.DiscoveredProject
 	selectedKey  string
 }
 
@@ -325,16 +326,15 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		
 		for _, p := range m.projects {
-			absPath, _ := filepath.Abs(expandPath(p))
+			absPath, _ := filepath.Abs(expandPath(p.Path))
 			if existingPaths[absPath] {
 				continue // Skip already mapped projects
 			}
 			
-			name := filepath.Base(p)
 			if searchTerm == "" || 
-			   strings.Contains(strings.ToLower(name), searchTerm) ||
-			   strings.Contains(strings.ToLower(p), searchTerm) {
-				items = append(items, projectItem{path: p, name: name})
+			   strings.Contains(strings.ToLower(p.Name), searchTerm) ||
+			   strings.Contains(strings.ToLower(p.Path), searchTerm) {
+				items = append(items, projectItem{path: p.Path, name: p.Name})
 			}
 		}
 		
@@ -420,12 +420,11 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				
 				for _, p := range m.projects {
-					absPath, _ := filepath.Abs(expandPath(p))
+					absPath, _ := filepath.Abs(expandPath(p.Path))
 					if existingPaths[absPath] {
 						continue
 					}
-					name := filepath.Base(p)
-					items = append(items, projectItem{path: p, name: name})
+					items = append(items, projectItem{path: p.Path, name: p.Name})
 				}
 				m.projectList.SetItems(items)
 				m.projectList.SetWidth(60)

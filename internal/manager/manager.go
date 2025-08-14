@@ -234,13 +234,20 @@ func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) er
 	return m.UpdateSessions(sessions)
 }
 
-func (m *Manager) GetAvailableProjects() ([]string, error) {
+// isGitRepository checks if a directory contains a .git folder or file
+func isGitRepository(path string) bool {
+	gitPath := filepath.Join(path, ".git")
+	_, err := os.Stat(gitPath)
+	return err == nil
+}
+
+func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	searchConfig, err := m.getSearchPaths()
 	if err != nil {
 		return nil, err
 	}
 
-	projects := []string{}
+	projects := []DiscoveredProject{}
 	seen := make(map[string]bool)
 
 	// First, scan search paths
@@ -251,12 +258,18 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 
 		expandedPath := expandPath(sp.Path)
 		
-		// Add the search path itself as a project
+		// Add the search path itself as a project if it's a directory
 		absPath, err := filepath.Abs(expandedPath)
 		if err == nil {
 			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
 				if !seen[absPath] {
-					projects = append(projects, absPath)
+					project := DiscoveredProject{
+						Name:       filepath.Base(absPath),
+						Path:       absPath,
+						ParentPath: "",
+						IsWorktree: false,
+					}
+					projects = append(projects, project)
 					seen[absPath] = true
 				}
 			}
@@ -272,8 +285,40 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 			if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
 				fullPath := filepath.Join(expandedPath, entry.Name())
 				if !seen[fullPath] {
-					projects = append(projects, fullPath)
+					project := DiscoveredProject{
+						Name:       entry.Name(),
+						Path:       fullPath,
+						ParentPath: "",
+						IsWorktree: false,
+					}
+					projects = append(projects, project)
 					seen[fullPath] = true
+					
+					// If this is a Git repository, check for .grove-worktrees
+					if isGitRepository(fullPath) {
+						worktreesPath := filepath.Join(fullPath, ".grove-worktrees")
+						if worktreeInfo, err := os.Stat(worktreesPath); err == nil && worktreeInfo.IsDir() {
+							// Scan worktrees directory
+							worktreeEntries, err := os.ReadDir(worktreesPath)
+							if err == nil {
+								for _, wtEntry := range worktreeEntries {
+									if wtEntry.IsDir() && !strings.HasPrefix(wtEntry.Name(), ".") {
+										wtFullPath := filepath.Join(worktreesPath, wtEntry.Name())
+										if !seen[wtFullPath] {
+											wtProject := DiscoveredProject{
+												Name:       wtEntry.Name(),
+												Path:       wtFullPath,
+												ParentPath: fullPath,
+												IsWorktree: true,
+											}
+											projects = append(projects, wtProject)
+											seen[wtFullPath] = true
+										}
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -297,14 +342,27 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 			// Always add explicit projects, even if seen
 			// Remove from seen first to ensure it's added
 			found := false
-			for _, p := range projects {
-				if p == absPath {
+			for i, p := range projects {
+				if p.Path == absPath {
+					// Update existing project if found
+					projects[i] = DiscoveredProject{
+						Name:       filepath.Base(absPath),
+						Path:       absPath,
+						ParentPath: "",
+						IsWorktree: false,
+					}
 					found = true
 					break
 				}
 			}
 			if !found {
-				projects = append(projects, absPath)
+				project := DiscoveredProject{
+					Name:       filepath.Base(absPath),
+					Path:       absPath,
+					ParentPath: "",
+					IsWorktree: false,
+				}
+				projects = append(projects, project)
 			}
 			seen[absPath] = true
 		}
@@ -313,7 +371,7 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 	return projects, nil
 }
 
-func (m *Manager) GetAvailableProjectsSorted() ([]string, error) {
+func (m *Manager) GetAvailableProjectsSorted() ([]DiscoveredProject, error) {
 	projects, err := m.GetAvailableProjects()
 	if err != nil {
 		return nil, err

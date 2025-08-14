@@ -33,12 +33,12 @@ func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) er
 }
 
 // GetAvailableProjects returns available projects from search paths
-func (m *Manager) GetAvailableProjects() ([]string, error) {
+func (m *Manager) GetAvailableProjects() ([]manager.DiscoveredProject, error) {
 	return m.mgr.GetAvailableProjects()
 }
 
 // GetAvailableProjectsSorted returns available projects sorted by last access time
-func (m *Manager) GetAvailableProjectsSorted() ([]string, error) {
+func (m *Manager) GetAvailableProjectsSorted() ([]manager.DiscoveredProject, error) {
 	return m.mgr.GetAvailableProjectsSorted()
 }
 
