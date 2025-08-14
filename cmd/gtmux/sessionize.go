@@ -83,6 +83,7 @@ type sessionizeModel struct {
 	searchPaths  []string
 	manager      *tmux.Manager
 	keyMap       map[string]string // path -> key mapping
+	sessionMap   map[string]bool   // path -> session exists mapping
 	width        int
 	height       int
 	// Key editing mode
@@ -123,6 +124,10 @@ func newSessionizeModel(projects []string, searchPaths []string, mgr *tmux.Manag
 	// Get available keys
 	availableKeys := mgr.GetAvailableKeys()
 
+	// Create session existence map
+	sessionMap := make(map[string]bool)
+	// We'll populate this lazily as needed to avoid too many tmux calls at startup
+
 	return sessionizeModel{
 		projects:      projects,
 		filtered:      projects,
@@ -130,6 +135,7 @@ func newSessionizeModel(projects []string, searchPaths []string, mgr *tmux.Manag
 		searchPaths:   searchPaths,
 		manager:       mgr,
 		keyMap:        keyMap,
+		sessionMap:    sessionMap,
 		cursor:        0,
 		editingKeys:   false,
 		keyCursor:     0,
@@ -140,6 +146,38 @@ func newSessionizeModel(projects []string, searchPaths []string, mgr *tmux.Manag
 
 func (m sessionizeModel) Init() tea.Cmd {
 	return textinput.Blink
+}
+
+// getSessionExists checks if a tmux session exists for the given project path
+func (m *sessionizeModel) getSessionExists(projectPath string) bool {
+	// Check cache first
+	if exists, found := m.sessionMap[projectPath]; found {
+		return exists
+	}
+
+	// Create session name from path
+	sessionName := filepath.Base(projectPath)
+	sessionName = strings.ReplaceAll(sessionName, ".", "_")
+
+	// Check if session exists using tmux client
+	client, err := tmux.NewClient()
+	if err != nil {
+		// If we can't create client, assume no session
+		m.sessionMap[projectPath] = false
+		return false
+	}
+
+	ctx := context.Background()
+	exists, err := client.SessionExists(ctx, sessionName)
+	if err != nil {
+		// On error, assume no session
+		m.sessionMap[projectPath] = false
+		return false
+	}
+
+	// Cache the result
+	m.sessionMap[projectPath] = exists
+	return exists
 }
 
 func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -408,6 +446,9 @@ func (m sessionizeModel) View() string {
 			}
 		}
 		
+		// Check if session exists for this project
+		sessionExists := m.getSessionExists(project)
+		
 		if i == m.cursor {
 			// Highlight selected line
 			indicator := lipgloss.NewStyle().
@@ -429,9 +470,17 @@ func (m sessionizeModel) View() string {
 					Render(fmt.Sprintf("%s ", keyMapping))
 			}
 			
-			b.WriteString(fmt.Sprintf("%s%s%s  %s", 
+			sessionIndicator := " "
+			if sessionExists {
+				sessionIndicator = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#00ff00")).
+					Render("●")
+			}
+			
+			b.WriteString(fmt.Sprintf("%s%s%s %s  %s", 
 				indicator,
 				keyIndicator,
+				sessionIndicator,
 				nameStyle.Render(fmt.Sprintf("%-26s", name)),
 				pathStyle.Render(project)))
 		} else {
@@ -450,8 +499,16 @@ func (m sessionizeModel) View() string {
 					Render(fmt.Sprintf("%s ", keyMapping))
 			}
 			
-			b.WriteString(fmt.Sprintf("  %s%s  %s", 
+			sessionIndicator := " "
+			if sessionExists {
+				sessionIndicator = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#00ff00")).
+					Render("●")
+			}
+			
+			b.WriteString(fmt.Sprintf("  %s%s %s  %s", 
 				keyIndicator,
+				sessionIndicator,
 				nameStyle.Render(fmt.Sprintf("%-26s", name)),
 				pathStyle.Render(project)))
 		}
