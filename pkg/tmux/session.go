@@ -30,3 +30,24 @@ func (c *Client) CapturePane(ctx context.Context, target string) (string, error)
 	}
 	return output, nil
 }
+
+func (c *Client) NewWindow(ctx context.Context, target, windowName, command string) error {
+	args := []string{"new-window", "-t", target, "-n", windowName}
+	if command != "" {
+		args = append(args, command)
+	}
+	_, err := c.run(ctx, args...)
+	return err
+}
+
+func (c *Client) SendKeys(ctx context.Context, target string, keys ...string) error {
+	args := []string{"send-keys", "-t", target}
+	args = append(args, keys...)
+	_, err := c.run(ctx, args...)
+	return err
+}
+
+func (c *Client) SelectWindow(ctx context.Context, target string) error {
+	_, err := c.run(ctx, "select-window", "-t", target)
+	return err
+}
