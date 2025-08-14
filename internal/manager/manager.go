@@ -36,13 +36,21 @@ type SearchPathConfig struct {
 }
 
 type ProjectSearchConfig struct {
-	SearchPaths map[string]SearchPathConfig `yaml:"search_paths"`
-	Discovery   struct {
+	SearchPaths      map[string]SearchPathConfig `yaml:"search_paths"`
+	ExplicitProjects []ExplicitProject           `yaml:"explicit_projects"`
+	Discovery        struct {
 		MaxDepth        int      `yaml:"max_depth"`
 		MinDepth        int      `yaml:"min_depth"`
 		FileTypes       []string `yaml:"file_types"`
 		ExcludePatterns []string `yaml:"exclude_patterns"`
 	} `yaml:"discovery"`
+}
+
+type ExplicitProject struct {
+	Path        string `yaml:"path"`
+	Name        string `yaml:"name,omitempty"`
+	Description string `yaml:"description,omitempty"`
+	Enabled     bool   `yaml:"enabled"`
 }
 
 // NewManager creates a new Manager instance
@@ -235,12 +243,26 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 	projects := []string{}
 	seen := make(map[string]bool)
 
+	// First, scan search paths
 	for _, sp := range searchConfig.SearchPaths {
 		if !sp.Enabled {
 			continue
 		}
 
 		expandedPath := expandPath(sp.Path)
+		
+		// Add the search path itself as a project
+		absPath, err := filepath.Abs(expandedPath)
+		if err == nil {
+			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+				if !seen[absPath] {
+					projects = append(projects, absPath)
+					seen[absPath] = true
+				}
+			}
+		}
+		
+		// Then scan its subdirectories
 		entries, err := os.ReadDir(expandedPath)
 		if err != nil {
 			continue
@@ -257,7 +279,84 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 		}
 	}
 
+	// Then, add explicit projects (these always override)
+	for _, ep := range searchConfig.ExplicitProjects {
+		if !ep.Enabled {
+			continue
+		}
+
+		expandedPath := expandPath(ep.Path)
+		// Get absolute path to ensure consistency
+		absPath, err := filepath.Abs(expandedPath)
+		if err != nil {
+			absPath = expandedPath
+		}
+		
+		// Verify the path exists
+		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
+			// Always add explicit projects, even if seen
+			// Remove from seen first to ensure it's added
+			found := false
+			for _, p := range projects {
+				if p == absPath {
+					found = true
+					break
+				}
+			}
+			if !found {
+				projects = append(projects, absPath)
+			}
+			seen[absPath] = true
+		}
+	}
+
 	return projects, nil
+}
+
+func (m *Manager) GetAvailableProjectsSorted() ([]string, error) {
+	projects, err := m.GetAvailableProjects()
+	if err != nil {
+		return nil, err
+	}
+
+	// Load access history and sort projects
+	history, err := LoadAccessHistory(m.configDir)
+	if err != nil {
+		// If we can't load history, just return unsorted
+		return projects, nil
+	}
+
+	return history.SortProjectsByAccess(projects), nil
+}
+
+func (m *Manager) RecordProjectAccess(path string) error {
+	history, err := LoadAccessHistory(m.configDir)
+	if err != nil {
+		return err
+	}
+
+	history.RecordAccess(path)
+	return history.Save(m.configDir)
+}
+
+func (m *Manager) GetAccessHistory() (*AccessHistory, error) {
+	return LoadAccessHistory(m.configDir)
+}
+
+func (m *Manager) GetEnabledSearchPaths() ([]string, error) {
+	searchConfig, err := m.getSearchPaths()
+	if err != nil {
+		return nil, err
+	}
+
+	paths := []string{}
+	for _, sp := range searchConfig.SearchPaths {
+		if sp.Enabled {
+			paths = append(paths, expandPath(sp.Path))
+		}
+	}
+
+	return paths, nil
 }
 
 func (m *Manager) getSearchPaths() (*ProjectSearchConfig, error) {

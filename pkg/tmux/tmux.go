@@ -37,6 +37,26 @@ func (m *Manager) GetAvailableProjects() ([]string, error) {
 	return m.mgr.GetAvailableProjects()
 }
 
+// GetAvailableProjectsSorted returns available projects sorted by last access time
+func (m *Manager) GetAvailableProjectsSorted() ([]string, error) {
+	return m.mgr.GetAvailableProjectsSorted()
+}
+
+// RecordProjectAccess records that a project was accessed
+func (m *Manager) RecordProjectAccess(path string) error {
+	return m.mgr.RecordProjectAccess(path)
+}
+
+// GetAccessHistory returns the project access history
+func (m *Manager) GetAccessHistory() (interface{}, error) {
+	return m.mgr.GetAccessHistory()
+}
+
+// GetEnabledSearchPaths returns the list of enabled search paths
+func (m *Manager) GetEnabledSearchPaths() ([]string, error) {
+	return m.mgr.GetEnabledSearchPaths()
+}
+
 // RegenerateBindings regenerates tmux key bindings
 func (m *Manager) RegenerateBindings() error {
 	return m.mgr.RegenerateBindings()
