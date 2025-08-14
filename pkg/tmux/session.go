@@ -56,3 +56,25 @@ func (c *Client) SwitchClient(ctx context.Context, target string) error {
 	_, err := c.run(ctx, "switch-client", "-t", target)
 	return err
 }
+
+func (c *Client) GetCurrentSession(ctx context.Context) (string, error) {
+	output, err := c.run(ctx, "display-message", "-p", "#{session_name}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+
+func (c *Client) ListSessions(ctx context.Context) ([]string, error) {
+	output, err := c.run(ctx, "list-sessions", "-F", "#{session_name}")
+	if err != nil {
+		// If no sessions exist, tmux returns an error
+		if strings.Contains(err.Error(), "no server running") || strings.Contains(err.Error(), "exit status 1") {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	
+	sessions := strings.Split(strings.TrimSpace(output), "\n")
+	return sessions, nil
+}

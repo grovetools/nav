@@ -89,6 +89,7 @@ type sessionizeModel struct {
 	manager      *tmux.Manager
 	keyMap       map[string]string // path -> key mapping
 	sessionMap   map[string]bool   // path -> session exists mapping
+	currentSession string          // name of the current tmux session
 	width        int
 	height       int
 	// Key editing mode
@@ -133,6 +134,18 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	sessionMap := make(map[string]bool)
 	// We'll populate this lazily as needed to avoid too many tmux calls at startup
 
+	// Get current session name if we're in tmux
+	currentSession := ""
+	if os.Getenv("TMUX") != "" {
+		client, err := tmux.NewClient()
+		if err == nil {
+			ctx := context.Background()
+			if current, err := client.GetCurrentSession(ctx); err == nil {
+				currentSession = current
+			}
+		}
+	}
+
 	return sessionizeModel{
 		projects:      projects,
 		filtered:      projects,
@@ -141,6 +154,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		manager:       mgr,
 		keyMap:        keyMap,
 		sessionMap:    sessionMap,
+		currentSession: currentSession,
 		cursor:        0,
 		editingKeys:   false,
 		keyCursor:     0,
@@ -244,6 +258,78 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.filtered) {
 				m.editingKeys = true
 				m.keyCursor = 0
+			}
+		case tea.KeyCtrlD:
+			// Close the selected session
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				sessionName := filepath.Base(project.Path)
+				sessionName = strings.ReplaceAll(sessionName, ".", "_")
+				
+				// Check if session exists before trying to close it
+				client, err := tmux.NewClient()
+				if err == nil {
+					ctx := context.Background()
+					exists, err := client.SessionExists(ctx, sessionName)
+					if err == nil && exists {
+						// Check if we're in tmux and if this is the current session
+						if os.Getenv("TMUX") != "" {
+							currentSession, err := client.GetCurrentSession(ctx)
+							if err == nil && currentSession == sessionName {
+								// We're closing the current session - need to switch first
+								// Get all sessions
+								sessions, _ := client.ListSessions(ctx)
+								
+								// Find the best session to switch to
+								var targetSession string
+								
+								// First, try to find the most recently accessed session from our list
+								for _, p := range m.filtered {
+									candidateName := filepath.Base(p.Path)
+									candidateName = strings.ReplaceAll(candidateName, ".", "_")
+									
+									// Skip the current session
+									if candidateName == sessionName {
+										continue
+									}
+									
+									// Check if this session exists
+									for _, s := range sessions {
+										if s == candidateName {
+											targetSession = candidateName
+											break
+										}
+									}
+									
+									if targetSession != "" {
+										break
+									}
+								}
+								
+								// If no session from our list, just pick any other session
+								if targetSession == "" {
+									for _, s := range sessions {
+										if s != sessionName {
+											targetSession = s
+											break
+										}
+									}
+								}
+								
+								// Switch to the target session before killing current
+								if targetSession != "" {
+									client.SwitchClient(ctx, targetSession)
+								}
+							}
+						}
+						
+						// Kill the session
+						if err := client.KillSession(ctx, sessionName); err == nil {
+							// Clear the cached session status
+							delete(m.sessionMap, project.Path)
+						}
+					}
+				}
 			}
 		case tea.KeyEnter:
 			if m.cursor < len(m.filtered) {
@@ -482,9 +568,21 @@ func (m sessionizeModel) View() string {
 			
 			sessionIndicator := " "
 			if sessionExists {
-				sessionIndicator = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#00ff00")).
-					Render("●")
+				// Check if this is the current session
+				sessionName := filepath.Base(project.Path)
+				sessionName = strings.ReplaceAll(sessionName, ".", "_")
+				
+				if sessionName == m.currentSession {
+					// Current session - use blue indicator
+					sessionIndicator = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#00aaff")).
+						Render("●")
+				} else {
+					// Other active session - use green indicator
+					sessionIndicator = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#00ff00")).
+						Render("●")
+				}
 			}
 			
 			b.WriteString(fmt.Sprintf("%s%s%s %s%s  %s", 
@@ -512,9 +610,21 @@ func (m sessionizeModel) View() string {
 			
 			sessionIndicator := " "
 			if sessionExists {
-				sessionIndicator = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#00ff00")).
-					Render("●")
+				// Check if this is the current session
+				sessionName := filepath.Base(project.Path)
+				sessionName = strings.ReplaceAll(sessionName, ".", "_")
+				
+				if sessionName == m.currentSession {
+					// Current session - use blue indicator
+					sessionIndicator = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#00aaff")).
+						Render("●")
+				} else {
+					// Other active session - use green indicator
+					sessionIndicator = lipgloss.NewStyle().
+						Foreground(lipgloss.Color("#00ff00")).
+						Render("●")
+				}
 			}
 			
 			b.WriteString(fmt.Sprintf("  %s%s %s%s  %s", 
@@ -538,7 +648,7 @@ func (m sessionizeModel) View() string {
 		b.WriteString("\n" + dimStyle.Render("No matching projects"))
 	}
 	
-	b.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • ctrl+e: edit key • esc: quit"))
+	b.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • ctrl+e: edit key • ctrl+d: close session • esc: quit"))
 	
 	// Display search paths at the very bottom
 	if len(m.searchPaths) > 0 {
