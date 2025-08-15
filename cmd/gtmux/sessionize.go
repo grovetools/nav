@@ -35,11 +35,23 @@ func getWorktreeParent(path string) string {
 	return ""
 }
 
+// hasGroveHooks checks if grove-hooks is available
+func hasGroveHooks() bool {
+	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
+	if _, err := os.Stat(groveHooksPath); err == nil {
+		return true
+	}
+	if _, err := exec.LookPath("grove-hooks"); err == nil {
+		return true
+	}
+	return false
+}
+
 var sessionizeCmd = &cobra.Command{
 	Use:     "sessionize",
 	Aliases: []string{"sz"},
 	Short:   "Quickly create or switch to tmux sessions from project directories",
-	Long:    `Discover projects from configured search paths and quickly create or switch to tmux sessions. Similar to tmux-sessionizer but with a beautiful interface.`,
+	Long:    `Discover projects from configured search paths and quickly create or switch to tmux sessions. Shows Claude session status indicators when grove-hooks is installed.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// If a path is provided as argument, use it directly
 		if len(args) > 0 {
@@ -99,6 +111,7 @@ var sessionizeCmd = &cobra.Command{
 // claudeSession represents the structure of a Claude session from grove-hooks
 type claudeSession struct {
 	ID                     string `json:"id"`
+	Type                   string `json:"type"`
 	PID                    int    `json:"pid"`
 	Status                 string `json:"status"`
 	WorkingDirectory       string `json:"working_directory"`
@@ -426,7 +439,8 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 		var claudeSessions []claudeSession
 		if json.Unmarshal(output, &claudeSessions) == nil {
 			for _, session := range claudeSessions {
-				if session.WorkingDirectory != "" {
+				// Only include sessions with type "claude_session"
+				if session.Type == "claude_session" && session.WorkingDirectory != "" {
 					absPath, err := filepath.Abs(expandPath(session.WorkingDirectory))
 					if err == nil {
 						cleanPath := filepath.Clean(absPath)
@@ -521,59 +535,16 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case claudeSessionUpdateMsg:
-		// Update projects with new Claude sessions
-		// First, remove existing Claude session projects
-		var nonClaudeProjects []manager.DiscoveredProject
-		for _, p := range m.projects {
-			if p.ClaudeSessionID == "" {
-				nonClaudeProjects = append(nonClaudeProjects, p)
-			}
-		}
+		// Update claude status maps with active sessions
+		m.claudeStatusMap = make(map[string]string)
+		m.claudeDurationMap = make(map[string]string)
+		m.claudeDurationSecondsMap = make(map[string]int)
 		
-		// Create a map to track which paths have Claude sessions
-		// Use lowercase paths for case-insensitive comparison
-		pathHasClaudeSession := make(map[string]bool)
 		for _, session := range msg.sessions {
-			// Store both the exact path and lowercase version
-			pathHasClaudeSession[session.Path] = true
-			pathHasClaudeSession[strings.ToLower(session.Path)] = true
-		}
-		
-		// Build new project list: Claude sessions + non-Claude projects without active sessions
-		var newProjects []manager.DiscoveredProject
-		newProjects = append(newProjects, msg.sessions...)
-		
-		for _, p := range nonClaudeProjects {
-			// Check both exact match and case-insensitive match
-			hasSession := pathHasClaudeSession[p.Path] || pathHasClaudeSession[strings.ToLower(p.Path)]
-			if !hasSession {
-				newProjects = append(newProjects, p)
-			}
-		}
-		
-		// Apply git statuses to the new projects
-		for i := range newProjects {
-			cleanPath := filepath.Clean(newProjects[i].Path)
-			if extStatus, found := m.gitStatusMap[cleanPath]; found {
-				newProjects[i].GitStatus = extStatus.StatusInfo
-			}
-		}
-		
-		// Sort the new projects by access history
-		history, err := manager.LoadAccessHistory(m.configDir)
-		if err == nil {
-			newProjects = history.SortProjectsByAccess(newProjects)
-		}
-		
-		m.projects = newProjects
-		m.updateFiltered()
-		
-		// Also update filtered projects with git status
-		for i := range m.filtered {
-			cleanPath := filepath.Clean(m.filtered[i].Path)
-			if extStatus, found := m.gitStatusMap[cleanPath]; found {
-				m.filtered[i].GitStatus = extStatus.StatusInfo
-			}
+			cleanPath := filepath.Clean(session.Path)
+			m.claudeStatusMap[cleanPath] = session.ClaudeSessionStatus
+			m.claudeDurationMap[cleanPath] = session.ClaudeSessionDuration
+			m.claudeDurationSecondsMap[cleanPath] = session.ClaudeSessionPID // Using PID field temporarily
 		}
 		
 		return m, nil
@@ -616,6 +587,27 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEsc:
 				m.editingKeys = false
 				return m, nil
+			default:
+				// Check if the pressed key is a valid session key
+				pressedKey := strings.ToLower(msg.String())
+				for _, availableKey := range m.availableKeys {
+					if strings.ToLower(availableKey) == pressedKey {
+						// Found the key - assign it directly
+						if m.cursor < len(m.filtered) {
+							selectedProject := m.filtered[m.cursor]
+							
+							// Update the session
+							m.updateKeyMapping(selectedProject.Path, availableKey)
+							
+							// Refresh sessions to reflect changes
+							if sessions, err := m.manager.GetSessions(); err == nil {
+								m.sessions = sessions
+							}
+						}
+						m.editingKeys = false
+						return m, nil
+					}
+				}
 			}
 			return m, nil
 		}
@@ -635,6 +627,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.filtered) {
 				m.editingKeys = true
 				m.keyCursor = 0
+			}
+		case tea.KeyCtrlX:
+			// Clear key mapping for the selected project
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				m.clearKeyMapping(project.Path)
 			}
 		case tea.KeyCtrlY:
 			// Yank (copy) the selected project path
@@ -764,56 +762,50 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 
 	cleanPath := filepath.Clean(projectPath)
 
+	// First, find any existing session with the new key
 	for i, s := range m.sessions {
-		if s.Key == newKey && s.Path != "" {
+		if s.Key == newKey {
 			existingSessionIndex = i
+			break
 		}
-		// Check for existing mapping of this project
+	}
+
+	// Then find if this project already has a key mapping
+	for i, s := range m.sessions {
 		if s.Path != "" {
 			expandedPath := expandPath(s.Path)
 			absPath, _ := filepath.Abs(expandedPath)
 			if strings.EqualFold(filepath.Clean(absPath), cleanPath) {
 				targetSessionIndex = i
-			}
-		}
-	}
-
-	// If the key is already used, swap or clear it
-	if existingSessionIndex >= 0 && existingSessionIndex != targetSessionIndex {
-		// Clear the existing mapping
-		m.sessions[existingSessionIndex].Path = ""
-		m.sessions[existingSessionIndex].Repository = ""
-	}
-
-	// Update or create the session
-	if targetSessionIndex >= 0 {
-		// Update existing session with new key
-		oldKey := m.sessions[targetSessionIndex].Key
-		m.sessions[targetSessionIndex].Key = newKey
-
-		// If we're swapping, give the old key to the other session
-		if existingSessionIndex >= 0 && oldKey != "" {
-			m.sessions[existingSessionIndex].Key = oldKey
-		}
-	} else {
-		// Create new session
-		newSession := models.TmuxSession{
-			Key:        newKey,
-			Path:       projectPath,
-			Repository: filepath.Base(projectPath),
-		}
-
-		// Find the session with this key and update it
-		updated := false
-		for i, s := range m.sessions {
-			if s.Key == newKey {
-				m.sessions[i] = newSession
-				updated = true
 				break
 			}
 		}
+	}
 
-		if !updated {
+	// Handle the key assignment
+	if targetSessionIndex >= 0 {
+		// Project already has a key mapping
+		if existingSessionIndex >= 0 && existingSessionIndex != targetSessionIndex {
+			// The new key is already in use by another session
+			// Clear the old mapping (let go of it)
+			m.sessions[existingSessionIndex].Path = ""
+			m.sessions[existingSessionIndex].Repository = ""
+		}
+		// Update the key
+		m.sessions[targetSessionIndex].Key = newKey
+	} else {
+		// Project doesn't have a key mapping yet
+		if existingSessionIndex >= 0 {
+			// The key is already in use, update that session with the new project
+			m.sessions[existingSessionIndex].Path = projectPath
+			m.sessions[existingSessionIndex].Repository = filepath.Base(projectPath)
+		} else {
+			// Key is not in use, create a new session
+			newSession := models.TmuxSession{
+				Key:        newKey,
+				Path:       projectPath,
+				Repository: filepath.Base(projectPath),
+			}
 			m.sessions = append(m.sessions, newSession)
 		}
 	}
@@ -822,11 +814,59 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	m.manager.UpdateSessions(m.sessions)
 	m.manager.RegenerateBindings()
 
-	// Update our key map
-	m.keyMap[cleanPath] = newKey
+	// Update our key map to reflect all changes
+	m.keyMap = make(map[string]string)
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, err := filepath.Abs(expandedPath)
+			if err == nil {
+				cleanPath := filepath.Clean(absPath)
+				m.keyMap[cleanPath] = s.Key
+			}
+		}
+	}
 
 	// Reload tmux config
 	reloadTmuxConfig()
+}
+
+func (m *sessionizeModel) clearKeyMapping(projectPath string) {
+	cleanPath := filepath.Clean(projectPath)
+
+	// Find if this project has a key mapping
+	var targetSessionIndex = -1
+	for i, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, _ := filepath.Abs(expandedPath)
+			if strings.EqualFold(filepath.Clean(absPath), cleanPath) {
+				targetSessionIndex = i
+				break
+			}
+		}
+	}
+
+	if targetSessionIndex >= 0 {
+		// Clear the path and repository, but keep the key slot
+		m.sessions[targetSessionIndex].Path = ""
+		m.sessions[targetSessionIndex].Repository = ""
+
+		// Save the updated sessions
+		m.manager.UpdateSessions(m.sessions)
+		m.manager.RegenerateBindings()
+
+		// Update our key map
+		delete(m.keyMap, cleanPath)
+
+		// Refresh sessions to reflect changes
+		if sessions, err := m.manager.GetSessions(); err == nil {
+			m.sessions = sessions
+		}
+
+		// Reload tmux config
+		reloadTmuxConfig()
+	}
 }
 
 func (m *sessionizeModel) updateFiltered() {
@@ -1209,10 +1249,25 @@ func (m sessionizeModel) View() string {
 
 	// Help text at bottom
 	if len(m.filtered) == 0 {
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("No matching projects"))
+		if len(m.projects) == 0 {
+			b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("No active Claude sessions"))
+		} else {
+			b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("No matching Claude sessions"))
+		}
 	}
 
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c")).Render("↑/↓: navigate • enter: select • ctrl+e: edit key • ctrl+y: copy path • ctrl+d: close • esc: quit"))
+	// Build help text with highlighted keys
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
+	
+	b.WriteString("\n")
+	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(": navigate • "))
+	b.WriteString(keyStyle.Render("enter") + helpStyle.Render(": select • "))
+	b.WriteString(keyStyle.Render("ctrl+e") + helpStyle.Render(": edit key • "))
+	b.WriteString(keyStyle.Render("ctrl+x") + helpStyle.Render(": clear key • "))
+	b.WriteString(keyStyle.Render("ctrl+y") + helpStyle.Render(": copy path • "))
+	b.WriteString(keyStyle.Render("ctrl+d") + helpStyle.Render(": close • "))
+	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": quit"))
 
 	// Display search paths at the very bottom
 	if len(m.searchPaths) > 0 {
@@ -1370,7 +1425,14 @@ func (m sessionizeModel) viewKeyEditor() string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render(fmt.Sprintf("\n(%d-%d of %d)", start+1, end, len(displays))))
 	}
 
-	b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c")).Render("↑/↓: navigate • enter: assign key • esc: cancel"))
+	// Build help text with highlighted keys
+	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
+	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
+	
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("press ") + keyStyle.Render("key directly") + helpStyle.Render(" or "))
+	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(" + ") + keyStyle.Render("enter") + helpStyle.Render(" to assign • "))
+	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": cancel"))
 
 	return b.String()
 }
