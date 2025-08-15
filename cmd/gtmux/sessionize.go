@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -79,6 +80,12 @@ var sessionizeCmd = &cobra.Command{
 	},
 }
 
+// claudeSession represents the structure of a Claude session from grove-hooks
+type claudeSession struct {
+	Status           string `json:"status"`
+	WorkingDirectory string `json:"working_directory"`
+}
+
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects     []manager.DiscoveredProject
@@ -90,6 +97,8 @@ type sessionizeModel struct {
 	manager      *tmux.Manager
 	keyMap       map[string]string // path -> key mapping
 	sessionMap   map[string]bool   // path -> session exists mapping
+	claudeStatusMap map[string]string // path -> claude session status mapping
+	hasGroveHooks bool             // whether grove-hooks is available
 	currentSession string          // name of the current tmux session
 	width        int
 	height       int
@@ -135,6 +144,39 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	sessionMap := make(map[string]bool)
 	// We'll populate this lazily as needed to avoid too many tmux calls at startup
 
+	// Fetch Claude session statuses
+	claudeStatusMap := make(map[string]string)
+	hasGroveHooks := false
+	
+	// Execute `grove-hooks sessions list --json`
+	// Try full path first to ensure it works in tmux popups
+	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
+	var cmd *exec.Cmd
+	if _, err := os.Stat(groveHooksPath); err == nil {
+		cmd = exec.Command(groveHooksPath, "sessions", "list", "--json")
+	} else {
+		// Fallback to PATH lookup
+		cmd = exec.Command("grove-hooks", "sessions", "list", "--json")
+	}
+	
+	output, err := cmd.Output()
+	if err == nil {
+		hasGroveHooks = true
+		var claudeSessions []claudeSession
+		if json.Unmarshal(output, &claudeSessions) == nil {
+			for _, s := range claudeSessions {
+				if s.WorkingDirectory != "" {
+					// Normalize the path for consistent map keys
+					absPath, err := filepath.Abs(expandPath(s.WorkingDirectory))
+					if err == nil {
+						claudeStatusMap[filepath.Clean(absPath)] = s.Status
+					}
+				}
+			}
+		}
+	}
+	// If grove-hooks is not available, we'll hide the column entirely
+
 	// Get current session name if we're in tmux
 	currentSession := ""
 	if os.Getenv("TMUX") != "" {
@@ -155,6 +197,8 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		manager:       mgr,
 		keyMap:        keyMap,
 		sessionMap:    sessionMap,
+		claudeStatusMap: claudeStatusMap,
+		hasGroveHooks: hasGroveHooks,
 		currentSession: currentSession,
 		cursor:        0,
 		editingKeys:   false,
@@ -564,6 +608,37 @@ func (m sessionizeModel) View() string {
 		// Check if session exists for this project
 		sessionExists := m.getSessionExists(project.Path)
 		
+		// Get Claude session status if grove-hooks is available
+		var claudeStatusStyled string
+		if m.hasGroveHooks {
+			claudeStatus := ""
+			if status, found := m.claudeStatusMap[cleanPath]; found {
+				claudeStatus = status
+			} else {
+				// Try case-insensitive match on macOS
+				for path, status := range m.claudeStatusMap {
+					if strings.EqualFold(path, cleanPath) {
+						claudeStatus = status
+						break
+					}
+				}
+			}
+			
+			// Style the claude status
+			switch claudeStatus {
+			case "running":
+				claudeStatusStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Render("▶") // Green play symbol
+			case "idle":
+				claudeStatusStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaa00")).Render("⏸") // Orange pause symbol
+			case "completed":
+				claudeStatusStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4")).Render("✓") // Blue checkmark
+			case "failed", "error":
+				claudeStatusStyled = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4444")).Render("✗") // Red X
+			default:
+				claudeStatusStyled = " " // Empty space for no status
+			}
+		}
+		
 		// Prepare prefix for worktrees
 		prefix := ""
 		displayName := project.Name
@@ -611,13 +686,24 @@ func (m sessionizeModel) View() string {
 				}
 			}
 			
-			b.WriteString(fmt.Sprintf("%s%s%s %s%s  %s", 
-				indicator,
-				keyIndicator,
-				sessionIndicator,
-				prefix,
-				nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
-				pathStyle.Render(project.Path)))
+			if m.hasGroveHooks {
+				b.WriteString(fmt.Sprintf("%s%s%s %s %s%s  %s", 
+					indicator,
+					keyIndicator,
+					sessionIndicator,
+					claudeStatusStyled,
+					prefix,
+					nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+					pathStyle.Render(project.Path)))
+			} else {
+				b.WriteString(fmt.Sprintf("%s%s%s %s%s  %s", 
+					indicator,
+					keyIndicator,
+					sessionIndicator,
+					prefix,
+					nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+					pathStyle.Render(project.Path)))
+			}
 		} else {
 			// Normal line with colored name
 			nameStyle := lipgloss.NewStyle().
@@ -653,12 +739,22 @@ func (m sessionizeModel) View() string {
 				}
 			}
 			
-			b.WriteString(fmt.Sprintf("  %s%s %s%s  %s", 
-				keyIndicator,
-				sessionIndicator,
-				prefix,
-				nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
-				pathStyle.Render(project.Path)))
+			if m.hasGroveHooks {
+				b.WriteString(fmt.Sprintf("  %s%s %s %s%s  %s", 
+					keyIndicator,
+					sessionIndicator,
+					claudeStatusStyled,
+					prefix,
+					nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+					pathStyle.Render(project.Path)))
+			} else {
+				b.WriteString(fmt.Sprintf("  %s%s %s%s  %s", 
+					keyIndicator,
+					sessionIndicator,
+					prefix,
+					nameStyle.Render(fmt.Sprintf("%-26s", displayName)),
+					pathStyle.Render(project.Path)))
+			}
 		}
 		b.WriteString("\n")
 	}
