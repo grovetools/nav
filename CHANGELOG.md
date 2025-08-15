@@ -1,3 +1,37 @@
+## v0.0.4 (2025-08-15)
+
+### Features
+
+* improve sessionizer key mapping UX and Claude session filtering
+* enhance Claude session integration in sessionizer
+* add Claude session status indicator to sessionizer
+* key to copy paths from session list
+* add session management features to gmux sz
+* implement automatic Git worktree discovery and hierarchical display
+* add session status indicator to gmux sz command
+* add sessionize command with smart features and key management
+* add compact style for gmux list and improve key management UX
+* add comprehensive key management commands with interactive UI
+* **tmux:** add window management methods
+
+### Bug Fixes
+
+* use configured repository name in session list and update tests to use gmux
+* change binary to gmux
+
+### Chores
+
+* bump deps
+* fix linting issues in sessionizer
+
+### Tests
+
+* fix E2E tests to match current list command output
+
+### Continuous Integration
+
+* disable Git LFS to fix dependency download issues
+
 ## v0.0.3 (2025-08-13)
 
 ### Features
