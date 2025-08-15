@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -258,6 +259,31 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.filtered) {
 				m.editingKeys = true
 				m.keyCursor = 0
+			}
+		case tea.KeyCtrlY:
+			// Yank (copy) the selected project path
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				// Use pbcopy on macOS, xclip on Linux
+				var cmd *exec.Cmd
+				if runtime.GOOS == "darwin" {
+					cmd = exec.Command("pbcopy")
+				} else {
+					// Try xclip first, then xsel
+					if _, err := exec.LookPath("xclip"); err == nil {
+						cmd = exec.Command("xclip", "-selection", "clipboard")
+					} else if _, err := exec.LookPath("xsel"); err == nil {
+						cmd = exec.Command("xsel", "--clipboard", "--input")
+					} else {
+						// No clipboard utility found
+						return m, nil
+					}
+				}
+				
+				if cmd != nil {
+					cmd.Stdin = strings.NewReader(project.Path)
+					cmd.Run()
+				}
 			}
 		case tea.KeyCtrlD:
 			// Close the selected session
@@ -648,7 +674,7 @@ func (m sessionizeModel) View() string {
 		b.WriteString("\n" + dimStyle.Render("No matching projects"))
 	}
 	
-	b.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • ctrl+e: edit key • ctrl+d: close session • esc: quit"))
+	b.WriteString("\n" + helpStyle.Render("↑/↓: navigate • enter: select • ctrl+e: edit key • ctrl+y: copy path • ctrl+d: close • esc: quit"))
 	
 	// Display search paths at the very bottom
 	if len(m.searchPaths) > 0 {
