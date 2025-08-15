@@ -33,10 +33,10 @@ func cleanupSession(sessionName string) {
 	command.New("tmux", "kill-session", "-t", sessionName).Run()
 }
 
-// GtmuxSessionExistsScenario tests the 'gtmux session exists' command
-func GtmuxSessionExistsScenario() *harness.Scenario {
+// GmuxSessionExistsScenario tests the 'gmux session exists' command
+func GmuxSessionExistsScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-session-exists",
+		Name: "gmux-session-exists",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session exists functionality", func(ctx *harness.Context) error {
@@ -57,12 +57,12 @@ func GtmuxSessionExistsScenario() *harness.Scenario {
 				defer cleanupSession(sessionName)
 
 				// Check session exists
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gtmuxBinary, "session", "exists", sessionName)
+				cmd = command.New(gmuxBinary, "session", "exists", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -75,7 +75,7 @@ func GtmuxSessionExistsScenario() *harness.Scenario {
 				}
 
 				// Check non-existent session
-				cmd = command.New(gtmuxBinary, "session", "exists", "non-existent-session-12345")
+				cmd = command.New(gmuxBinary, "session", "exists", "non-existent-session-12345")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -93,10 +93,10 @@ func GtmuxSessionExistsScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxSessionKillScenario tests the 'gtmux session kill' command
-func GtmuxSessionKillScenario() *harness.Scenario {
+// GmuxSessionKillScenario tests the 'gmux session kill' command
+func GmuxSessionKillScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-session-kill",
+		Name: "gmux-session-kill",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session kill functionality", func(ctx *harness.Context) error {
@@ -113,13 +113,13 @@ func GtmuxSessionKillScenario() *harness.Scenario {
 					return fmt.Errorf("failed to create test session: %s", result.Stderr)
 				}
 
-				// Kill using gtmux
-				gtmuxBinary, err := FindProjectBinary()
+				// Kill using gmux
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gtmuxBinary, "session", "kill", sessionName)
+				cmd = command.New(gmuxBinary, "session", "kill", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -144,10 +144,10 @@ func GtmuxSessionKillScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxSessionCaptureScenario tests the 'gtmux session capture' command
-func GtmuxSessionCaptureScenario() *harness.Scenario {
+// GmuxSessionCaptureScenario tests the 'gmux session capture' command
+func GmuxSessionCaptureScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-session-capture",
+		Name: "gmux-session-capture",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session capture functionality", func(ctx *harness.Context) error {
@@ -172,13 +172,13 @@ func GtmuxSessionCaptureScenario() *harness.Scenario {
 				// Wait a bit for content to appear
 				time.Sleep(200 * time.Millisecond)
 
-				// Capture using gtmux
-				gtmuxBinary, err := FindProjectBinary()
+				// Capture using gmux
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gtmuxBinary, "session", "capture", sessionName)
+				cmd = command.New(gmuxBinary, "session", "capture", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -196,10 +196,10 @@ func GtmuxSessionCaptureScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxLaunchScenario tests the 'gtmux launch' command
-func GtmuxLaunchScenario() *harness.Scenario {
+// GmuxLaunchScenario tests the 'gmux launch' command
+func GmuxLaunchScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-launch",
+		Name: "gmux-launch",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test simple session launch", func(ctx *harness.Context) error {
@@ -209,13 +209,13 @@ func GtmuxLaunchScenario() *harness.Scenario {
 
 				sessionName := fmt.Sprintf("test-launch-%d", time.Now().Unix())
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Launch session
-				cmd := command.New(gtmuxBinary, "launch", sessionName)
+				cmd := command.New(gmuxBinary, "launch", sessionName)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -246,13 +246,13 @@ func GtmuxLaunchScenario() *harness.Scenario {
 
 				sessionName := fmt.Sprintf("test-multipane-%d", time.Now().Unix())
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Launch session with 3 panes
-				cmd := command.New(gtmuxBinary, "launch", sessionName,
+				cmd := command.New(gmuxBinary, "launch", sessionName,
 					"--window-name", "dev",
 					"--pane", "echo 'Pane 1'",
 					"--pane", "echo 'Pane 2'",
@@ -288,10 +288,10 @@ func GtmuxLaunchScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxWaitScenario tests the 'gtmux wait' command
-func GtmuxWaitScenario() *harness.Scenario {
+// GmuxWaitScenario tests the 'gmux wait' command
+func GmuxWaitScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-wait",
+		Name: "gmux-wait",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test wait for session close", func(ctx *harness.Context) error {
@@ -308,14 +308,14 @@ func GtmuxWaitScenario() *harness.Scenario {
 					return fmt.Errorf("failed to create test session: %s", result.Stderr)
 				}
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Start waiting
 				start := time.Now()
-				cmd = command.New(gtmuxBinary, "wait", sessionName, "--poll-interval", "200ms")
+				cmd = command.New(gmuxBinary, "wait", sessionName, "--poll-interval", "200ms")
 				result = cmd.Run()
 				duration := time.Since(start)
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -352,13 +352,13 @@ func GtmuxWaitScenario() *harness.Scenario {
 				// Cleanup
 				defer cleanupSession(sessionName)
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Wait with short timeout
-				cmd = command.New(gtmuxBinary, "wait", sessionName, "--timeout", "500ms", "--poll-interval", "100ms")
+				cmd = command.New(gmuxBinary, "wait", sessionName, "--timeout", "500ms", "--poll-interval", "100ms")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -377,10 +377,10 @@ func GtmuxWaitScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxStartScenario tests the 'gtmux start' command
-func GtmuxStartScenario() *harness.Scenario {
+// GmuxStartScenario tests the 'gmux start' command
+func GmuxStartScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-start",
+		Name: "gmux-start",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Setup mock tmux config", func(ctx *harness.Context) error {
@@ -394,7 +394,7 @@ func GtmuxStartScenario() *harness.Scenario {
 					return nil
 				}
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -402,7 +402,7 @@ func GtmuxStartScenario() *harness.Scenario {
 				configDir := ctx.GetString("config_dir")
 
 				// Start session 'a' which has a path configured
-				cmd := command.New(gtmuxBinary, "start", "a", "--config-dir", configDir)
+				cmd := command.New(gmuxBinary, "start", "a", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -425,7 +425,7 @@ func GtmuxStartScenario() *harness.Scenario {
 				}
 
 				// Try to start 'a' again (should report it already exists)
-				cmd = command.New(gtmuxBinary, "start", "a", "--config-dir", configDir)
+				cmd = command.New(gmuxBinary, "start", "a", "--config-dir", configDir)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -444,7 +444,7 @@ func GtmuxStartScenario() *harness.Scenario {
 					return nil
 				}
 
-				gtmuxBinary, err := FindProjectBinary()
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -452,7 +452,7 @@ func GtmuxStartScenario() *harness.Scenario {
 				configDir := ctx.GetString("config_dir")
 
 				// Try to start a non-configured key
-				cmd := command.New(gtmuxBinary, "start", "z", "--config-dir", configDir)
+				cmd := command.New(gmuxBinary, "start", "z", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 

@@ -47,17 +47,14 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 		// Style the key
 		styledKey := keyStyle.Render(s.Key)
 
-		// Extract repository name from path
+		// Use configured repository name
 		var repo string
-		if path == "" {
-			// Leave empty for unconfigured sessions
-			path = ""
-			repo = ""
-		} else {
+		if s.Repository != "" {
+			repo = repoStyle.Render(s.Repository)
+		}
+		
+		if path != "" {
 			hasConfiguredSessions = true
-			// Extract last component of path as repo name
-			repo = filepath.Base(path)
-			repo = repoStyle.Render(repo)
 			path = pathStyle.Render(path)
 		}
 

@@ -55,24 +55,24 @@ sessions:
 	return nil
 }
 
-// GtmuxListScenario tests the 'gtmux list' command
-func GtmuxListScenario() *harness.Scenario {
+// GmuxListScenario tests the 'gmux list' command
+func GmuxListScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-list-command",
+		Name: "gmux-list-command",
 		Steps: []harness.Step{
 			harness.NewStep("Setup mock tmux config", setupMockTmuxConfig),
-			harness.NewStep("Run 'gtmux list'", func(ctx *harness.Context) error {
-				gtmuxBinary, err := FindProjectBinary()
+			harness.NewStep("Run 'gmux list'", func(ctx *harness.Context) error {
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				configDir := ctx.GetString("config_dir")
-				cmd := command.New(gtmuxBinary, "list", "--config-dir", configDir)
+				cmd := command.New(gmuxBinary, "list", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if err := assert.Equal(0, result.ExitCode, "gtmux list should exit successfully"); err != nil {
+				if err := assert.Equal(0, result.ExitCode, "gmux list should exit successfully"); err != nil {
 					return err
 				}
 
@@ -106,10 +106,10 @@ func GtmuxListScenario() *harness.Scenario {
 	}
 }
 
-// GtmuxStatusScenario tests the 'gtmux status' command
-func GtmuxStatusScenario() *harness.Scenario {
+// GmuxStatusScenario tests the 'gmux status' command
+func GmuxStatusScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gtmux-status-command",
+		Name: "gmux-status-command",
 		Steps: []harness.Step{
 			harness.NewStep("Setup mock tmux config with git repo", func(ctx *harness.Context) error {
 				// Setup basic config
@@ -132,18 +132,18 @@ func GtmuxStatusScenario() *harness.Scenario {
 
 				return nil
 			}),
-			harness.NewStep("Run 'gtmux status'", func(ctx *harness.Context) error {
-				gtmuxBinary, err := FindProjectBinary()
+			harness.NewStep("Run 'gmux status'", func(ctx *harness.Context) error {
+				gmuxBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				configDir := ctx.GetString("config_dir")
-				cmd := command.New(gtmuxBinary, "status", "--config-dir", configDir)
+				cmd := command.New(gmuxBinary, "status", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if err := assert.Equal(0, result.ExitCode, "gtmux status should exit successfully"); err != nil {
+				if err := assert.Equal(0, result.ExitCode, "gmux status should exit successfully"); err != nil {
 					return err
 				}
 
