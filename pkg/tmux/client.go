@@ -37,3 +37,4 @@ func (c *Client) run(ctx context.Context, args ...string) (string, error) {
 
 	return string(output), nil
 }
+

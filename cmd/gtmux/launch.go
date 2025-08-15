@@ -46,7 +46,7 @@ Examples:
 		var paneOpts []tmux.PaneOptions
 		for _, paneStr := range launchPanes {
 			pane := tmux.PaneOptions{}
-			
+
 			// Check for @workdir syntax
 			if idx := strings.LastIndex(paneStr, "@"); idx != -1 {
 				pane.Command = paneStr[:idx]
@@ -54,7 +54,7 @@ Examples:
 			} else {
 				pane.Command = paneStr
 			}
-			
+
 			paneOpts = append(paneOpts, pane)
 		}
 
@@ -71,11 +71,11 @@ Examples:
 		}
 
 		fmt.Printf("Session '%s' launched successfully\n", sessionName)
-		
+
 		// Show how to attach
 		fmt.Printf("\nTo attach to this session, run:\n")
 		fmt.Printf("  tmux attach-session -t %s\n", sessionName)
-		
+
 		return nil
 	},
 }

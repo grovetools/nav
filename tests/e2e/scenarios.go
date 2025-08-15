@@ -26,7 +26,7 @@ func setupMockTmuxConfig(ctx *harness.Context) error {
 	if err := git.Init(repoDir); err != nil {
 		return fmt.Errorf("failed to init git repo: %w", err)
 	}
-	
+
 	// Set git config to avoid errors
 	if err := git.SetupTestConfig(repoDir); err != nil {
 		return fmt.Errorf("failed to setup git config: %w", err)
@@ -47,11 +47,11 @@ sessions:
     repo: test-repo-c
     description: Test repository C (path not set)
 `, repoDir)
-	
+
 	if err := fs.WriteString(filepath.Join(configDir, "tmux-sessions.yaml"), sessionsYAML); err != nil {
 		return fmt.Errorf("failed to write tmux-sessions.yaml: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -66,16 +66,16 @@ func GtmuxListScenario() *harness.Scenario {
 				if err != nil {
 					return err
 				}
-				
+
 				configDir := ctx.GetString("config_dir")
 				cmd := command.New(gtmuxBinary, "list", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
-				
+
 				if err := assert.Equal(0, result.ExitCode, "gtmux list should exit successfully"); err != nil {
 					return err
 				}
-				
+
 				// Check output contains expected sessions
 				if err := assert.Contains(result.Stdout, "test-repo-a", "Should list test-repo-a"); err != nil {
 					return err
@@ -86,12 +86,12 @@ func GtmuxListScenario() *harness.Scenario {
 				if err := assert.Contains(result.Stdout, "test-repo-c", "Should list test-repo-c"); err != nil {
 					return err
 				}
-				
+
 				// Check descriptions are shown
 				if err := assert.Contains(result.Stdout, "Test repository A", "Should show description for repo A"); err != nil {
 					return err
 				}
-				
+
 				// Check path handling
 				if err := assert.Contains(result.Stdout, "/non/existent/path", "Should show configured path for repo B"); err != nil {
 					return err
@@ -99,7 +99,7 @@ func GtmuxListScenario() *harness.Scenario {
 				if !strings.Contains(result.Stdout, "test-repo-c") || !strings.Contains(result.Stdout, "<not configured>") {
 					return fmt.Errorf("Should show <not configured> for repo C which has no path")
 				}
-				
+
 				return nil
 			}),
 		},
@@ -116,20 +116,20 @@ func GtmuxStatusScenario() *harness.Scenario {
 				if err := setupMockTmuxConfig(ctx); err != nil {
 					return err
 				}
-				
+
 				// Add a file to the git repo to create some status
 				repoDir := ctx.Dir("repo")
 				testFile := filepath.Join(repoDir, "test.txt")
 				if err := fs.WriteString(testFile, "test content"); err != nil {
 					return err
 				}
-				
+
 				// Stage the file
 				cmd := command.New("git", "add", "test.txt").Dir(repoDir)
 				if result := cmd.Run(); result.Error != nil {
 					return fmt.Errorf("failed to stage file: %w", result.Error)
 				}
-				
+
 				return nil
 			}),
 			harness.NewStep("Run 'gtmux status'", func(ctx *harness.Context) error {
@@ -137,21 +137,21 @@ func GtmuxStatusScenario() *harness.Scenario {
 				if err != nil {
 					return err
 				}
-				
+
 				configDir := ctx.GetString("config_dir")
 				cmd := command.New(gtmuxBinary, "status", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
-				
+
 				if err := assert.Equal(0, result.ExitCode, "gtmux status should exit successfully"); err != nil {
 					return err
 				}
-				
+
 				// Check that it shows repository status
 				if err := assert.Contains(result.Stdout, "test-repo-a", "Should show test-repo-a in status"); err != nil {
 					return err
 				}
-				
+
 				// The status should indicate changes (staged file)
 				// Note: The exact status text depends on the git implementation
 				output := result.Stdout
@@ -164,7 +164,7 @@ func GtmuxStatusScenario() *harness.Scenario {
 						return err
 					}
 				}
-				
+
 				return nil
 			}),
 		},

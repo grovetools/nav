@@ -40,13 +40,13 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 	// Build rows
 	var rows [][]string
 	hasConfiguredSessions := false
-	
+
 	for _, s := range sessions {
 		path := s.Path
-		
+
 		// Style the key
 		styledKey := keyStyle.Render(s.Key)
-		
+
 		// Extract repository name from path
 		var repo string
 		if path == "" {
@@ -60,7 +60,7 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 			repo = repoStyle.Render(repo)
 			path = pathStyle.Render(path)
 		}
-		
+
 		rows = append(rows, []string{styledKey, repo, path})
 	}
 
@@ -149,7 +149,7 @@ var keyUpdateCmd = &cobra.Command{
 			displaySessionsTable(sessions)
 			fmt.Println()
 			fmt.Print("Enter the key of the session to update: ")
-			
+
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
 			if err != nil {
@@ -272,7 +272,7 @@ var keyEditCmd = &cobra.Command{
 			displaySessionsTable(sessions)
 			fmt.Println()
 			fmt.Print("Enter the key of the session to edit: ")
-			
+
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
 			if err != nil {
@@ -350,7 +350,7 @@ var keyAddCmd = &cobra.Command{
 	Long:  `Discover projects from configured search paths and quickly map them to available keys.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := tmux.NewManager(configDir, sessionsFile)
-		
+
 		// Get current sessions to see which keys are available
 		sessions, err := mgr.GetSessions()
 		if err != nil {
@@ -418,7 +418,7 @@ var keyAddCmd = &cobra.Command{
 		// Show available projects in a table
 		fmt.Println("Available projects from search paths:")
 		fmt.Println()
-		
+
 		// Build project table
 		re := lipgloss.NewRenderer(os.Stdout)
 		headerStyle := re.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Padding(0, 1)
@@ -458,7 +458,7 @@ var keyAddCmd = &cobra.Command{
 			return fmt.Errorf("failed to read input: %w", err)
 		}
 		input = strings.TrimSpace(input)
-		
+
 		if input == "" {
 			fmt.Println("Cancelled")
 			return nil
@@ -470,18 +470,18 @@ var keyAddCmd = &cobra.Command{
 		}
 
 		selectedProject := availableProjects[projectIndex-1]
-		
+
 		// Show available keys
 		fmt.Printf("\nSelected project: %s\n", selectedProject.Name)
 		fmt.Printf("Available keys: %s\n", strings.Join(freeKeys, ", "))
 		fmt.Print("\nEnter key to assign (or press Enter to cancel): ")
-		
+
 		keyInput, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read input: %w", err)
 		}
 		keyInput = strings.TrimSpace(keyInput)
-		
+
 		if keyInput == "" {
 			fmt.Println("Cancelled")
 			return nil
@@ -558,30 +558,30 @@ var keyUnmapCmd = &cobra.Command{
 			// Interactive mode: show mapped sessions
 			fmt.Println("Mapped sessions:")
 			fmt.Println()
-			
+
 			var mappedSessions []models.TmuxSession
 			for _, s := range sessions {
 				if s.Path != "" {
 					mappedSessions = append(mappedSessions, s)
 				}
 			}
-			
+
 			if len(mappedSessions) == 0 {
 				fmt.Println("No sessions are currently mapped")
 				return nil
 			}
-			
+
 			displaySessionsTable(mappedSessions)
 			fmt.Println()
 			fmt.Print("Enter the key to unmap (or press Enter to cancel): ")
-			
+
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("failed to read input: %w", err)
 			}
 			targetKey = strings.TrimSpace(input)
-			
+
 			if targetKey == "" {
 				fmt.Println("Cancelled")
 				return nil
@@ -596,26 +596,26 @@ var keyUnmapCmd = &cobra.Command{
 				if s.Path == "" {
 					return fmt.Errorf("key '%s' is not mapped", targetKey)
 				}
-				
+
 				// Clear the mapping
 				sessions[i].Path = ""
 				sessions[i].Repository = ""
 				sessions[i].Description = ""
-				
+
 				// Update sessions
 				err = mgr.UpdateSessions(sessions)
 				if err != nil {
 					return fmt.Errorf("failed to update sessions: %w", err)
 				}
-				
+
 				fmt.Printf("Unmapped key '%s'\n", targetKey)
-				
+
 				// Regenerate bindings
 				fmt.Println("Regenerating tmux bindings...")
 				if err := mgr.RegenerateBindings(); err != nil {
 					return fmt.Errorf("failed to regenerate bindings: %w", err)
 				}
-				
+
 				// Try to reload tmux config
 				if os.Getenv("TMUX") != "" {
 					cmd := exec.Command("tmux", "source-file", expandPath("~/.tmux.conf"))
@@ -630,11 +630,11 @@ var keyUnmapCmd = &cobra.Command{
 				break
 			}
 		}
-		
+
 		if !found {
 			return fmt.Errorf("key '%s' not found", targetKey)
 		}
-		
+
 		return nil
 	},
 }

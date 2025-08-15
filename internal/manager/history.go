@@ -23,7 +23,7 @@ type AccessHistory struct {
 // LoadAccessHistory loads the access history from disk
 func LoadAccessHistory(configDir string) (*AccessHistory, error) {
 	historyFile := filepath.Join(configDir, "gmux", "access-history.json")
-	
+
 	data, err := os.ReadFile(historyFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -34,16 +34,16 @@ func LoadAccessHistory(configDir string) (*AccessHistory, error) {
 		}
 		return nil, err
 	}
-	
+
 	var history AccessHistory
 	if err := json.Unmarshal(data, &history); err != nil {
 		return nil, err
 	}
-	
+
 	if history.Projects == nil {
 		history.Projects = make(map[string]*ProjectAccess)
 	}
-	
+
 	return &history, nil
 }
 
@@ -53,14 +53,14 @@ func (h *AccessHistory) Save(configDir string) error {
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
 		return err
 	}
-	
+
 	historyFile := filepath.Join(historyDir, "access-history.json")
-	
+
 	data, err := json.MarshalIndent(h, "", "  ")
 	if err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(historyFile, data, 0644)
 }
 
@@ -69,7 +69,7 @@ func (h *AccessHistory) RecordAccess(path string) {
 	if h.Projects == nil {
 		h.Projects = make(map[string]*ProjectAccess)
 	}
-	
+
 	if access, exists := h.Projects[path]; exists {
 		access.LastAccessed = time.Now()
 		access.AccessCount++
@@ -88,7 +88,7 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 	// Create a copy to avoid modifying the original
 	sorted := make([]DiscoveredProject, len(projects))
 	copy(sorted, projects)
-	
+
 	// Helper function to get the group's last access time
 	getGroupAccessTime := func(p DiscoveredProject) *time.Time {
 		// For worktrees, use parent's access time
@@ -96,26 +96,26 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 		if p.IsWorktree && p.ParentPath != "" {
 			pathToCheck = p.ParentPath
 		}
-		
+
 		if access, exists := h.Projects[pathToCheck]; exists {
 			return &access.LastAccessed
 		}
 		return nil
 	}
-	
+
 	sort.Slice(sorted, func(i, j int) bool {
 		projectI := sorted[i]
 		projectJ := sorted[j]
-		
+
 		// Get group access times
 		accessTimeI := getGroupAccessTime(projectI)
 		accessTimeJ := getGroupAccessTime(projectJ)
-		
+
 		// If neither group has been accessed, maintain original order
 		if accessTimeI == nil && accessTimeJ == nil {
 			return i < j
 		}
-		
+
 		// If only one group has been accessed, it comes first
 		if accessTimeI != nil && accessTimeJ == nil {
 			return true
@@ -123,13 +123,13 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 		if accessTimeI == nil && accessTimeJ != nil {
 			return false
 		}
-		
+
 		// Both groups have been accessed
 		// First, compare group access times
 		if !accessTimeI.Equal(*accessTimeJ) {
 			return accessTimeI.After(*accessTimeJ)
 		}
-		
+
 		// Same group access time - check if they're in the same group
 		groupI := projectI.Path
 		if projectI.IsWorktree && projectI.ParentPath != "" {
@@ -139,7 +139,7 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 		if projectJ.IsWorktree && projectJ.ParentPath != "" {
 			groupJ = projectJ.ParentPath
 		}
-		
+
 		if groupI == groupJ {
 			// Same group - parent repos come before worktrees
 			if projectI.IsWorktree != projectJ.IsWorktree {
@@ -148,11 +148,11 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 			// Both are worktrees or both are repos - sort alphabetically by name
 			return projectI.Name < projectJ.Name
 		}
-		
+
 		// Different groups with same access time - maintain original order
 		return i < j
 	})
-	
+
 	return sorted
 }
 

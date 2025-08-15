@@ -11,10 +11,10 @@ import (
 )
 
 var sessionizeAddCmd = &cobra.Command{
-	Use:     "add [path]",
-	Short:   "Add an explicit project to sessionizer",
-	Long:    `Add a specific project path to the sessionizer that won't be discovered automatically through search paths.`,
-	Args:    cobra.MaximumNArgs(1),
+	Use:   "add [path]",
+	Short: "Add an explicit project to sessionizer",
+	Long:  `Add a specific project path to the sessionizer that won't be discovered automatically through search paths.`,
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Get the path to add
 		var projectPath string
@@ -44,7 +44,7 @@ var sessionizeAddCmd = &cobra.Command{
 
 		// Find the config file
 		configFile := findConfigFile()
-		
+
 		// Load existing config
 		var config manager.ProjectSearchConfig
 		data, err := os.ReadFile(configFile)
@@ -90,10 +90,10 @@ var sessionizeAddCmd = &cobra.Command{
 }
 
 var sessionizeRemoveCmd = &cobra.Command{
-	Use:     "remove [path]",
-	Short:   "Remove an explicit project from sessionizer",
-	Long:    `Remove a specific project from the explicit projects list.`,
-	Args:    cobra.MaximumNArgs(1),
+	Use:   "remove [path]",
+	Short: "Remove an explicit project from sessionizer",
+	Long:  `Remove a specific project from the explicit projects list.`,
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Get the path to remove
 		var projectPath string
@@ -117,14 +117,14 @@ var sessionizeRemoveCmd = &cobra.Command{
 
 		// Find the config file
 		configFile := findConfigFile()
-		
+
 		// Load existing config
 		var config manager.ProjectSearchConfig
 		data, err := os.ReadFile(configFile)
 		if err != nil {
 			return fmt.Errorf("failed to read config file: %w", err)
 		}
-		
+
 		if err := yaml.Unmarshal(data, &config); err != nil {
 			return fmt.Errorf("failed to parse config file: %w", err)
 		}
@@ -162,13 +162,13 @@ func findConfigFile() string {
 		expandPath("~/.config/tmux/project-search-paths.yaml"),
 		expandPath("~/.config/grove/project-search-paths.yaml"),
 	}
-	
+
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			return path
 		}
 	}
-	
+
 	// Default to tmux config location
 	return expandPath("~/.config/tmux/project-search-paths.yaml")
 }

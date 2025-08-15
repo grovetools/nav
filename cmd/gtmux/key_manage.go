@@ -38,7 +38,7 @@ var keyManageCmd = &cobra.Command{
 	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, e/enter to map with fuzzy search, and space to unmap. Changes are auto-saved on exit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr := tmux.NewManager(configDir, sessionsFile)
-		
+
 		// Get current sessions
 		sessions, err := mgr.GetSessions()
 		if err != nil {
@@ -52,7 +52,7 @@ var keyManageCmd = &cobra.Command{
 
 		// Create the interactive model
 		m := newManageModel(sessions, mgr)
-		
+
 		// Run the interactive program
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
@@ -66,30 +66,30 @@ var keyManageCmd = &cobra.Command{
 // Styles
 var (
 	titleStyle = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#00ff00")).
-		MarginBottom(1)
+			Bold(true).
+			Foreground(lipgloss.Color("#00ff00")).
+			MarginBottom(1)
 
 	selectedStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#00ff00")).
-		Bold(true)
+			Foreground(lipgloss.Color("#00ff00")).
+			Bold(true)
 
 	dimStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#808080"))
-		
+			Foreground(lipgloss.Color("#808080"))
+
 	helpStyle = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#626262"))
+			Foreground(lipgloss.Color("#626262"))
 )
 
 // Model for the interactive session manager
 type manageModel struct {
-	table        table.Model
-	sessions     []models.TmuxSession
-	manager      *tmux.Manager
-	keys         keyMap
-	help         help.Model
-	quitting     bool
-	message      string
+	table    table.Model
+	sessions []models.TmuxSession
+	manager  *tmux.Manager
+	keys     keyMap
+	help     help.Model
+	quitting bool
+	message  string
 	// Fuzzy search state
 	searching    bool
 	searchInput  textinput.Model
@@ -177,12 +177,12 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 	for _, s := range sessions {
 		repo := ""
 		path := ""
-		
+
 		if s.Path != "" {
 			repo = filepath.Base(s.Path)
 			path = s.Path
 		}
-		
+
 		rows = append(rows, table.Row{
 			s.Key,
 			repo,
@@ -219,12 +219,12 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 
 	// Get available projects
 	projects, _ := mgr.GetAvailableProjects()
-	
+
 	// Create list for projects with custom delegate
 	delegate := list.NewDefaultDelegate()
 	delegate.SetHeight(2)
 	delegate.SetSpacing(0)
-	
+
 	items := make([]list.Item, 0)
 	l := list.New(items, delegate, 60, 15)
 	l.Title = "Select a project"
@@ -255,19 +255,19 @@ func (m manageModel) rebuildTable() table.Model {
 	for _, s := range m.sessions {
 		repo := ""
 		path := ""
-		
+
 		if s.Path != "" {
 			repo = filepath.Base(s.Path)
 			path = s.Path
 		}
-		
+
 		rows = append(rows, table.Row{
 			s.Key,
 			repo,
 			path,
 		})
 	}
-	
+
 	// Update the table rows
 	newTable := m.table
 	newTable.SetRows(rows)
@@ -306,16 +306,16 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		
+
 		// Update search input
 		var inputCmd tea.Cmd
 		m.searchInput, inputCmd = m.searchInput.Update(msg)
 		cmds = append(cmds, inputCmd)
-		
+
 		// Filter projects based on search
 		searchTerm := strings.ToLower(m.searchInput.Value())
 		items := make([]list.Item, 0)
-		
+
 		// Get existing paths to exclude
 		existingPaths := make(map[string]bool)
 		for _, s := range m.sessions {
@@ -324,30 +324,30 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				existingPaths[absPath] = true
 			}
 		}
-		
+
 		for _, p := range m.projects {
 			absPath, _ := filepath.Abs(expandPath(p.Path))
 			if existingPaths[absPath] {
 				continue // Skip already mapped projects
 			}
-			
-			if searchTerm == "" || 
-			   strings.Contains(strings.ToLower(p.Name), searchTerm) ||
-			   strings.Contains(strings.ToLower(p.Path), searchTerm) {
+
+			if searchTerm == "" ||
+				strings.Contains(strings.ToLower(p.Name), searchTerm) ||
+				strings.Contains(strings.ToLower(p.Path), searchTerm) {
 				items = append(items, projectItem{path: p.Path, name: p.Name})
 			}
 		}
-		
+
 		m.projectList.SetItems(items)
-		
+
 		// Update list size and items
 		m.projectList.SetWidth(min(80, m.help.Width-4))
 		m.projectList.SetHeight(min(20, len(items)+2))
-		
+
 		var listCmd tea.Cmd
 		m.projectList, listCmd = m.projectList.Update(msg)
 		cmds = append(cmds, listCmd)
-		
+
 		return m, tea.Batch(cmds...)
 	}
 
@@ -365,7 +365,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
-			
+
 			// Regenerate bindings
 			if err := m.manager.RegenerateBindings(); err != nil {
 				m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
@@ -377,7 +377,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = "Changes saved and tmux config reloaded!"
 				}
 			}
-			
+
 			m.quitting = true
 			return m, tea.Quit
 
@@ -408,7 +408,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedKey = m.sessions[cursor].Key
 				m.searching = true
 				m.searchInput.Focus()
-				
+
 				// Initialize project list
 				items := make([]list.Item, 0)
 				existingPaths := make(map[string]bool)
@@ -418,7 +418,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						existingPaths[absPath] = true
 					}
 				}
-				
+
 				for _, p := range m.projects {
 					absPath, _ := filepath.Abs(expandPath(p.Path))
 					if existingPaths[absPath] {
@@ -429,7 +429,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.projectList.SetItems(items)
 				m.projectList.SetWidth(60)
 				m.projectList.SetHeight(min(15, len(items)+2))
-				
+
 				return m, textinput.Blink
 			}
 
@@ -443,23 +443,23 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Create session name from path
 						sessionName := filepath.Base(session.Path)
 						sessionName = strings.ReplaceAll(sessionName, ".", "_")
-						
+
 						// Create tmux client
 						client, err := tmux.NewClient()
 						if err != nil {
 							m.message = fmt.Sprintf("Failed to create tmux client: %v", err)
 							return m, nil
 						}
-						
+
 						ctx := context.Background()
-						
+
 						// Check if session exists
 						exists, err := client.SessionExists(ctx, sessionName)
 						if err != nil {
 							m.message = fmt.Sprintf("Failed to check session: %v", err)
 							return m, nil
 						}
-						
+
 						if !exists {
 							// Session doesn't exist, create it
 							opts := tmux.LaunchOptions{
@@ -471,7 +471,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return m, nil
 							}
 						}
-						
+
 						// Switch to the session
 						if err := client.SwitchClient(ctx, sessionName); err != nil {
 							m.message = fmt.Sprintf("Failed to switch to session: %v", err)
@@ -517,11 +517,11 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
-					
+
 					// Rebuild table with updated data
 					m.table = m.rebuildTable()
 					m.table.SetCursor(cursor)
-					
+
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 				}
 			}
@@ -541,12 +541,12 @@ func (m manageModel) View() string {
 	}
 
 	var b strings.Builder
-	
+
 	// Show fuzzy search interface if searching
 	if m.searching {
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Select Project for Key '%s'", m.selectedKey)) + "\n\n")
 		b.WriteString("Search: " + m.searchInput.View() + "\n\n")
-		
+
 		// Show item count
 		itemCount := len(m.projectList.Items())
 		if itemCount == 0 {
@@ -555,22 +555,22 @@ func (m manageModel) View() string {
 			b.WriteString(fmt.Sprintf("Found %d projects:\n\n", itemCount))
 			b.WriteString(m.projectList.View())
 		}
-		
+
 		b.WriteString("\n" + dimStyle.Render("↑↓ Navigate • Enter to select • Esc to cancel") + "\n")
 		return b.String()
 	}
-	
+
 	// Normal table view
 	b.WriteString(titleStyle.Render("Manage Session Keys") + "\n\n")
 	b.WriteString(m.table.View() + "\n\n")
-	
+
 	if m.message != "" {
 		b.WriteString(dimStyle.Render(m.message) + "\n\n")
 	}
-	
+
 	helpView := m.help.View(m.keys)
 	b.WriteString(helpStyle.Render(helpView))
-	
+
 	return b.String()
 }
 
@@ -587,14 +587,14 @@ func reloadTmuxConfig() error {
 	if os.Getenv("TMUX") == "" {
 		return fmt.Errorf("not in a tmux session")
 	}
-	
+
 	// Run tmux source-file command
 	cmd := exec.Command("tmux", "source-file", expandPath("~/.tmux.conf"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tmux reload failed: %s", string(output))
 	}
-	
+
 	return nil
 }
 

@@ -74,7 +74,17 @@ func (c *Client) ListSessions(ctx context.Context) ([]string, error) {
 		}
 		return nil, err
 	}
-	
+
 	sessions := strings.Split(strings.TrimSpace(output), "\n")
 	return sessions, nil
 }
+
+// GetSessionPath returns the working directory path of a specific tmux session.
+func (c *Client) GetSessionPath(ctx context.Context, sessionName string) (string, error) {
+	output, err := c.run(ctx, "display-message", "-p", "-t", sessionName, "#{session_path}")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(output), nil
+}
+

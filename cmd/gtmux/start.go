@@ -87,7 +87,7 @@ change to the configured directory for that session.`,
 		if workDir != "" {
 			fmt.Printf("Working directory: %s\n", workDir)
 		}
-		
+
 		fmt.Printf("\nTo attach to this session, run:\n")
 		fmt.Printf("  tmux attach-session -t %s\n", sessionName)
 

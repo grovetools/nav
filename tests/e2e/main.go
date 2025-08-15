@@ -14,7 +14,7 @@ func main() {
 		// Original scenarios
 		GtmuxListScenario(),
 		GtmuxStatusScenario(),
-		
+
 		// Tmux-specific scenarios (only run locally with tmux installed)
 		GtmuxSessionExistsScenario(),
 		GtmuxSessionKillScenario(),

@@ -76,14 +76,14 @@ func NewManager(configDir string, sessionsFile string) *Manager {
 		expandPath("~/.config/tmux/project-search-paths.yaml"),
 		expandPath("~/.config/grove/project-search-paths.yaml"),
 	}
-	
+
 	for _, path := range possiblePaths {
 		if _, err := os.Stat(path); err == nil {
 			searchPathsFile = path
 			break
 		}
 	}
-	
+
 	// Default to grove config dir if none found
 	if searchPathsFile == "" {
 		searchPathsFile = filepath.Join(configDir, "project-search-paths.yaml")
@@ -257,7 +257,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 		}
 
 		expandedPath := expandPath(sp.Path)
-		
+
 		// Add the search path itself as a project if it's a directory
 		absPath, err := filepath.Abs(expandedPath)
 		if err == nil {
@@ -274,7 +274,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 				}
 			}
 		}
-		
+
 		// Then scan its subdirectories
 		entries, err := os.ReadDir(expandedPath)
 		if err != nil {
@@ -293,7 +293,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 					}
 					projects = append(projects, project)
 					seen[fullPath] = true
-					
+
 					// If this is a Git repository, check for .grove-worktrees
 					if isGitRepository(fullPath) {
 						worktreesPath := filepath.Join(fullPath, ".grove-worktrees")
@@ -336,7 +336,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 		if err != nil {
 			absPath = expandedPath
 		}
-		
+
 		// Verify the path exists
 		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
 			// Always add explicit projects, even if seen
