@@ -9,11 +9,10 @@ type DiscoveredProject struct {
 	ParentPath string // For worktrees, the path to the parent repository. Empty otherwise.
 	IsWorktree bool   // True if the project is a Git worktree
 	GitStatus  *git.StatusInfo
-	
+
 	// Claude session information (if this entry represents a Claude session)
 	ClaudeSessionID       string // The Claude session ID (empty if not a Claude session)
 	ClaudeSessionPID      int    // The Claude session PID
 	ClaudeSessionStatus   string // The Claude session status
 	ClaudeSessionDuration string // The Claude session duration
 }
-

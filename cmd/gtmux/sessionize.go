@@ -35,17 +35,6 @@ func getWorktreeParent(path string) string {
 	return ""
 }
 
-// hasGroveHooks checks if grove-hooks is available
-func hasGroveHooks() bool {
-	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
-	if _, err := os.Stat(groveHooksPath); err == nil {
-		return true
-	}
-	if _, err := exec.LookPath("grove-hooks"); err == nil {
-		return true
-	}
-	return false
-}
 
 var sessionizeCmd = &cobra.Command{
 	Use:     "sessionize",
@@ -57,7 +46,7 @@ var sessionizeCmd = &cobra.Command{
 		if len(args) > 0 {
 			// Record access for direct path usage too
 			mgr := tmux.NewManager(configDir, sessionsFile)
-			mgr.RecordProjectAccess(args[0])
+			_ = mgr.RecordProjectAccess(args[0])
 			return sessionizeProject(args[0])
 		}
 
@@ -96,10 +85,10 @@ var sessionizeCmd = &cobra.Command{
 		// Check if a project was selected
 		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected.Path != "" {
 			// Record the access before switching
-			mgr.RecordProjectAccess(sm.selected.Path)
+			_ = mgr.RecordProjectAccess(sm.selected.Path)
 			// If it's a worktree, also record access for the parent
 			if sm.selected.IsWorktree && sm.selected.ParentPath != "" {
-				mgr.RecordProjectAccess(sm.selected.ParentPath)
+				_ = mgr.RecordProjectAccess(sm.selected.ParentPath)
 			}
 			return sessionizeProject(sm.selected.Path)
 		}
@@ -110,13 +99,13 @@ var sessionizeCmd = &cobra.Command{
 
 // claudeSession represents the structure of a Claude session from grove-hooks
 type claudeSession struct {
-	ID                     string `json:"id"`
-	Type                   string `json:"type"`
-	PID                    int    `json:"pid"`
-	Status                 string `json:"status"`
-	WorkingDirectory       string `json:"working_directory"`
-	StateDuration          string `json:"state_duration"`
-	StateDurationSeconds   int    `json:"state_duration_seconds"`
+	ID                   string `json:"id"`
+	Type                 string `json:"type"`
+	PID                  int    `json:"pid"`
+	Status               string `json:"status"`
+	WorkingDirectory     string `json:"working_directory"`
+	StateDuration        string `json:"state_duration"`
+	StateDurationSeconds int    `json:"state_duration_seconds"`
 }
 
 // extendedGitStatus holds git status info plus additional stats
@@ -141,24 +130,24 @@ type tickMsg time.Time
 
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
-	projects        []manager.DiscoveredProject
-	filtered        []manager.DiscoveredProject
-	selected        manager.DiscoveredProject
-	cursor          int
-	filterInput     textinput.Model
-	searchPaths     []string
-	manager         *tmux.Manager
-	configDir       string                     // configuration directory
-	keyMap          map[string]string          // path -> key mapping
-	sessionMap      map[string]bool            // path -> session exists mapping
-	claudeStatusMap map[string]string          // path -> claude session status mapping
-	claudeDurationMap map[string]string        // path -> claude session state duration mapping
-	claudeDurationSecondsMap map[string]int    // path -> claude session state duration in seconds
-	gitStatusMap    map[string]*extendedGitStatus // path -> extended git status
-	hasGroveHooks   bool                       // whether grove-hooks is available
-	currentSession  string                     // name of the current tmux session
-	width           int
-	height          int
+	projects                 []manager.DiscoveredProject
+	filtered                 []manager.DiscoveredProject
+	selected                 manager.DiscoveredProject
+	cursor                   int
+	filterInput              textinput.Model
+	searchPaths              []string
+	manager                  *tmux.Manager
+	configDir                string                        // configuration directory
+	keyMap                   map[string]string             // path -> key mapping
+	sessionMap               map[string]bool               // path -> session exists mapping
+	claudeStatusMap          map[string]string             // path -> claude session status mapping
+	claudeDurationMap        map[string]string             // path -> claude session state duration mapping
+	claudeDurationSecondsMap map[string]int                // path -> claude session state duration in seconds
+	gitStatusMap             map[string]*extendedGitStatus // path -> extended git status
+	hasGroveHooks            bool                          // whether grove-hooks is available
+	currentSession           string                        // name of the current tmux session
+	width                    int
+	height                   int
 	// Key editing mode
 	editingKeys   bool
 	keyCursor     int
@@ -209,7 +198,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	} else if _, err := exec.LookPath("grove-hooks"); err == nil {
 		hasGroveHooks = true
 	}
-	
+
 	// Claude sessions will be fetched asynchronously
 	claudeStatusMap := make(map[string]string)
 	claudeDurationMap := make(map[string]string)
@@ -231,46 +220,46 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	gitStatusMap := make(map[string]*extendedGitStatus)
 
 	return sessionizeModel{
-		projects:        projects,
-		filtered:        projects,
-		filterInput:     ti,
-		searchPaths:     searchPaths,
-		manager:         mgr,
-		configDir:       configDir,
-		keyMap:          keyMap,
-		sessionMap:      sessionMap,
-		claudeStatusMap: claudeStatusMap,
-		claudeDurationMap: claudeDurationMap,
+		projects:                 projects,
+		filtered:                 projects,
+		filterInput:              ti,
+		searchPaths:              searchPaths,
+		manager:                  mgr,
+		configDir:                configDir,
+		keyMap:                   keyMap,
+		sessionMap:               sessionMap,
+		claudeStatusMap:          claudeStatusMap,
+		claudeDurationMap:        claudeDurationMap,
 		claudeDurationSecondsMap: claudeDurationSecondsMap,
-		gitStatusMap:    gitStatusMap,
-		hasGroveHooks:   hasGroveHooks,
-		currentSession:  currentSession,
-		cursor:          0,
-		editingKeys:     false,
-		keyCursor:       0,
-		availableKeys:   availableKeys,
-		sessions:        sessions,
+		gitStatusMap:             gitStatusMap,
+		hasGroveHooks:            hasGroveHooks,
+		currentSession:           currentSession,
+		cursor:                   0,
+		editingKeys:              false,
+		keyCursor:                0,
+		availableKeys:            availableKeys,
+		sessions:                 sessions,
 	}
 }
 
 // fetchGitStatusForPath gets the git status for a specific path
 func fetchGitStatusForPath(path string) (*extendedGitStatus, error) {
 	cleanPath := filepath.Clean(path)
-	
+
 	// Check if it's a git repo before getting status
 	if !git.IsGitRepo(cleanPath) {
 		return nil, fmt.Errorf("not a git repository")
 	}
-	
+
 	status, err := git.GetStatus(cleanPath)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	extStatus := &extendedGitStatus{
 		StatusInfo: status,
 	}
-	
+
 	// Get line stats using git diff --numstat
 	cmd := exec.Command("git", "diff", "--numstat")
 	cmd.Dir = cleanPath
@@ -278,7 +267,7 @@ func fetchGitStatusForPath(path string) (*extendedGitStatus, error) {
 	if err == nil {
 		extStatus.LinesAdded, extStatus.LinesDeleted = parseNumstat(string(output))
 	}
-	
+
 	// Also get staged changes
 	cmd = exec.Command("git", "diff", "--cached", "--numstat")
 	cmd.Dir = cleanPath
@@ -288,7 +277,7 @@ func fetchGitStatusForPath(path string) (*extendedGitStatus, error) {
 		extStatus.LinesAdded += stagedAdded
 		extStatus.LinesDeleted += stagedDeleted
 	}
-	
+
 	return extStatus, nil
 }
 
@@ -330,7 +319,7 @@ func fetchGitStatusForOpenSessions() (map[string]*extendedGitStatus, error) {
 				extStatus := &extendedGitStatus{
 					StatusInfo: status,
 				}
-				
+
 				// Get line stats using git diff --numstat
 				cmd := exec.Command("git", "diff", "--numstat")
 				cmd.Dir = cleanPath
@@ -338,7 +327,7 @@ func fetchGitStatusForOpenSessions() (map[string]*extendedGitStatus, error) {
 				if err == nil {
 					extStatus.LinesAdded, extStatus.LinesDeleted = parseNumstat(string(output))
 				}
-				
+
 				// Also get staged changes
 				cmd = exec.Command("git", "diff", "--cached", "--numstat")
 				cmd.Dir = cleanPath
@@ -348,7 +337,7 @@ func fetchGitStatusForOpenSessions() (map[string]*extendedGitStatus, error) {
 					extStatus.LinesAdded += stagedAdded
 					extStatus.LinesDeleted += stagedDeleted
 				}
-				
+
 				mu.Lock()
 				statusMap[cleanPath] = extStatus
 				mu.Unlock()
@@ -391,7 +380,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 		textinput.Blink,
 		fetchGitStatusCmd(),
 		fetchClaudeSessionsCmd(), // Start Claude session fetching
-		tickCmd(), // Start periodic refresh
+		tickCmd(),                // Start periodic refresh
 	)
 }
 
@@ -424,7 +413,7 @@ func fetchClaudeSessionsCmd() tea.Cmd {
 // fetchClaudeSessions fetches active Claude sessions from grove-hooks
 func fetchClaudeSessions() []manager.DiscoveredProject {
 	var claudeSessionProjects []manager.DiscoveredProject
-	
+
 	// Execute `grove-hooks sessions list --active --json`
 	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
 	var cmd *exec.Cmd
@@ -444,7 +433,7 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 					absPath, err := filepath.Abs(expandPath(session.WorkingDirectory))
 					if err == nil {
 						cleanPath := filepath.Clean(absPath)
-						
+
 						sessionProject := manager.DiscoveredProject{
 							Name:                  filepath.Base(cleanPath),
 							Path:                  cleanPath,
@@ -453,24 +442,24 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 							ClaudeSessionStatus:   session.Status,
 							ClaudeSessionDuration: session.StateDuration,
 						}
-						
+
 						if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
 							sessionProject.ParentPath = parentPath
 							sessionProject.IsWorktree = true
 						}
-						
+
 						// Try to fetch git status for this path
 						if extStatus, err := fetchGitStatusForPath(cleanPath); err == nil {
 							sessionProject.GitStatus = extStatus.StatusInfo
 						}
-						
+
 						claudeSessionProjects = append(claudeSessionProjects, sessionProject)
 					}
 				}
 			}
 		}
 	}
-	
+
 	return claudeSessionProjects
 }
 
@@ -539,14 +528,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.claudeStatusMap = make(map[string]string)
 		m.claudeDurationMap = make(map[string]string)
 		m.claudeDurationSecondsMap = make(map[string]int)
-		
+
 		for _, session := range msg.sessions {
 			cleanPath := filepath.Clean(session.Path)
 			m.claudeStatusMap[cleanPath] = session.ClaudeSessionStatus
 			m.claudeDurationMap[cleanPath] = session.ClaudeSessionDuration
 			m.claudeDurationSecondsMap[cleanPath] = session.ClaudeSessionPID // Using PID field temporarily
 		}
-		
+
 		return m, nil
 
 	case tickMsg:
@@ -595,10 +584,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Found the key - assign it directly
 						if m.cursor < len(m.filtered) {
 							selectedProject := m.filtered[m.cursor]
-							
+
 							// Update the session
 							m.updateKeyMapping(selectedProject.Path, availableKey)
-							
+
 							// Refresh sessions to reflect changes
 							if sessions, err := m.manager.GetSessions(); err == nil {
 								m.sessions = sessions
@@ -656,7 +645,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				if cmd != nil {
 					cmd.Stdin = strings.NewReader(project.Path)
-					cmd.Run()
+					_ = cmd.Run()
 				}
 			}
 		case tea.KeyCtrlD:
@@ -718,7 +707,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 								// Switch to the target session before killing current
 								if targetSession != "" {
-									client.SwitchClient(ctx, targetSession)
+									_ = client.SwitchClient(ctx, targetSession)
 								}
 							}
 						}
@@ -811,8 +800,8 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Save the updated sessions
-	m.manager.UpdateSessions(m.sessions)
-	m.manager.RegenerateBindings()
+	_ = m.manager.UpdateSessions(m.sessions)
+	_ = m.manager.RegenerateBindings()
 
 	// Update our key map to reflect all changes
 	m.keyMap = make(map[string]string)
@@ -828,7 +817,7 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Reload tmux config
-	reloadTmuxConfig()
+	_ = reloadTmuxConfig()
 }
 
 func (m *sessionizeModel) clearKeyMapping(projectPath string) {
@@ -853,8 +842,8 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		m.sessions[targetSessionIndex].Repository = ""
 
 		// Save the updated sessions
-		m.manager.UpdateSessions(m.sessions)
-		m.manager.RegenerateBindings()
+		_ = m.manager.UpdateSessions(m.sessions)
+		_ = m.manager.RegenerateBindings()
 
 		// Update our key map
 		delete(m.keyMap, cleanPath)
@@ -865,7 +854,7 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		}
 
 		// Reload tmux config
-		reloadTmuxConfig()
+		_ = reloadTmuxConfig()
 	}
 }
 
@@ -1028,7 +1017,7 @@ func (m sessionizeModel) View() string {
 		// Get Claude session status
 		var claudeStatusStyled string
 		var claudeDuration string
-		
+
 		// Check if this is a Claude session project
 		if project.ClaudeSessionID != "" {
 			// This is a Claude session entry - use its own status
@@ -1048,7 +1037,7 @@ func (m sessionizeModel) View() string {
 				statusSymbol = "✗"
 				statusColor = lipgloss.Color("#ff4444")
 			}
-			
+
 			claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
 			claudeDuration = project.ClaudeSessionDuration
 		} else if m.hasGroveHooks {
@@ -1089,7 +1078,7 @@ func (m sessionizeModel) View() string {
 				statusSymbol = "✗"
 				statusColor = lipgloss.Color("#ff4444")
 			}
-			
+
 			if statusSymbol != "" {
 				claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
 			} else {
@@ -1110,7 +1099,7 @@ func (m sessionizeModel) View() string {
 		if project.IsWorktree {
 			prefix = "└─ "
 		}
-		
+
 		// If this is a Claude session, add PID to the name
 		if project.ClaudeSessionID != "" {
 			displayName = fmt.Sprintf("%s [PID:%d]", project.Name, project.ClaudeSessionPID)
@@ -1167,17 +1156,17 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 			line += "  " + pathStyle.Render(project.Path)
-			
+
 			// Add git status if session exists
 			if sessionExists && changesStr != "" {
 				line += "  " + changesStr
 			}
-			
+
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && claudeDuration != "" {
 				line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("#b19cd9")).Render(claudeDuration)
 			}
-			
+
 			b.WriteString(line)
 		} else {
 			// Normal line with colored name
@@ -1225,17 +1214,17 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 			line += "  " + pathStyle.Render(project.Path)
-			
+
 			// Add git status if session exists
 			if sessionExists && changesStr != "" {
 				line += "  " + changesStr
 			}
-			
+
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && claudeDuration != "" {
 				line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("#b19cd9")).Render(claudeDuration)
 			}
-			
+
 			b.WriteString(line)
 		}
 		b.WriteString("\n")
@@ -1259,7 +1248,7 @@ func (m sessionizeModel) View() string {
 	// Build help text with highlighted keys
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
-	
+
 	b.WriteString("\n")
 	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(": navigate • "))
 	b.WriteString(keyStyle.Render("enter") + helpStyle.Render(": select • "))
@@ -1428,7 +1417,7 @@ func (m sessionizeModel) viewKeyEditor() string {
 	// Build help text with highlighted keys
 	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
 	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
-	
+
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("press ") + keyStyle.Render("key directly") + helpStyle.Render(" or "))
 	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(" + ") + keyStyle.Render("enter") + helpStyle.Render(" to assign • "))

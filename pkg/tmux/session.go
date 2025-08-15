@@ -87,4 +87,3 @@ func (c *Client) GetSessionPath(ctx context.Context, sessionName string) (string
 	}
 	return strings.TrimSpace(output), nil
 }
-
