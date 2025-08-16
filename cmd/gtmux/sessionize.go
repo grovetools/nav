@@ -128,6 +128,22 @@ type claudeSessionUpdateMsg struct {
 // tickMsg is sent periodically to refresh git status
 type tickMsg time.Time
 
+// projectsUpdateMsg is sent when the list of discovered projects is updated
+type projectsUpdateMsg struct {
+	projects []manager.DiscoveredProject
+}
+
+// runningSessionsUpdateMsg is sent with the latest list of running tmux sessions
+type runningSessionsUpdateMsg struct {
+	sessions map[string]bool // A set of session names for quick lookups
+}
+
+// keyMapUpdateMsg is sent when the key mappings from tmux-sessions.yaml are reloaded
+type keyMapUpdateMsg struct {
+	keyMap   map[string]string // map[path]key
+	sessions []models.TmuxSession // Also pass the full session list
+}
+
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects                 []manager.DiscoveredProject
@@ -139,7 +155,7 @@ type sessionizeModel struct {
 	manager                  *tmux.Manager
 	configDir                string                        // configuration directory
 	keyMap                   map[string]string             // path -> key mapping
-	sessionMap               map[string]bool               // path -> session exists mapping
+	runningSessions          map[string]bool               // map[sessionName] -> true
 	claudeStatusMap          map[string]string             // path -> claude session status mapping
 	claudeDurationMap        map[string]string             // path -> claude session state duration mapping
 	claudeDurationSecondsMap map[string]int                // path -> claude session state duration in seconds
@@ -186,9 +202,9 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	// Get available keys
 	availableKeys := mgr.GetAvailableKeys()
 
-	// Create session existence map
-	sessionMap := make(map[string]bool)
-	// We'll populate this lazily as needed to avoid too many tmux calls at startup
+	// Create running sessions map
+	runningSessions := make(map[string]bool)
+	// Will be populated via commands
 
 	// Check if grove-hooks is available
 	hasGroveHooks := false
@@ -227,7 +243,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		manager:                  mgr,
 		configDir:                configDir,
 		keyMap:                   keyMap,
-		sessionMap:               sessionMap,
+		runningSessions:          runningSessions,
 		claudeStatusMap:          claudeStatusMap,
 		claudeDurationMap:        claudeDurationMap,
 		claudeDurationSecondsMap: claudeDurationSecondsMap,
@@ -375,12 +391,14 @@ func parseNumstat(output string) (added, deleted int) {
 }
 
 func (m sessionizeModel) Init() tea.Cmd {
-	// Start both text input blink and git status fetching
 	return tea.Batch(
 		textinput.Blink,
 		fetchGitStatusCmd(),
-		fetchClaudeSessionsCmd(), // Start Claude session fetching
-		tickCmd(),                // Start periodic refresh
+		fetchClaudeSessionsCmd(),
+		fetchProjectsCmd(m.manager),
+		fetchRunningSessionsCmd(),
+		fetchKeyMapCmd(m.manager),
+		tickCmd(), // Start the periodic refresh cycle
 	)
 }
 
@@ -463,37 +481,54 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 	return claudeSessionProjects
 }
 
-// getSessionExists checks if a tmux session exists for the given project path
-func (m *sessionizeModel) getSessionExists(projectPath string) bool {
-	// Check cache first
-	if exists, found := m.sessionMap[projectPath]; found {
-		return exists
+// fetchProjectsCmd returns a command that re-scans the configured search paths
+func fetchProjectsCmd(mgr *tmux.Manager) tea.Cmd {
+	return func() tea.Msg {
+		projects, _ := mgr.GetAvailableProjectsSorted()
+		return projectsUpdateMsg{projects: projects}
 	}
-
-	// Create session name from path
-	sessionName := filepath.Base(projectPath)
-	sessionName = strings.ReplaceAll(sessionName, ".", "_")
-
-	// Check if session exists using tmux client
-	client, err := tmux.NewClient()
-	if err != nil {
-		// If we can't create client, assume no session
-		m.sessionMap[projectPath] = false
-		return false
-	}
-
-	ctx := context.Background()
-	exists, err := client.SessionExists(ctx, sessionName)
-	if err != nil {
-		// On error, assume no session
-		m.sessionMap[projectPath] = false
-		return false
-	}
-
-	// Cache the result
-	m.sessionMap[projectPath] = exists
-	return exists
 }
+
+// fetchRunningSessionsCmd returns a command that gets the list of currently running tmux sessions
+func fetchRunningSessionsCmd() tea.Cmd {
+	return func() tea.Msg {
+		sessionsMap := make(map[string]bool)
+		if os.Getenv("TMUX") != "" {
+			client, err := tmux.NewClient()
+			if err == nil {
+				ctx := context.Background()
+				sessionNames, _ := client.ListSessions(ctx)
+				for _, name := range sessionNames {
+					sessionsMap[name] = true
+				}
+			}
+		}
+		return runningSessionsUpdateMsg{sessions: sessionsMap}
+	}
+}
+
+// fetchKeyMapCmd returns a command that reloads the tmux-sessions.yaml file
+func fetchKeyMapCmd(mgr *tmux.Manager) tea.Cmd {
+	return func() tea.Msg {
+		keyMap := make(map[string]string)
+		sessions, err := mgr.GetSessions()
+		if err != nil {
+			sessions = []models.TmuxSession{}
+		}
+		for _, s := range sessions {
+			if s.Path != "" {
+				expandedPath := expandPath(s.Path)
+				absPath, err := filepath.Abs(expandedPath)
+				if err == nil {
+					cleanPath := filepath.Clean(absPath)
+					keyMap[cleanPath] = s.Key
+				}
+			}
+		}
+		return keyMapUpdateMsg{keyMap: keyMap, sessions: sessions}
+	}
+}
+
 
 func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -538,11 +573,59 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		return m, nil
 
+	case projectsUpdateMsg:
+		// Save the current selected project path
+		selectedPath := ""
+		if m.cursor < len(m.filtered) {
+			selectedPath = m.filtered[m.cursor].Path
+		}
+
+		// Update the main project list
+		m.projects = msg.projects
+
+		// Update the filtered list
+		m.updateFiltered()
+
+		// Try to restore cursor position
+		if selectedPath != "" {
+			for i, p := range m.filtered {
+				if p.Path == selectedPath {
+					m.cursor = i
+					break
+				}
+			}
+		}
+
+		// Clamp cursor to valid range
+		if m.cursor >= len(m.filtered) {
+			m.cursor = len(m.filtered) - 1
+		}
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+
+		return m, nil
+
+	case runningSessionsUpdateMsg:
+		// Replace the running sessions map
+		m.runningSessions = msg.sessions
+		return m, nil
+
+	case keyMapUpdateMsg:
+		// Replace the key map and sessions
+		m.keyMap = msg.keyMap
+		m.sessions = msg.sessions
+		return m, nil
+
 	case tickMsg:
-		// Refresh git status and Claude sessions periodically
+		// Refresh all data sources periodically
 		return m, tea.Batch(
 			fetchGitStatusCmd(),
 			fetchClaudeSessionsCmd(),
+			fetchProjectsCmd(m.manager),       // Add this
+			fetchRunningSessionsCmd(),         // Add this
+			fetchKeyMapCmd(m.manager),         // Add this
+			tickCmd(),                         // This reschedules the tick
 		)
 
 	case tea.KeyMsg:
@@ -715,7 +798,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Kill the session
 						if err := client.KillSession(ctx, sessionName); err == nil {
 							// Clear the cached session status
-							delete(m.sessionMap, project.Path)
+							delete(m.runningSessions, sessionName)
 						}
 					}
 				}
@@ -1012,7 +1095,9 @@ func (m sessionizeModel) View() string {
 		}
 
 		// Check if session exists for this project
-		sessionExists := m.getSessionExists(project.Path)
+		sessionName := filepath.Base(project.Path)
+		sessionName = strings.ReplaceAll(sessionName, ".", "_")
+		sessionExists := m.runningSessions[sessionName]
 
 		// Get Claude session status
 		var claudeStatusStyled string
