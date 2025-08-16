@@ -115,6 +115,36 @@ type extendedGitStatus struct {
 	LinesDeleted int
 }
 
+// gitStatusEqual compares two git status objects for equality
+func gitStatusEqual(a, b *git.StatusInfo) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.HasUpstream == b.HasUpstream &&
+		a.AheadCount == b.AheadCount &&
+		a.BehindCount == b.BehindCount &&
+		a.ModifiedCount == b.ModifiedCount &&
+		a.StagedCount == b.StagedCount &&
+		a.UntrackedCount == b.UntrackedCount &&
+		a.IsDirty == b.IsDirty
+}
+
+// extendedGitStatusEqual compares two extended git status objects for equality
+func extendedGitStatusEqual(a, b *extendedGitStatus) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return gitStatusEqual(a.StatusInfo, b.StatusInfo) &&
+		a.LinesAdded == b.LinesAdded &&
+		a.LinesDeleted == b.LinesDeleted
+}
+
 // gitStatusUpdateMsg is sent when git status data is fetched
 type gitStatusUpdateMsg struct {
 	statuses map[string]*extendedGitStatus
@@ -540,35 +570,93 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case gitStatusUpdateMsg:
-		// Update git status map
-		m.gitStatusMap = msg.statuses
-		// Update projects with new git status
-		for i := range m.projects {
-			cleanPath := filepath.Clean(m.projects[i].Path)
-			if extStatus, found := m.gitStatusMap[cleanPath]; found {
-				m.projects[i].GitStatus = extStatus.StatusInfo
+		// Only update if there are actual changes to prevent flashing
+		hasChanges := false
+		
+		// Check if any status has changed
+		for path, newStatus := range msg.statuses {
+			oldStatus, exists := m.gitStatusMap[path]
+			if !exists || !extendedGitStatusEqual(oldStatus, newStatus) {
+				hasChanges = true
+				break
 			}
 		}
-		// Also update filtered projects
-		for i := range m.filtered {
-			cleanPath := filepath.Clean(m.filtered[i].Path)
-			if extStatus, found := m.gitStatusMap[cleanPath]; found {
-				m.filtered[i].GitStatus = extStatus.StatusInfo
+		
+		// Also check if any status was removed
+		if !hasChanges {
+			for path := range m.gitStatusMap {
+				if _, exists := msg.statuses[path]; !exists {
+					hasChanges = true
+					break
+				}
+			}
+		}
+		
+		// Only update if there are changes
+		if hasChanges {
+			// Update git status map
+			m.gitStatusMap = msg.statuses
+			// Update projects with new git status
+			for i := range m.projects {
+				cleanPath := filepath.Clean(m.projects[i].Path)
+				if extStatus, found := m.gitStatusMap[cleanPath]; found {
+					m.projects[i].GitStatus = extStatus.StatusInfo
+				} else {
+					// Clear git status if no longer found
+					m.projects[i].GitStatus = nil
+				}
+			}
+			// Also update filtered projects
+			for i := range m.filtered {
+				cleanPath := filepath.Clean(m.filtered[i].Path)
+				if extStatus, found := m.gitStatusMap[cleanPath]; found {
+					m.filtered[i].GitStatus = extStatus.StatusInfo
+				} else {
+					// Clear git status if no longer found
+					m.filtered[i].GitStatus = nil
+				}
 			}
 		}
 		return m, nil
 
 	case claudeSessionUpdateMsg:
-		// Update claude status maps with active sessions
-		m.claudeStatusMap = make(map[string]string)
-		m.claudeDurationMap = make(map[string]string)
-		m.claudeDurationSecondsMap = make(map[string]int)
+		// Create new maps
+		newStatusMap := make(map[string]string)
+		newDurationMap := make(map[string]string)
+		newDurationSecondsMap := make(map[string]int)
 
 		for _, session := range msg.sessions {
 			cleanPath := filepath.Clean(session.Path)
-			m.claudeStatusMap[cleanPath] = session.ClaudeSessionStatus
-			m.claudeDurationMap[cleanPath] = session.ClaudeSessionDuration
-			m.claudeDurationSecondsMap[cleanPath] = session.ClaudeSessionPID // Using PID field temporarily
+			newStatusMap[cleanPath] = session.ClaudeSessionStatus
+			newDurationMap[cleanPath] = session.ClaudeSessionDuration
+			newDurationSecondsMap[cleanPath] = session.ClaudeSessionPID // Using PID field temporarily
+		}
+
+		// Check if there are any changes
+		hasChanges := false
+		
+		// Check if sizes differ
+		if len(newStatusMap) != len(m.claudeStatusMap) {
+			hasChanges = true
+		} else {
+			// Check each entry
+			for path, newStatus := range newStatusMap {
+				oldStatus, exists := m.claudeStatusMap[path]
+				oldDuration := m.claudeDurationMap[path]
+				newDuration := newDurationMap[path]
+				
+				if !exists || oldStatus != newStatus || oldDuration != newDuration {
+					hasChanges = true
+					break
+				}
+			}
+		}
+		
+		// Only update if there are changes
+		if hasChanges {
+			m.claudeStatusMap = newStatusMap
+			m.claudeDurationMap = newDurationMap
+			m.claudeDurationSecondsMap = newDurationSecondsMap
 		}
 
 		return m, nil
