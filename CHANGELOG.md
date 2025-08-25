@@ -1,3 +1,18 @@
+## v0.0.5 (2025-08-25)
+
+### Bug Fixes
+
+* prevent flashing in live sessionizer by only updating on actual changes
+
+### Features
+
+* implement live sessionizer with automatic refresh
+
+### Chores
+
+* **deps:** bump dependencies
+* bump dependencies
+
 ## v0.0.4 (2025-08-15)
 
 ### Features
