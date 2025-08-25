@@ -1,3 +1,13 @@
+## v0.0.6 (2025-08-25)
+
+### Continuous Integration
+
+* disable linting in workflow
+
+### Chores
+
+* **deps:** bump dependencies
+
 ## v0.0.5 (2025-08-25)
 
 ### Bug Fixes
