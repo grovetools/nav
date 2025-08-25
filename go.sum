@@ -82,8 +82,8 @@ github.com/mattn/go-runewidth v0.0.16 h1:E5ScNMtiwvlvB5paMFdw9p4kSQzbXFikJ5SQO6T
 github.com/mattn/go-runewidth v0.0.16/go.mod h1:Jdepj2loyihRzMpdS35Xk/zdY8IAYHsh153qUoGf23w=
 github.com/mattsolo1/grove-core v0.2.12 h1:vRJS+yeJBRUNErkh66mSbuaBbS4r53tTTdvV6O5Z4Ww=
 github.com/mattsolo1/grove-core v0.2.12/go.mod h1:jCZmYXEo3os2MXGH79K7c5xDtuM+/GooNyD96twXMgM=
-github.com/mattsolo1/grove-tend v0.2.8 h1:LEL1d+8gjD+XWqaABltTuVlxhHB4JcOprL21ABQ2nGU=
-github.com/mattsolo1/grove-tend v0.2.8/go.mod h1:dgmEbwaFGzXChr+m69obyZeFvNvcBCGb6TIA7LlrK0s=
+github.com/mattsolo1/grove-tend v0.2.9 h1:fy+x+UW7OuxP0paAcX0pd8kYonlKOjkr3zJHY97UsgI=
+github.com/mattsolo1/grove-tend v0.2.9/go.mod h1:tCZN/J3lip+tsk1gHDobCqZ9kKdWzOwuC0fZzgpVF8U=
 github.com/mitchellh/mapstructure v1.5.0 h1:jeMsZIYE/09sWLaz43PL7Gy6RuMjD2eJVyuac5Z2hdY=
 github.com/mitchellh/mapstructure v1.5.0/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
 github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=
