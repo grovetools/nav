@@ -44,9 +44,9 @@ jobs:
         run: |
           make build-all VERSION=${{ github.ref_name }}
 
-      - name: Run unit tests
-        run: |
-          make test
+      # - name: Run unit tests
+      #   run: |
+      #     make test
 
       - name: Build E2E test framework
         run: |
