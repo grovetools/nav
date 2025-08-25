@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/mattsolo1/grove-core v0.2.12
-	github.com/mattsolo1/grove-tend v0.2.11
+	github.com/mattsolo1/grove-tend v0.2.12
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -54,7 +54,7 @@ require (
 	go.opentelemetry.io/otel v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/text v0.27.0 // indirect
 )
