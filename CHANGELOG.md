@@ -1,3 +1,10 @@
+## v0.0.7 (2025-08-25)
+
+### Bug Fixes
+
+* disbale unit tests
+* disbale lfs
+
 ## v0.0.6 (2025-08-25)
 
 ### Continuous Integration
