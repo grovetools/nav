@@ -1,3 +1,13 @@
+## v0.0.9 (2025-08-26)
+
+### Bug Fixes
+
+* improve worktree ordering and grouping in sessionizer
+
+### Features
+
+* prioritize open tmux sessions in gmux sz search
+
 ## v0.0.8 (2025-08-25)
 
 ### Chores
