@@ -30,7 +30,7 @@ all: build
 build:
 	@mkdir -p $(BIN_DIR)
 	@echo "Building $(BINARY_NAME) version $(VERSION)..."
-	@go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gtmux
+	@go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gmux
 
 test:
 	@echo "Running tests..."
@@ -85,7 +85,7 @@ build-all:
 		arch=$$(echo $$platform | cut -d'/' -f2); \
 		output_name="$(BINARY_NAME)-$${os}-$${arch}"; \
 		echo "  -> Building $${output_name} version $(VERSION)"; \
-		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $(DIST_DIR)/$${output_name} ./cmd/gtmux; \
+		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $(DIST_DIR)/$${output_name} ./cmd/gmux; \
 	done
 
 # --- E2E Testing ---
