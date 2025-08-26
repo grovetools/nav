@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -697,6 +698,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case runningSessionsUpdateMsg:
 		// Replace the running sessions map
 		m.runningSessions = msg.sessions
+		// Re-apply filtering with updated session info
+		m.updateFiltered()
 		return m, nil
 
 	case keyMapUpdateMsg:
@@ -1029,23 +1032,48 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 	}
 }
 
-func (m *sessionizeModel) updateFiltered() {
-	filter := strings.ToLower(m.filterInput.Value())
-	m.filtered = []manager.DiscoveredProject{}
+// prioritizeOpenSessions sorts projects to put open sessions at the top
+func (m *sessionizeModel) prioritizeOpenSessions(projects []manager.DiscoveredProject) []manager.DiscoveredProject {
+	// Create a copy to avoid modifying the original
+	sorted := make([]manager.DiscoveredProject, len(projects))
+	copy(sorted, projects)
 
-	if filter == "" {
-		// No filter, return all projects
-		m.filtered = m.projects
-		return
-	}
+	// Sort: open sessions first, then by original order
+	sort.SliceStable(sorted, func(i, j int) bool {
+		// Get session names for both projects
+		sessionNameI := filepath.Base(sorted[i].Path)
+		sessionNameI = strings.ReplaceAll(sessionNameI, ".", "_")
+		sessionNameJ := filepath.Base(sorted[j].Path)
+		sessionNameJ = strings.ReplaceAll(sessionNameJ, ".", "_")
 
+		// Check if sessions exist
+		sessionExistsI := m.runningSessions[sessionNameI]
+		sessionExistsJ := m.runningSessions[sessionNameJ]
+
+		// If one has an open session and the other doesn't, prioritize the open one
+		if sessionExistsI && !sessionExistsJ {
+			return true
+		}
+		if !sessionExistsI && sessionExistsJ {
+			return false
+		}
+
+		// If both have open sessions or both don't, maintain original order
+		return false
+	})
+
+	return sorted
+}
+
+// sortByMatchQuality sorts projects by match quality (exact, prefix, contains, path)
+func (m *sessionizeModel) sortByMatchQuality(projects []manager.DiscoveredProject, filter string) []manager.DiscoveredProject {
 	// Separate matches into priority groups
 	var exactNameMatches []manager.DiscoveredProject    // Exact match on project name
 	var prefixNameMatches []manager.DiscoveredProject   // Prefix match on project name
 	var containsNameMatches []manager.DiscoveredProject // Contains in project name
 	var pathMatches []manager.DiscoveredProject         // Matches elsewhere in the path
 
-	for _, p := range m.projects {
+	for _, p := range projects {
 		lowerName := strings.ToLower(p.Name)
 		lowerPath := strings.ToLower(p.Path)
 
@@ -1065,11 +1093,56 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 
 	// Combine results in priority order
+	var result []manager.DiscoveredProject
+	result = append(result, exactNameMatches...)
+	result = append(result, prefixNameMatches...)
+	result = append(result, containsNameMatches...)
+	result = append(result, pathMatches...)
+	return result
+}
+
+func (m *sessionizeModel) updateFiltered() {
+	filter := strings.ToLower(m.filterInput.Value())
 	m.filtered = []manager.DiscoveredProject{}
-	m.filtered = append(m.filtered, exactNameMatches...)
-	m.filtered = append(m.filtered, prefixNameMatches...)
-	m.filtered = append(m.filtered, containsNameMatches...)
-	m.filtered = append(m.filtered, pathMatches...)
+
+	if filter == "" {
+		// No filter, prioritize open sessions then return all projects
+		m.filtered = m.prioritizeOpenSessions(m.projects)
+		return
+	}
+
+	// First, separate all matching projects by session status (open vs closed)
+	var openSessionMatches []manager.DiscoveredProject
+	var closedSessionMatches []manager.DiscoveredProject
+
+	for _, p := range m.projects {
+		lowerName := strings.ToLower(p.Name)
+		lowerPath := strings.ToLower(p.Path)
+
+		// Check if this project matches the filter
+		if lowerName == filter || strings.HasPrefix(lowerName, filter) || 
+		   strings.Contains(lowerName, filter) || strings.Contains(lowerPath, filter) {
+			
+			// Check if session is open
+			sessionName := filepath.Base(p.Path)
+			sessionName = strings.ReplaceAll(sessionName, ".", "_")
+			
+			if m.runningSessions[sessionName] {
+				openSessionMatches = append(openSessionMatches, p)
+			} else {
+				closedSessionMatches = append(closedSessionMatches, p)
+			}
+		}
+	}
+
+	// Now sort each group by match quality
+	openSessionMatches = m.sortByMatchQuality(openSessionMatches, filter)
+	closedSessionMatches = m.sortByMatchQuality(closedSessionMatches, filter)
+
+	// Combine: open sessions first, then closed sessions
+	m.filtered = []manager.DiscoveredProject{}
+	m.filtered = append(m.filtered, openSessionMatches...)
+	m.filtered = append(m.filtered, closedSessionMatches...)
 }
 
 // formatChanges formats the git status into a styled string.
