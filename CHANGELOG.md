@@ -1,3 +1,9 @@
+## v0.0.11 (2025-08-26)
+
+### Code Refactoring
+
+* rename command directory from gtmux to gmux
+
 ## v0.0.10 (2025-08-26)
 
 ### Chores
