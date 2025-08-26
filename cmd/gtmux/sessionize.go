@@ -1032,117 +1032,149 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 	}
 }
 
-// prioritizeOpenSessions sorts projects to put open sessions at the top
-func (m *sessionizeModel) prioritizeOpenSessions(projects []manager.DiscoveredProject) []manager.DiscoveredProject {
-	// Create a copy to avoid modifying the original
-	sorted := make([]manager.DiscoveredProject, len(projects))
-	copy(sorted, projects)
 
-	// Sort: open sessions first, then by original order
-	sort.SliceStable(sorted, func(i, j int) bool {
-		// Get session names for both projects
-		sessionNameI := filepath.Base(sorted[i].Path)
-		sessionNameI = strings.ReplaceAll(sessionNameI, ".", "_")
-		sessionNameJ := filepath.Base(sorted[j].Path)
-		sessionNameJ = strings.ReplaceAll(sessionNameJ, ".", "_")
-
-		// Check if sessions exist
-		sessionExistsI := m.runningSessions[sessionNameI]
-		sessionExistsJ := m.runningSessions[sessionNameJ]
-
-		// If one has an open session and the other doesn't, prioritize the open one
-		if sessionExistsI && !sessionExistsJ {
-			return true
-		}
-		if !sessionExistsI && sessionExistsJ {
-			return false
-		}
-
-		// If both have open sessions or both don't, maintain original order
-		return false
-	})
-
-	return sorted
-}
-
-// sortByMatchQuality sorts projects by match quality (exact, prefix, contains, path)
-func (m *sessionizeModel) sortByMatchQuality(projects []manager.DiscoveredProject, filter string) []manager.DiscoveredProject {
-	// Separate matches into priority groups
-	var exactNameMatches []manager.DiscoveredProject    // Exact match on project name
-	var prefixNameMatches []manager.DiscoveredProject   // Prefix match on project name
-	var containsNameMatches []manager.DiscoveredProject // Contains in project name
-	var pathMatches []manager.DiscoveredProject         // Matches elsewhere in the path
-
-	for _, p := range projects {
-		lowerName := strings.ToLower(p.Name)
-		lowerPath := strings.ToLower(p.Path)
-
-		if lowerName == filter {
-			// Exact match on name - highest priority
-			exactNameMatches = append(exactNameMatches, p)
-		} else if strings.HasPrefix(lowerName, filter) {
-			// Prefix match on name - high priority
-			prefixNameMatches = append(prefixNameMatches, p)
-		} else if strings.Contains(lowerName, filter) {
-			// Contains in name - medium priority
-			containsNameMatches = append(containsNameMatches, p)
-		} else if strings.Contains(lowerPath, filter) {
-			// Match elsewhere in the path - lower priority
-			pathMatches = append(pathMatches, p)
-		}
-	}
-
-	// Combine results in priority order
-	var result []manager.DiscoveredProject
-	result = append(result, exactNameMatches...)
-	result = append(result, prefixNameMatches...)
-	result = append(result, containsNameMatches...)
-	result = append(result, pathMatches...)
-	return result
-}
 
 func (m *sessionizeModel) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
-	m.filtered = []manager.DiscoveredProject{}
-
-	if filter == "" {
-		// No filter, prioritize open sessions then return all projects
-		m.filtered = m.prioritizeOpenSessions(m.projects)
-		return
-	}
-
-	// First, separate all matching projects by session status (open vs closed)
-	var openSessionMatches []manager.DiscoveredProject
-	var closedSessionMatches []manager.DiscoveredProject
-
+	
+	// A group is identified by the parent repo's path.
+	// For a parent repo, its own path is the key. For a worktree, its ParentPath is the key.
+	activeGroups := make(map[string]bool)
 	for _, p := range m.projects {
-		lowerName := strings.ToLower(p.Name)
-		lowerPath := strings.ToLower(p.Path)
+		groupKey := p.Path
+		if p.IsWorktree {
+			groupKey = p.ParentPath
+		}
+		if groupKey == "" { // Should not happen, but as a safeguard
+			continue
+		}
 
-		// Check if this project matches the filter
-		if lowerName == filter || strings.HasPrefix(lowerName, filter) || 
-		   strings.Contains(lowerName, filter) || strings.Contains(lowerPath, filter) {
-			
-			// Check if session is open
-			sessionName := filepath.Base(p.Path)
-			sessionName = strings.ReplaceAll(sessionName, ".", "_")
-			
-			if m.runningSessions[sessionName] {
-				openSessionMatches = append(openSessionMatches, p)
-			} else {
-				closedSessionMatches = append(closedSessionMatches, p)
-			}
+		sessionName := filepath.Base(p.Path)
+		sessionName = strings.ReplaceAll(sessionName, ".", "_")
+		if m.runningSessions[sessionName] {
+			activeGroups[groupKey] = true
 		}
 	}
 
-	// Now sort each group by match quality
-	openSessionMatches = m.sortByMatchQuality(openSessionMatches, filter)
-	closedSessionMatches = m.sortByMatchQuality(closedSessionMatches, filter)
+	if filter == "" {
+		// Default View: Group-aware sorting with inactive worktree filtering
+		
+		// Create a mutable copy for sorting
+		sortedProjects := make([]manager.DiscoveredProject, len(m.projects))
+		copy(sortedProjects, m.projects)
 
-	// Combine: open sessions first, then closed sessions
-	m.filtered = []manager.DiscoveredProject{}
-	m.filtered = append(m.filtered, openSessionMatches...)
-	m.filtered = append(m.filtered, closedSessionMatches...)
+		sort.SliceStable(sortedProjects, func(i, j int) bool {
+			groupI := sortedProjects[i].Path
+			if sortedProjects[i].IsWorktree {
+				groupI = sortedProjects[i].ParentPath
+			}
+			isGroupIActive := activeGroups[groupI]
+
+			groupJ := sortedProjects[j].Path
+			if sortedProjects[j].IsWorktree {
+				groupJ = sortedProjects[j].ParentPath
+			}
+			isGroupJActive := activeGroups[groupJ]
+
+			if isGroupIActive && !isGroupJActive {
+				return true
+			}
+			if !isGroupIActive && isGroupJActive {
+				return false
+			}
+			return false // Maintain original order for groups of same activity status
+		})
+
+		// Filter inactive worktrees: only include worktrees with running sessions
+		m.filtered = []manager.DiscoveredProject{}
+		for _, p := range sortedProjects {
+			if !p.IsWorktree {
+				// Always include parent repositories
+				m.filtered = append(m.filtered, p)
+			} else {
+				// Only include worktrees with active sessions
+				sessionName := filepath.Base(p.Path)
+				sessionName = strings.ReplaceAll(sessionName, ".", "_")
+				if m.runningSessions[sessionName] {
+					m.filtered = append(m.filtered, p)
+				}
+			}
+		}
+	} else {
+		// Filtered View: Show all matching projects, grouped by activity
+		
+		// sortByMatchQuality sorts projects by match quality (exact, prefix, contains, path)
+		sortByMatchQuality := func(projects []manager.DiscoveredProject, filter string) []manager.DiscoveredProject {
+			// Separate matches into priority groups
+			var exactNameMatches []manager.DiscoveredProject    // Exact match on project name
+			var prefixNameMatches []manager.DiscoveredProject   // Prefix match on project name
+			var containsNameMatches []manager.DiscoveredProject // Contains in project name
+			var pathMatches []manager.DiscoveredProject         // Matches elsewhere in the path
+
+			for _, p := range projects {
+				lowerName := strings.ToLower(p.Name)
+				lowerPath := strings.ToLower(p.Path)
+
+				if lowerName == filter {
+					// Exact match on name - highest priority
+					exactNameMatches = append(exactNameMatches, p)
+				} else if strings.HasPrefix(lowerName, filter) {
+					// Prefix match on name - high priority
+					prefixNameMatches = append(prefixNameMatches, p)
+				} else if strings.Contains(lowerName, filter) {
+					// Contains in name - medium priority
+					containsNameMatches = append(containsNameMatches, p)
+				} else if strings.Contains(lowerPath, filter) {
+					// Match elsewhere in the path - lower priority
+					pathMatches = append(pathMatches, p)
+				}
+			}
+
+			// Combine results in priority order
+			var result []manager.DiscoveredProject
+			result = append(result, exactNameMatches...)
+			result = append(result, prefixNameMatches...)
+			result = append(result, containsNameMatches...)
+			result = append(result, pathMatches...)
+			return result
+		}
+		
+		// Partition matches by group activity
+		var activeGroupMatches []manager.DiscoveredProject
+		var inactiveGroupMatches []manager.DiscoveredProject
+
+		for _, p := range m.projects {
+			lowerName := strings.ToLower(p.Name)
+			lowerPath := strings.ToLower(p.Path)
+
+			// Check if this project matches the filter
+			if lowerName == filter || strings.HasPrefix(lowerName, filter) || 
+			   strings.Contains(lowerName, filter) || strings.Contains(lowerPath, filter) {
+				
+				// Determine group key
+				groupKey := p.Path
+				if p.IsWorktree {
+					groupKey = p.ParentPath
+				}
+				
+				// Check group activity
+				if activeGroups[groupKey] {
+					activeGroupMatches = append(activeGroupMatches, p)
+				} else {
+					inactiveGroupMatches = append(inactiveGroupMatches, p)
+				}
+			}
+		}
+
+		// Sort both groups by match quality
+		activeGroupMatches = sortByMatchQuality(activeGroupMatches, filter)
+		inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
+
+		// Combine: active groups first, then inactive groups
+		m.filtered = []manager.DiscoveredProject{}
+		m.filtered = append(m.filtered, activeGroupMatches...)
+		m.filtered = append(m.filtered, inactiveGroupMatches...)
+	}
 }
 
 // formatChanges formats the git status into a styled string.
