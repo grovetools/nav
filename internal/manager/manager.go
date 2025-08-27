@@ -421,14 +421,15 @@ func (m *Manager) getSearchPaths() (*ProjectSearchConfig, error) {
 	data, err := os.ReadFile(m.searchPathsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ProjectSearchConfig{SearchPaths: make(map[string]SearchPathConfig)}, nil
+			// Propagate the error up instead of silently returning empty config
+			return nil, err
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to read config file %s: %w", m.searchPathsFile, err)
 	}
 
 	var config ProjectSearchConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse config file %s: %w", m.searchPathsFile, err)
 	}
 
 	return &config, nil

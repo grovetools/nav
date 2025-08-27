@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,6 +56,11 @@ var sessionizeCmd = &cobra.Command{
 		mgr := tmux.NewManager(configDir, sessionsFile)
 		projects, err := mgr.GetAvailableProjectsSorted()
 		if err != nil {
+			// Check if the error is due to missing config file
+			if os.IsNotExist(err) {
+				// Interactive first-run setup
+				return handleFirstRunSetup(configDir)
+			}
 			return fmt.Errorf("failed to get available projects: %w", err)
 		}
 
@@ -1770,4 +1776,250 @@ func sessionizeProject(projectPath string) error {
 	}
 
 	return nil
+}
+
+// handleFirstRunSetup creates an interactive setup flow for first-time users
+func handleFirstRunSetup(configDir string) error {
+	// Welcome message
+	fmt.Println("Welcome to gmux sessionizer!")
+	fmt.Println("It looks like this is your first time running the sessionizer.")
+	fmt.Println("Let's set up your project directories.")
+	fmt.Println()
+	
+	reader := bufio.NewReader(os.Stdin)
+	
+	// Collect project directories from the user
+	var searchPaths []struct {
+		key         string
+		path        string
+		description string
+	}
+	
+	fmt.Println("Enter your project directories (press Enter with empty input when done):")
+	fmt.Println("Example: ~/Projects, ~/Work, ~/Code")
+	fmt.Println()
+	
+	for i := 1; ; i++ {
+		fmt.Printf("Project directory %d (or press Enter to finish): ", i)
+		
+		pathInput, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read input: %w", err)
+		}
+		
+		pathInput = strings.TrimSpace(pathInput)
+		if pathInput == "" {
+			break
+		}
+		
+		// Expand the path to check if it exists
+		expandedPath := expandPath(pathInput)
+		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
+			fmt.Printf("⚠️  Warning: Directory %s doesn't exist. Create it? [Y/n]: ", pathInput)
+			createResponse, _ := reader.ReadString('\n')
+			createResponse = strings.TrimSpace(strings.ToLower(createResponse))
+			
+			if createResponse == "" || createResponse == "y" || createResponse == "yes" {
+				if err := os.MkdirAll(expandedPath, 0755); err != nil {
+					fmt.Printf("❌ Failed to create directory: %v\n", err)
+					fmt.Println("Skipping this directory...")
+					continue
+				}
+				fmt.Println("✅ Directory created!")
+			} else {
+				fmt.Println("Skipping non-existent directory...")
+				continue
+			}
+		}
+		
+		// Ask for a description
+		fmt.Printf("Description for %s (optional): ", pathInput)
+		descInput, _ := reader.ReadString('\n')
+		descInput = strings.TrimSpace(descInput)
+		
+		if descInput == "" {
+			descInput = fmt.Sprintf("Projects in %s", filepath.Base(pathInput))
+		}
+		
+		// Generate a key from the path
+		key := strings.ToLower(filepath.Base(pathInput))
+		key = strings.ReplaceAll(key, " ", "_")
+		key = strings.ReplaceAll(key, "-", "_")
+		
+		// Ensure unique keys
+		for _, sp := range searchPaths {
+			if sp.key == key {
+				key = fmt.Sprintf("%s_%d", key, i)
+				break
+			}
+		}
+		
+		searchPaths = append(searchPaths, struct {
+			key         string
+			path        string
+			description string
+		}{
+			key:         key,
+			path:        pathInput,
+			description: descInput,
+		})
+		
+		fmt.Printf("✅ Added %s\n\n", pathInput)
+	}
+	
+	// Check if user added any paths
+	if len(searchPaths) == 0 {
+		fmt.Println("\nNo directories added. To set up manually, create a file at:")
+		fmt.Printf("  %s/project-search-paths.yaml\n", configDir)
+		fmt.Println("\nExample configuration:")
+		fmt.Println(getDefaultConfigContent())
+		return nil
+	}
+	
+	// Create the config directory if needed
+	expandedConfigDir := expandPath(configDir)
+	if err := os.MkdirAll(expandedConfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+	
+	// Generate the config content with user's directories
+	content := generateConfigWithPaths(searchPaths)
+	
+	// Create the config file
+	configPath := filepath.Join(expandedConfigDir, "project-search-paths.yaml")
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+	
+	fmt.Printf("\n✅ Configuration file created at: %s\n", configPath)
+	fmt.Printf("✅ Added %d project director%s\n", len(searchPaths), 
+		map[bool]string{true: "ies", false: "y"}[len(searchPaths) != 1])
+	
+	fmt.Println("\n✅ Setup complete! Run 'gmux sz' to start using the sessionizer.")
+	return nil
+}
+
+// generateConfigWithPaths creates a configuration file with the user's specified paths
+func generateConfigWithPaths(searchPaths []struct{ key, path, description string }) string {
+	var content strings.Builder
+	
+	content.WriteString(`# project-search-paths.yaml
+# Configuration file for gmux sessionizer
+#
+# This file defines where to search for projects.
+# The sessionizer will scan these directories to find projects
+# you can quickly switch between.
+
+# Search paths: your project directories
+search_paths:
+`)
+	
+	for _, sp := range searchPaths {
+		content.WriteString(fmt.Sprintf("  %s:\n", sp.key))
+		content.WriteString(fmt.Sprintf("    path: %s\n", sp.path))
+		content.WriteString(fmt.Sprintf("    description: \"%s\"\n", sp.description))
+		content.WriteString("    enabled: true\n\n")
+	}
+	
+	content.WriteString(`# Discovery settings control how projects are found
+discovery:
+  # Maximum depth to search within each path (1 = only immediate subdirectories)
+  max_depth: 2
+  
+  # Minimum depth (0 = include the search path itself as a project)
+  min_depth: 0
+  
+  # Patterns to exclude from search
+  exclude_patterns:
+    - node_modules
+    - .cache
+    - target
+    - build
+    - dist
+
+# Explicit projects: specific directories to always include
+explicit_projects: []
+  # Example:
+  # - path: ~/special-project
+  #   name: "Special Project"
+  #   description: "My special project outside the search paths"
+  #   enabled: true
+
+# Tips:
+# 1. The sessionizer automatically discovers Git worktrees in .grove-worktrees
+# 2. Projects are sorted by recent access
+# 3. You can edit this file anytime to add or remove directories
+# 4. Set enabled: false to temporarily disable a search path
+`)
+	
+	return content.String()
+}
+
+// getDefaultConfigContent returns a well-commented default configuration
+func getDefaultConfigContent() string {
+	return `# project-search-paths.yaml
+# Configuration file for gmux sessionizer
+#
+# This file defines where to search for projects and how to discover them.
+# The sessionizer will scan these directories and their subdirectories
+# to find projects you can quickly switch between.
+
+# Search paths: directories where the sessionizer looks for projects
+search_paths:
+  # Example: Work projects
+  work:
+    path: ~/Work
+    description: "Work projects"
+    enabled: true
+    
+  # Example: Personal projects  
+  personal:
+    path: ~/Projects
+    description: "Personal projects"
+    enabled: true
+    
+  # Example: Learning and experiments
+  experiments:
+    path: ~/Code
+    description: "Code experiments and learning"
+    enabled: false  # Set to true to enable
+
+# Discovery settings control how projects are found
+discovery:
+  # Maximum depth to search within each path (1 = only immediate subdirectories)
+  max_depth: 2
+  
+  # Minimum depth (0 = include the search path itself as a project)
+  min_depth: 0
+  
+  # File types to look for to identify project directories (not currently used)
+  file_types:
+    - .git
+    - package.json
+    - Cargo.toml
+    - go.mod
+    
+  # Patterns to exclude from search
+  exclude_patterns:
+    - node_modules
+    - .cache
+    - target
+    - build
+    - dist
+
+# Explicit projects: specific directories to always include
+explicit_projects:
+  # Example of explicitly adding a project outside the search paths
+  - path: ~/important-project
+    name: "Important Project"  # Optional custom name
+    description: "My important project that lives elsewhere"
+    enabled: false  # Set to true to enable
+
+# Tips:
+# 1. Use ~ for your home directory
+# 2. Each search path needs a unique key (like 'work', 'personal')
+# 3. Set enabled: false to temporarily disable a search path
+# 4. The sessionizer automatically discovers Git worktrees in .grove-worktrees
+# 5. Projects are sorted by recent access when using gmux
+`
 }
