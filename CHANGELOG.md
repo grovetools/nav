@@ -1,3 +1,18 @@
+## v0.0.12 (2025-08-27)
+
+### Bug Fixes
+
+* add version cmd
+* address code review feedback
+
+### Chores
+
+* **deps:** bump dependencies
+
+### Features
+
+* improve first-run UX for gmux sessionizer
+
 ## Unreleased
 
 ### Features
