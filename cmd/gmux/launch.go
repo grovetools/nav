@@ -22,16 +22,16 @@ var launchCmd = &cobra.Command{
 	
 Examples:
   # Simple session
-  gtmux launch dev-session
+  gmux launch dev-session
   
   # Session with window name and working directory
-  gtmux launch dev-session --window-name coding --working-dir /path/to/project
+  gmux launch dev-session --window-name coding --working-dir /path/to/project
   
   # Session with multiple panes
-  gtmux launch dev-session --pane "vim main.go" --pane "go test -v" --pane "htop"
+  gmux launch dev-session --pane "vim main.go" --pane "go test -v" --pane "htop"
   
   # Complex panes with working directories (format: command[@workdir])
-  gtmux launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
+  gmux launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()

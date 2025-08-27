@@ -71,7 +71,7 @@ check: fmt vet lint test
 dev:
 	@mkdir -p $(BIN_DIR)
 	@echo "Building $(BINARY_NAME) with race detector..."
-	@go build -race $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gtmux
+	@go build -race $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gmux
 
 # Cross-compilation targets
 PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64

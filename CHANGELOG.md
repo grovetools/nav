@@ -1,3 +1,15 @@
+## Unreleased
+
+### Features
+
+* **sessionizer:** Add interactive first-run setup for `gmux sz` to guide new users through configuration
+
+### Bug Fixes
+
+* **sessionizer:** Improve error messages for malformed `project-search-paths.yaml` files by including the file path
+* **makefile:** Fix dev target to use correct cmd/gmux directory
+* **launch:** Update help text to use gmux instead of gtmux
+
 ## v0.0.11 (2025-08-26)
 
 ### Code Refactoring
