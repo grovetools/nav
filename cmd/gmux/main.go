@@ -127,6 +127,7 @@ func init() {
 	rootCmd.AddCommand(keyCmd)
 	rootCmd.AddCommand(kmCmd)
 	rootCmd.AddCommand(sessionizeCmd)
+	rootCmd.AddCommand(versionCmd)
 }
 
 func main() {

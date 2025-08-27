@@ -67,12 +67,6 @@ run: build
 # Run all checks
 check: fmt vet lint test
 
-# Development build with race detector
-dev:
-	@mkdir -p $(BIN_DIR)
-	@echo "Building $(BINARY_NAME) with race detector..."
-	@go build -race $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gmux
-
 # Cross-compilation targets
 PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
 DIST_DIR ?= dist

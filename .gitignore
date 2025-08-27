@@ -44,3 +44,4 @@ config.local.yaml
 tmux-sessions.yaml
 
 .grove
+.grove-worktrees
