@@ -1,4 +1,6 @@
-# grove-tmux (gmux)
+# grove-tmux
+
+![grove-tmux-readme](https://github.com/user-attachments/assets/d990cacc-279e-497e-a0f4-0793b82b503e)
 
 ![CI](https://github.com/mattsolo1/grove-tmux/actions/workflows/ci.yml/badge.svg)
 
