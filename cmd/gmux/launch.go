@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -37,15 +37,15 @@ Examples:
 		ctx := context.Background()
 		sessionName := args[0]
 
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
 
 		// Parse pane configurations
-		var paneOpts []tmux.PaneOptions
+		var paneOpts []tmuxclient.PaneOptions
 		for _, paneStr := range launchPanes {
-			pane := tmux.PaneOptions{}
+			pane := tmuxclient.PaneOptions{}
 
 			// Check for @workdir syntax
 			if idx := strings.LastIndex(paneStr, "@"); idx != -1 {
@@ -58,7 +58,7 @@ Examples:
 			paneOpts = append(paneOpts, pane)
 		}
 
-		opts := tmux.LaunchOptions{
+		opts := tmuxclient.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: launchWorkingDir,
 			WindowName:       launchWindowName,

@@ -21,6 +21,7 @@ import (
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -260,7 +261,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	// Get current session name if we're in tmux
 	currentSession := ""
 	if os.Getenv("TMUX") != "" {
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err == nil {
 			ctx := context.Background()
 			if current, err := client.GetCurrentSession(ctx); err == nil {
@@ -336,7 +337,7 @@ func fetchGitStatusForPath(path string) (*extendedGitStatus, error) {
 
 // fetchGitStatusForOpenSessions gets the git status for all active tmux sessions.
 func fetchGitStatusForOpenSessions() (map[string]*extendedGitStatus, error) {
-	client, err := tmux.NewClient()
+	client, err := tmuxclient.NewClient()
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +532,7 @@ func fetchRunningSessionsCmd() tea.Cmd {
 	return func() tea.Msg {
 		sessionsMap := make(map[string]bool)
 		if os.Getenv("TMUX") != "" {
-			client, err := tmux.NewClient()
+			client, err := tmuxclient.NewClient()
 			if err == nil {
 				ctx := context.Background()
 				sessionNames, _ := client.ListSessions(ctx)
@@ -836,7 +837,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				sessionName = strings.ReplaceAll(sessionName, ".", "_")
 
 				// Check if session exists before trying to close it
-				client, err := tmux.NewClient()
+				client, err := tmuxclient.NewClient()
 				if err == nil {
 					ctx := context.Background()
 					exists, err := client.SessionExists(ctx, sessionName)
@@ -1746,7 +1747,7 @@ func sessionizeProject(projectPath string) error {
 	}
 
 	// We're in tmux, use the tmux client
-	client, err := tmux.NewClient()
+	client, err := tmuxclient.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create tmux client: %w", err)
 	}
@@ -1761,7 +1762,7 @@ func sessionizeProject(projectPath string) error {
 
 	if !exists {
 		// Create new session
-		opts := tmux.LaunchOptions{
+		opts := tmuxclient.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: absPath,
 		}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			defer cancel()
 		}
 
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}

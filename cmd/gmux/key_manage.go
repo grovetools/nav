@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -445,7 +446,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						sessionName = strings.ReplaceAll(sessionName, ".", "_")
 
 						// Create tmux client
-						client, err := tmux.NewClient()
+						client, err := tmuxclient.NewClient()
 						if err != nil {
 							m.message = fmt.Sprintf("Failed to create tmux client: %v", err)
 							return m, nil
@@ -462,7 +463,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 						if !exists {
 							// Session doesn't exist, create it
-							opts := tmux.LaunchOptions{
+							opts := tmuxclient.LaunchOptions{
 								SessionName:      sessionName,
 								WorkingDirectory: session.Path,
 							}

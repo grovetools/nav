@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/mattsolo1/grove-core/pkg/models"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -42,7 +43,7 @@ change to the configured directory for that session.`,
 		}
 
 		// Create tmux client
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
@@ -71,7 +72,7 @@ change to the configured directory for that session.`,
 		}
 
 		// Create launch options
-		opts := tmux.LaunchOptions{
+		opts := tmuxclient.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: workDir,
 			WindowName:       session.Repository,

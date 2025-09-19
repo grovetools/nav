@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -23,7 +23,7 @@ var sessionExistsCmd = &cobra.Command{
 		ctx := context.Background()
 		sessionName := args[0]
 
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
@@ -52,7 +52,7 @@ var sessionKillCmd = &cobra.Command{
 		ctx := context.Background()
 		sessionName := args[0]
 
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
@@ -76,7 +76,7 @@ var sessionCaptureCmd = &cobra.Command{
 		ctx := context.Background()
 		target := args[0]
 
-		client, err := tmux.NewClient()
+		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
