@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/tmux"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,6 +18,7 @@ type Manager struct {
 	configDir       string
 	sessionsFile    string
 	searchPathsFile string
+	tmuxClient      *tmux.Client
 }
 
 // expandPath expands ~ to home directory
@@ -89,10 +92,18 @@ func NewManager(configDir string, sessionsFile string) *Manager {
 		searchPathsFile = filepath.Join(configDir, "project-search-paths.yaml")
 	}
 
+	// Initialize tmux client
+	tmuxClient, err := tmux.NewClient()
+	if err != nil {
+		// Log warning but don't fail - some operations may still work
+		fmt.Fprintf(os.Stderr, "Warning: could not initialize tmux client: %v\n", err)
+	}
+
 	return &Manager{
 		configDir:       configDir,
 		sessionsFile:    sessionsFile,
 		searchPathsFile: searchPathsFile,
+		tmuxClient:      tmuxClient,
 	}
 }
 
@@ -631,12 +642,15 @@ func (m *Manager) Sessionize(path string) error {
 	// Replace dots with underscores for valid tmux session names
 	sessionName = strings.ReplaceAll(sessionName, ".", "_")
 
+	ctx := context.Background()
+
 	// Check if tmux is running
 	tmuxRunning := m.isTmuxRunning()
 	inTmux := os.Getenv("TMUX") != ""
 
 	// If tmux is not running and we're not in tmux, start new session
 	if !tmuxRunning && !inTmux {
+		// Need to use exec.Command directly for interactive session
 		cmd := exec.Command("tmux", "new-session", "-s", sessionName, "-c", expandedPath)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -644,22 +658,35 @@ func (m *Manager) Sessionize(path string) error {
 		return cmd.Run()
 	}
 
+	// Check if tmux client is available
+	if m.tmuxClient == nil {
+		return fmt.Errorf("tmux client not initialized")
+	}
+
 	// Check if session already exists
-	if !m.hasSession(sessionName) {
-		// Create new detached session
-		cmd := exec.Command("tmux", "new-session", "-ds", sessionName, "-c", expandedPath)
-		if err := cmd.Run(); err != nil {
+	exists, err := m.tmuxClient.SessionExists(ctx, sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to check session: %w", err)
+	}
+
+	if !exists {
+		// Create new detached session using the tmux client
+		opts := tmux.LaunchOptions{
+			SessionName:      sessionName,
+			WorkingDirectory: expandedPath,
+		}
+		if err := m.tmuxClient.Launch(ctx, opts); err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 	}
 
 	// Switch to the session if we're in tmux
 	if inTmux {
-		cmd := exec.Command("tmux", "switch-client", "-t", sessionName)
-		return cmd.Run()
+		return m.tmuxClient.SwitchClient(ctx, sessionName)
 	}
 
 	// Attach to the session if we're outside tmux
+	// Need to use exec.Command directly for interactive attach
 	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -668,15 +695,20 @@ func (m *Manager) Sessionize(path string) error {
 }
 
 func (m *Manager) isTmuxRunning() bool {
-	cmd := exec.Command("pgrep", "tmux")
-	err := cmd.Run()
-	return err == nil
+	if m.tmuxClient == nil {
+		return false
+	}
+	// Check if tmux server is running by trying to list sessions
+	_, err := m.tmuxClient.ListSessions(context.Background())
+	return err == nil || !strings.Contains(err.Error(), "no server")
 }
 
 func (m *Manager) hasSession(name string) bool {
-	cmd := exec.Command("tmux", "has-session", "-t", name)
-	err := cmd.Run()
-	return err == nil
+	if m.tmuxClient == nil {
+		return false
+	}
+	exists, err := m.tmuxClient.SessionExists(context.Background(), name)
+	return err == nil && exists
 }
 
 // RegenerateBindingsGo generates tmux key bindings in Go (replacing Python script)
