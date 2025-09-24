@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/mattsolo1/grove-docgen/main/schema/docgen.config.schema.json
+category: Developer Tools
+title: "gmux: The Grove Tmux Session Manager"
+description: "gmux is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment with live project, Git, and AI session status."
+enabled: true
+sections:
+  - name: introduction
+    order: 1
+    output: 01-introduction.md
+    prompt: prompts/01-introduction.md
+    title: Introduction
+  - name: installation
+    order: 2
+    output: 02-installation.md
+    prompt: prompts/02-installation.md
+    title: Installation
+  - name: getting-started
+    order: 3
+    output: 03-getting-started.md
+    prompt: prompts/03-getting-started.md
+    title: Getting Started
+  - name: configuration
+    order: 4
+    output: 04-configuration.md
+    prompt: prompts/04-configuration.md
+    title: Configuration Reference
+  - name: live-sessionizer
+    order: 5
+    output: 05-live-sessionizer.md
+    prompt: prompts/05-live-sessionizer.md
+    title: "Live Sessionizer (gmux sz)"
+  - name: session-hotkeys
+    order: 6
+    output: 06-session-hotkeys.md
+    prompt: prompts/06-session-hotkeys.md
+    title: "Session Hotkeys (gmux key)"
+  - name: command-reference
+    order: 7
+    output: 07-command-reference.md
+    prompt: prompts/07-command-reference.md
+    title: Command Reference
+  - name: advanced-topics
+    order: 8
+    output: 08-advanced-topics.md
+    prompt: prompts/08-advanced-topics.md
+    title: Advanced Topics
+  - name: contributing
+    order: 9
+    output: 09-contributing.md
+    prompt: prompts/09-contributing.md
+    title: Contributing
+settings:
+  model: gpt-5
+  output_dir: docs/generated
+  regeneration_mode: scratch
+  rules_file: docs.rules
+  structured_output_file: pkg/docs/docs.json
+  system_prompt: default
