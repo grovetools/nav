@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/mattsolo1/grove-docgen/main/schema/docgen.config.schema.json
 category: Developer Tools
-title: "gmux: The Grove Tmux Session Manager"
+title: "Grove Tmux"
 description: "gmux is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment with live project, Git, and AI session status."
 enabled: true
 sections:
@@ -51,7 +51,7 @@ sections:
     title: Contributing
 settings:
   model: gpt-5
-  output_dir: docs/generated
+  output_dir: docs
   regeneration_mode: scratch
   rules_file: docs.rules
   structured_output_file: pkg/docs/docs.json
