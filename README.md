@@ -43,9 +43,9 @@ Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github
 <!-- DOCGEN:TOC:START -->
 
 See the [documentation](docs/) for detailed usage instructions:
-- [Overview](docs/01-overview.md) - <img src="./images/grove-tmux-readme.svg" width="60%" />
-- [Examples](docs/02-examples.md) - This guide provides practical examples for the main workflows in `grove-tmux`...
-- [Configuration Reference](docs/03-configuration.md) - This document describes the configuration files used by `gmux`, where they ar...
-- [Command Reference](docs/04-command-reference.md) - This document provides a comprehensive reference for the `gmux` command-line ...
+- [Overview](docs/01-overview.md)
+- [Examples](docs/02-examples.md)
+- [Configuration Reference](docs/03-configuration.md)
+- [Command Reference](docs/04-command-reference.md)
 
 <!-- DOCGEN:TOC:END -->
