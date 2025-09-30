@@ -1,3 +1,7 @@
+# Grove Tmux
+
+<img src="./images/grove-tmux-readme.svg" width="60%" />
+
 `gmux` is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment by providing a live dashboard of your projects, Git repositories, and active development sessions. Inspired by [ThePrimeagen's tmux-sessionizer](https://github.com/ThePrimeagen/tmux-sessionizer), it extends the core concept with deeper ecosystem integrations.
 
 <!-- placeholder for animated gif -->

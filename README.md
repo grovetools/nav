@@ -1,140 +1,51 @@
-# grove-tmux
+<!-- DOCGEN:OVERVIEW:START -->
 
-![grove-tmux-readme](https://github.com/user-attachments/assets/506903c3-1aba-4331-9fe2-2c170fa8a611)
+<img src="docs/images/grove-tmux-readme.svg" width="60%" />
 
-![CI](https://github.com/mattsolo1/grove-tmux/actions/workflows/ci.yml/badge.svg)
+`gmux` is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment by providing a live dashboard of your projects, Git repositories, and active development sessions. Inspired by [ThePrimeagen's tmux-sessionizer](https://github.com/ThePrimeagen/tmux-sessionizer), it extends the core concept with deeper ecosystem integrations.
 
-`gmux` is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment.
+<!-- placeholder for animated gif -->
 
-The core of `gmux` is a TUI that provides a real-time dashboard of your projects, Git repositories, and active development sessions. Inspired by [ThePrimeagen's tmux-sessionizer](https://github.com/ThePrimeagen/tmux-sessionizer).
+## Key Features
 
-![gmux-sessionizer-demo](https://raw.githubusercontent.com/mattsolo1/grove-tmux/main/.assets/gmux-sz.png)
+*   **Live Sessionizer (`gmux sz`)**: Opens a live, filterable dashboard of all your development projects. It features automatic project discovery, real-time status indicators for active tmux sessions (`●`), and a compact, live summary of the Git status for each active session.
+*   **Interactive Key Management (`gmux key manage`)**: Provides a terminal user interface (TUI) to visually map, unmap, and edit project-to-key bindings. It includes fuzzy project searching to quickly find and map any discovered project to an available key.
+*   **Hotkey System**: Define a set of hotkeys in a simple configuration file. `gmux` generates the necessary tmux bindings, allowing you to switch to your most-used projects with a single key press.
+*   **Advanced Session Control (`gmux launch`)**: Script the creation of new sessions with specific window names, working directories, and complex, multi-pane layouts, including per-pane working directories.
+*   **Scripting and Automation**: A rich set of subcommands (`session exists`, `session kill`, `session capture`, `wait`) allows for the control and monitoring of tmux from scripts, enabling automation for development and testing workflows.
+*   **Hierarchical Worktree Display**: Automatically discovers and groups Git worktrees under their parent repository in the sessionizer, providing a clean and organized view of complex projects.
 
-## Features
+## Ecosystem Integration
 
-### Live Sessionizer (`gmux sz`)
+`gmux` is a key component of the Grove ecosystem, designed to create a cohesive and context-aware development environment within tmux.
 
-The `gmux sz` command opens a live, filterable dashboard of all your development projects. 
-
--   **Automatic Project Discovery**: Finds Git repositories in your configured search paths.
--   **Real-time Tmux Status**: Instantly see which projects have active tmux sessions (`●`), including the currently attached one (`●`).
--   **Live Git Status**: Get a compact, real-time summary of Git status for all active sessions (e.g., `↑1 ↓2 M:3 S:1 ?_5 +10 -4`).
--   **Claude AI Integration**: If `grove-hooks` is installed, `gmux` displays the status of active Claude AI sessions (e.g., running `▶`, idle `⏸`, completed `✓`).
--   **Smart Sorting**: Prioritizes projects with active tmux sessions, then sorts by most recently accessed.
--   **Hierarchical Worktree Display**: Automatically discovers and groups Git worktrees under their parent repository.
-
-### Interactive Key Management (`gmux key manage`)
-
--   **TUI for Key Bindings**: An interactive table view to visually map, unmap, and edit project-to-key bindings.
--   **Fuzzy Project Search**: Quickly find and map any discovered project to an available key without leaving the interface.
--   **CLI Commands**: A full suite of commands (`add`, `update`, `edit`, `unmap`) for scripting and managing key bindings from the command line.
-
-### Advanced Session Control
-
--   **Complex Session Launching**: Use `gmux launch` to script new sessions with specific window names, working directories, and complex, multi-pane layouts.
--   **Scripting & Automation**: A rich set of subcommands (`session exists`, `session kill`, `session capture`, `wait`) to control and monitor tmux from scripts.
-
-## Dependencies
+*   **Grove Configuration**: It uses the central `~/.config/grove/` directory for its configuration files, maintaining consistency with other Grove tools.
+*   **`grove-hooks` Integration**: When `grove-hooks` is installed, `gmux` can display the live status of active Claude AI sessions (e.g., running `▶`, idle `⏸`, completed `✓`) directly in the sessionizer, providing visibility into ongoing AI tasks.
+*   **`grove` Meta-CLI**: Installation and version management of `gmux` are handled by the `grove` meta-CLI, ensuring that the correct binary is available and integrated with the rest of the ecosystem.
 
 ## Installation
 
-Todo
-
-## Configuration
-
-`gmux` uses simple YAML files for configuration. It looks for them in `~/.config/grove/` first, and then `~/.config/tmux/` as a fallback.
-
-### 1. Project Discovery
-
-Create `~/.config/grove/project-search-paths.yaml` to tell `gmux sz` where to find your projects.
-
-```yaml
-# ~/.config/grove/project-search-paths.yaml
-search_paths:
-  # A friendly name for the path
-  work:
-    # The path to search for projects
-    path: "~/Work"
-    # Enable or disable this search path
-    enabled: true
-
-  personal:
-    path: "~/Personal"
-    enabled: true
-
-# You can also add specific projects that aren't in search paths
-explicit_projects:
-  - path: "~/Code/dotfiles"
-    enabled: true
+Install via the Grove meta-CLI:
+```bash
+grove install tmux
 ```
 
-### 2. Session Key Bindings
-
-Create `~/.config/grove/tmux-sessions.yaml` to define your hotkeys. You can manage this file manually or using the `gmux key` commands.
-
-```yaml
-# ~/.config/grove/tmux-sessions.yaml
-available_keys:
-  - a
-  - s
-  - d
-  - f
-  - g
-  - h
-  - j
-  - k
-  - l
-
-sessions:
-  # Map key 'a' to the grove-tmux project
-  a:
-    path: "~/Work/grove-tmux"
-    repo: "grove-tmux"
-  # Key 's' is available but currently unmapped
+Verify installation:
+```bash
+gmux version
 ```
 
-### 3. Tmux Integration
+Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.
 
-`gmux` generates a tmux configuration file with your key bindings. To activate them, add the following line to your `~/.tmux.conf`:
-
-```tmux
-# ~/.tmux.conf
-
-# Source the bindings generated by gmux
-source-file ~/.config/grove/generated-bindings.conf
-```
-
-After changing key bindings with `gmux key manage` or other `gmux` commands, the generated file is updated automatically, and `gmux` will attempt to reload your tmux configuration.
-
-## Usage
-
-Here is an overview of the main commands. Use `gmux <command> --help` for more details.
-
-| Command                     | Description                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------- |
-| `gmux sz`                   | Open the interactive, live-updating sessionizer.                              |
-| `gmux sz <path>`            | Directly create or switch to a session for the given path.                    |
-| `gmux key manage` (or `km`) | Open an interactive TUI to manage session key bindings.                         |
-| `gmux key list` (or `list`) | List all configured session key bindings.                                     |
-| `gmux key add`              | Interactively map a discovered project to an available key.                     |
-| `gmux key unmap <key>`      | Unmap a project from a key, making the key available again.                     |
-| `gmux launch <session-name>`| Launch a new tmux session with advanced options (panes, commands, etc.).      |
-| `gmux start <key>`          | Start a pre-configured session by its key.                                    |
-| `gmux status`               | Show the Git status for all configured repositories.                            |
-| `gmux session <subcommand>` | Subcommands to check (`exists`), terminate (`kill`), and inspect (`capture`) sessions. |
-| `gmux wait <session-name>`  | Block until a specific tmux session is closed.                                |
+<!-- DOCGEN:OVERVIEW:END -->
 
 
-## Development
+<!-- DOCGEN:TOC:START -->
 
-To work on `gmux`:
+See the [documentation](docs/) for detailed usage instructions:
+- [Overview](docs/01-overview.md) - <img src="./images/grove-tmux-readme.svg" width="60%" />
+- [Examples](docs/02-examples.md) - This guide provides practical examples for the main workflows in `grove-tmux`...
+- [Configuration Reference](docs/03-configuration.md) - This document describes the configuration files used by `gmux`, where they ar...
+- [Command Reference](docs/04-command-reference.md) - This document provides a comprehensive reference for the `gmux` command-line ...
 
-1.  Clone the repository: `git clone https://github.com/mattsolo1/grove-tmux.git`
-2.  Enter the directory: `cd grove-tmux`
-3.  Build the binary: `make build`
-4.  Run unit tests: `make test`
-5.  Run end-to-end tests: `make test-e2e`
-
-## License
-
-This project is licensed under the MIT License.
+<!-- DOCGEN:TOC:END -->
