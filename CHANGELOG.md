@@ -1,3 +1,99 @@
+## v0.1.0 (2025-10-01)
+
+This release introduces significant improvements to the Terminal User Interfaces (TUIs) in `gmux`. The sessionizer (`gmux sz`) and key manager (`gmux key manage`) now use the centralized Kanagawa theme for a consistent look and feel across the Grove ecosystem (4224b82). A standardized help system has been implemented in both interfaces, providing more detailed and structured guidance (ca2cc26). Navigation in the sessionizer is now more intuitive with the addition of vim-style keys (`j/k`, `ctrl+u/d`, `g/G`) and a clearer separation between navigation and filtering modes. The key binding for closing a session has been changed from `ctrl+d` to `X` to avoid conflicts (ca2cc26).
+
+A comprehensive documentation suite has been added, covering all aspects of `gmux` from getting started guides to a full command reference (88e78ad, d04d8be). The project's README now features an automatically generated Table of Contents to improve navigability (4078852).
+
+Internal architecture has been refactored to use the centralized tmux client from `grove-core`, removing duplicated code and standardizing interactions with tmux (d6822e2, 873ebc2). The CI/CD pipeline has also seen improvements, with the release process now sourcing its notes directly from the CHANGELOG file for better consistency (e3bf988).
+
+### Features
+
+*   Implement standardized help components and improved vim-style navigation in TUIs (ca2cc26)
+*   Migrate TUI components to use the centralized Kanagawa theme for visual consistency (4224b82)
+*   Add comprehensive project documentation and generation configuration (d04d8be)
+*   Add Table of Contents generation for README and update docgen configuration (4078852)
+*   Update release workflow to extract release notes from CHANGELOG.md (e3bf988)
+*   Improve documentation generation configuration (b26e4b8)
+
+### Bug Fixes
+
+*   Update CI workflow to correctly disable execution using 'branches: [ none ]' (3658b82)
+
+### Code Refactoring
+
+*   Migrate from local implementation to the centralized tmux client from grove-core (d6822e2)
+*   Update internal manager to use the centralized grove-core tmux client (873ebc2)
+*   Standardize docgen.config.yml key order and settings (582aa2f)
+
+### Documentation
+
+*   Add a comprehensive documentation structure and generation prompts (88e78ad)
+*   Update docgen configuration and add generated documentation files (70db90d)
+*   Simplify documentation structure to four main sections (50f3c79)
+*   Update docgen configuration and README templates for TOC generation (9d99352)
+*   Simplify installation instructions to point to the main Grove ecosystem guide (be380ce)
+
+### Chores
+
+*   Temporarily disable CI workflow (e24dc3d)
+*   Update .gitignore to track CLAUDE.md and ignore go.work files (ac2be9f)
+
+### Continuous Integration
+
+*   Remove redundant test execution from the release workflow (02c4606)
+
+### File Changes
+
+```
+ .github/workflows/ci.yml             |    4 +-
+ .github/workflows/release.yml        |   24 +-
+ .gitignore                           |    3 +
+ CLAUDE.md                            |   30 +
+ README.md                            |  152 +--
+ cmd/gmux/key.go                      |   25 +-
+ cmd/gmux/key_manage.go               |   93 +-
+ cmd/gmux/launch.go                   |   10 +-
+ cmd/gmux/main.go                     |    6 +-
+ cmd/gmux/session.go                  |    8 +-
+ cmd/gmux/sessionize.go               |  496 ++++++----
+ cmd/gmux/start.go                    |    5 +-
+ cmd/gmux/wait.go                     |    4 +-
+ docs/01-introduction.md              |   66 ++
+ docs/01-overview.md                  |   45 +
+ docs/02-examples.md                  |  108 ++
+ docs/02-installation.md              |   27 +
+ docs/03-configuration.md             |  115 +++
+ docs/03-getting-started.md           |  110 +++
+ docs/04-command-reference.md         |  396 ++++++++
+ docs/04-configuration.md             |  184 ++++
+ docs/05-live-sessionizer.md          |  160 +++
+ docs/06-session-hotkeys.md           |  180 ++++
+ docs/07-command-reference.md         |  177 ++++
+ docs/08-advanced-topics.md           |  194 ++++
+ docs/09-contributing.md              |  132 +++
+ docs/README.md.tpl                   |    6 +
+ docs/docgen.config.yml               |   40 +
+ docs/docs.rules                      |    1 +
+ docs/images/grove-tmux-readme.svg    | 1791 ++++++++++++++++++++++++++++++++++
+ docs/prompts/01-overview.md          |   31 +
+ docs/prompts/02-examples.md          |   20 +
+ docs/prompts/03-configuration.md     |   20 +
+ docs/prompts/04-command-reference.md |   21 +
+ internal/manager/manager.go          |   56 +-
+ pkg/docs/docs.json                   |  174 ++++
+ pkg/tmux/client.go                   |   39 -
+ pkg/tmux/doc.go                      |   30 -
+ pkg/tmux/example_test.go             |   63 --
+ pkg/tmux/launch.go                   |   79 --
+ pkg/tmux/launch_test.go              |  159 ---
+ pkg/tmux/monitor.go                  |   26 -
+ pkg/tmux/monitor_test.go             |  137 ---
+ pkg/tmux/session.go                  |   89 --
+ pkg/tmux/session_test.go             |  127 ---
+ pkg/tmux/types.go                    |   14 -
+ 46 files changed, 4527 insertions(+), 1150 deletions(-)
+```
+
 ## v0.0.15 (2025-09-17)
 
 ### Chores
