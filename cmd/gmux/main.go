@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-core/version"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
@@ -40,8 +40,8 @@ var listCmd = &cobra.Command{
 
 		// Check the style flag to determine output format
 		if listStyle == "compact" {
-			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
-			repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
+			keyStyle := core_theme.DefaultTheme.Highlight
+			repoStyle := core_theme.DefaultTheme.Info
 
 			var outputLines []string
 			for _, s := range sessions {

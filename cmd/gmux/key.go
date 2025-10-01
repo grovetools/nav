@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
@@ -32,10 +33,10 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 	// Define styles
 	re := lipgloss.NewRenderer(os.Stdout)
 	baseStyle := re.NewStyle().Padding(0, 1)
-	headerStyle := baseStyle.Copy().Bold(true).Foreground(lipgloss.Color("255"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
-	repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
-	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95e1d3"))
+	headerStyle := baseStyle.Copy().Bold(true).Foreground(core_theme.DefaultColors.LightText)
+	keyStyle := core_theme.DefaultTheme.Highlight
+	repoStyle := core_theme.DefaultTheme.Info
+	pathStyle := core_theme.DefaultTheme.Success
 
 	// Build rows
 	var rows [][]string
@@ -64,7 +65,7 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 	// Create the table
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+		BorderStyle(lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Border)).
 		Headers("Key", "Repository", "Path").
 		Rows(rows...)
 
@@ -99,8 +100,8 @@ var keyListCmd = &cobra.Command{
 
 		// Check the style flag to determine output format
 		if listStyle == "compact" {
-			keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true)
-			repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
+			keyStyle := core_theme.DefaultTheme.Highlight
+			repoStyle := core_theme.DefaultTheme.Info
 
 			var outputLines []string
 			for _, s := range sessions {
@@ -418,10 +419,10 @@ var keyAddCmd = &cobra.Command{
 
 		// Build project table
 		re := lipgloss.NewRenderer(os.Stdout)
-		headerStyle := re.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Padding(0, 1)
-		indexStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaa00")).Bold(true)
-		projectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
-		pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95e1d3"))
+		headerStyle := re.NewStyle().Bold(true).Foreground(core_theme.DefaultColors.LightText).Padding(0, 1)
+		indexStyle := core_theme.DefaultTheme.Warning
+		projectStyle := core_theme.DefaultTheme.Info
+		pathStyle := core_theme.DefaultTheme.Success
 
 		var rows [][]string
 		for i, p := range availableProjects {
@@ -433,7 +434,7 @@ var keyAddCmd = &cobra.Command{
 
 		t := table.New().
 			Border(lipgloss.NormalBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+			BorderStyle(lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Border)).
 			Headers("#", "Project", "Path").
 			Rows(rows...)
 

@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
@@ -1194,36 +1195,36 @@ func formatChanges(status *git.StatusInfo, extStatus *extendedGitStatus) string 
 
 	if status.HasUpstream {
 		if status.AheadCount > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#95e1d3")).Bold(true).Render(fmt.Sprintf("↑%d", status.AheadCount)))
+			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 		}
 		if status.BehindCount > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#f38181")).Bold(true).Render(fmt.Sprintf("↓%d", status.BehindCount)))
+			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 		}
 	}
 
 	if status.ModifiedCount > 0 {
-		changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#ffaa00")).Bold(true).Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
+		changes = append(changes, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
 	}
 	if status.StagedCount > 0 {
-		changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4")).Bold(true).Render(fmt.Sprintf("S:%d", status.StagedCount)))
+		changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("S:%d", status.StagedCount)))
 	}
 	if status.UntrackedCount > 0 {
-		changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4444")).Bold(true).Render(fmt.Sprintf("?:%d", status.UntrackedCount)))
+		changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("?:%d", status.UntrackedCount)))
 	}
 
 	// Add lines added/deleted if available
 	if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
 		if extStatus.LinesAdded > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Render(fmt.Sprintf("+%d", extStatus.LinesAdded)))
+			changes = append(changes, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("+%d", extStatus.LinesAdded)))
 		}
 		if extStatus.LinesDeleted > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(lipgloss.Color("#ff4444")).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted)))
+			changes = append(changes, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted)))
 		}
 	}
 
 	changesStr := strings.Join(changes, " ")
 	if !status.IsDirty && changesStr == "" && status.HasUpstream {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Render("✓")
+		return core_theme.DefaultTheme.Success.Render("✓")
 	}
 
 	return changesStr
@@ -1307,20 +1308,22 @@ func (m sessionizeModel) View() string {
 		if project.ClaudeSessionID != "" {
 			// This is a Claude session entry - use its own status
 			statusSymbol := ""
-			statusColor := lipgloss.Color("#808080")
+			var statusColor lipgloss.Color
 			switch project.ClaudeSessionStatus {
 			case "running":
 				statusSymbol = "▶"
-				statusColor = lipgloss.Color("#00ff00")
+				statusColor = core_theme.DefaultColors.Green
 			case "idle":
 				statusSymbol = "⏸"
-				statusColor = lipgloss.Color("#ffaa00")
+				statusColor = core_theme.DefaultColors.Yellow
 			case "completed":
 				statusSymbol = "✓"
-				statusColor = lipgloss.Color("#4ecdc4")
+				statusColor = core_theme.DefaultColors.Cyan
 			case "failed", "error":
 				statusSymbol = "✗"
-				statusColor = lipgloss.Color("#ff4444")
+				statusColor = core_theme.DefaultColors.Red
+			default:
+				statusColor = core_theme.DefaultColors.MutedText
 			}
 
 			claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
@@ -1348,20 +1351,22 @@ func (m sessionizeModel) View() string {
 
 			// Style the claude status (without duration - that goes at the end)
 			statusSymbol := ""
-			statusColor := lipgloss.Color("#808080")
+			var statusColor lipgloss.Color
 			switch claudeStatus {
 			case "running":
 				statusSymbol = "▶"
-				statusColor = lipgloss.Color("#00ff00")
+				statusColor = core_theme.DefaultColors.Green
 			case "idle":
 				statusSymbol = "⏸"
-				statusColor = lipgloss.Color("#ffaa00")
+				statusColor = core_theme.DefaultColors.Yellow
 			case "completed":
 				statusSymbol = "✓"
-				statusColor = lipgloss.Color("#4ecdc4")
+				statusColor = core_theme.DefaultColors.Cyan
 			case "failed", "error":
 				statusSymbol = "✗"
-				statusColor = lipgloss.Color("#ff4444")
+				statusColor = core_theme.DefaultColors.Red
+			default:
+				statusColor = core_theme.DefaultColors.MutedText
 			}
 
 			if statusSymbol != "" {
@@ -1392,23 +1397,14 @@ func (m sessionizeModel) View() string {
 
 		if i == m.cursor {
 			// Highlight selected line
-			indicator := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00ff00")).
-				Bold(true).
-				Render("▶ ")
+			indicator := core_theme.DefaultTheme.Highlight.Render("▶ ")
 
-			nameStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00ff00")).
-				Bold(true)
-			pathStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#95e1d3"))
+			nameStyle := core_theme.DefaultTheme.Selected
+			pathStyle := core_theme.DefaultTheme.Info
 
 			keyIndicator := "  " // Default: 2 spaces
 			if keyMapping != "" {
-				keyIndicator = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#ffaa00")).
-					Bold(true).
-					Render(fmt.Sprintf("%s ", keyMapping))
+				keyIndicator = core_theme.DefaultTheme.Highlight.Render(fmt.Sprintf("%s ", keyMapping))
 			}
 
 			sessionIndicator := " "
@@ -1420,12 +1416,12 @@ func (m sessionizeModel) View() string {
 				if sessionName == m.currentSession {
 					// Current session - use blue indicator
 					sessionIndicator = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#00aaff")).
+						Foreground(core_theme.DefaultColors.Blue).
 						Render("●")
 				} else {
 					// Other active session - use green indicator
 					sessionIndicator = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#00ff00")).
+						Foreground(core_theme.DefaultColors.Green).
 						Render("●")
 				}
 			}
@@ -1449,24 +1445,19 @@ func (m sessionizeModel) View() string {
 
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && claudeDuration != "" {
-				line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("#b19cd9")).Render(claudeDuration)
+				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
 			}
 
 			b.WriteString(line)
 		} else {
 			// Normal line with colored name
-			nameStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#4ecdc4")).
-				Bold(true)
-			pathStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#808080"))
+			nameStyle := core_theme.DefaultTheme.Info
+			pathStyle := core_theme.DefaultTheme.Muted
 
 			// Always reserve space for key indicator
 			keyIndicator := "  "
 			if keyMapping != "" {
-				keyIndicator = lipgloss.NewStyle().
-					Foreground(lipgloss.Color("#ffaa00")).
-					Render(fmt.Sprintf("%s ", keyMapping))
+				keyIndicator = core_theme.DefaultTheme.Highlight.Render(fmt.Sprintf("%s ", keyMapping))
 			}
 
 			sessionIndicator := " "
@@ -1478,12 +1469,12 @@ func (m sessionizeModel) View() string {
 				if sessionName == m.currentSession {
 					// Current session - use blue indicator
 					sessionIndicator = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#00aaff")).
+						Foreground(core_theme.DefaultColors.Blue).
 						Render("●")
 				} else {
 					// Other active session - use green indicator
 					sessionIndicator = lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#00ff00")).
+						Foreground(core_theme.DefaultColors.Green).
 						Render("●")
 				}
 			}
@@ -1507,7 +1498,7 @@ func (m sessionizeModel) View() string {
 
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && claudeDuration != "" {
-				line += "  " + lipgloss.NewStyle().Foreground(lipgloss.Color("#b19cd9")).Render(claudeDuration)
+				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
 			}
 
 			b.WriteString(line)
@@ -1518,21 +1509,21 @@ func (m sessionizeModel) View() string {
 	// Show scroll indicators if needed
 	if start > 0 || end < len(m.filtered) {
 		scrollInfo := fmt.Sprintf(" (%d-%d of %d)", start+1, end, len(m.filtered))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render(scrollInfo))
+		b.WriteString(core_theme.DefaultTheme.Muted.Render(scrollInfo))
 	}
 
 	// Help text at bottom
 	if len(m.filtered) == 0 {
 		if len(m.projects) == 0 {
-			b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("No active Claude sessions"))
+			b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No active Claude sessions"))
 		} else {
-			b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("No matching Claude sessions"))
+			b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No matching Claude sessions"))
 		}
 	}
 
 	// Build help text with highlighted keys
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
+	helpStyle := core_theme.DefaultTheme.Muted
+	keyStyle := core_theme.DefaultTheme.Highlight
 
 	b.WriteString("\n")
 	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(": navigate • "))
@@ -1545,13 +1536,13 @@ func (m sessionizeModel) View() string {
 
 	// Display search paths at the very bottom
 	if len(m.searchPaths) > 0 {
-		b.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("Search paths: "))
+		b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("Search paths: "))
 		// Truncate search paths if too long
 		pathsDisplay := strings.Join(m.searchPaths, " • ")
 		if len(pathsDisplay) > m.width-15 && m.width > 50 {
 			pathsDisplay = pathsDisplay[:m.width-18] + "..."
 		}
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render(pathsDisplay))
+		b.WriteString(core_theme.DefaultTheme.Muted.Render(pathsDisplay))
 	}
 
 	return b.String()
@@ -1569,9 +1560,9 @@ func (m sessionizeModel) viewKeyEditor() string {
 		selectedProject = project.Name
 	}
 
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00ff00")).Bold(true).Render(fmt.Sprintf("Select key for: %s", selectedProject)))
+	b.WriteString(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Select key for: %s", selectedProject)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render(selectedPath))
+	b.WriteString(core_theme.DefaultTheme.Muted.Render(selectedPath))
 	b.WriteString("\n\n")
 
 	// Build a sorted list of all sessions for display
@@ -1653,42 +1644,34 @@ func (m sessionizeModel) viewKeyEditor() string {
 
 		// Selection indicator
 		if i == m.keyCursor {
-			b.WriteString(lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#00ff00")).
-				Bold(true).
-				Render("▶ "))
+			b.WriteString(core_theme.DefaultTheme.Highlight.Render("▶ "))
 		} else {
 			b.WriteString("  ")
 		}
 
 		// Key
-		keyStyle := lipgloss.NewStyle().Bold(true)
+		var keyStyle lipgloss.Style
 		if d.isCurrent {
-			keyStyle = keyStyle.Foreground(lipgloss.Color("#ffaa00"))
+			keyStyle = core_theme.DefaultTheme.Warning
 		} else if d.repository != "" {
-			keyStyle = keyStyle.Foreground(lipgloss.Color("#808080"))
+			keyStyle = core_theme.DefaultTheme.Muted
 		} else {
-			keyStyle = keyStyle.Foreground(lipgloss.Color("#00ff00"))
+			keyStyle = core_theme.DefaultTheme.Success
 		}
 		b.WriteString(keyStyle.Render(fmt.Sprintf("%s ", d.key)))
 
 		// Repository and path
 		if d.repository != "" {
-			repoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4ecdc4"))
-			pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#808080"))
-
-			b.WriteString(repoStyle.Render(fmt.Sprintf("%-20s", d.repository)))
+			b.WriteString(core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%-20s", d.repository)))
 			b.WriteString(" ")
-			b.WriteString(pathStyle.Render(d.path))
+			b.WriteString(core_theme.DefaultTheme.Muted.Render(d.path))
 		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render("(available)"))
+			b.WriteString(core_theme.DefaultTheme.Muted.Render("(available)"))
 		}
 
 		// Mark current
 		if d.isCurrent {
-			b.WriteString(lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#ffaa00")).
-				Render(" ← current"))
+			b.WriteString(core_theme.DefaultTheme.Warning.Render(" ← current"))
 		}
 
 		b.WriteString("\n")
@@ -1696,12 +1679,12 @@ func (m sessionizeModel) viewKeyEditor() string {
 
 	// Scroll indicator
 	if start > 0 || end < len(displays) {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#808080")).Render(fmt.Sprintf("\n(%d-%d of %d)", start+1, end, len(displays))))
+		b.WriteString(core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("\n(%d-%d of %d)", start+1, end, len(displays))))
 	}
 
 	// Build help text with highlighted keys
-	helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#95a99c"))
-	keyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#b8d4ce")).Bold(true)
+	helpStyle := core_theme.DefaultTheme.Muted
+	keyStyle := core_theme.DefaultTheme.Highlight
 
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("press ") + keyStyle.Render("key directly") + helpStyle.Render(" or "))

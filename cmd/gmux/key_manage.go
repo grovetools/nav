@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
@@ -66,20 +67,13 @@ var keyManageCmd = &cobra.Command{
 
 // Styles
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#00ff00")).
-			MarginBottom(1)
+	titleStyle = core_theme.DefaultTheme.Header
 
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#00ff00")).
-			Bold(true)
+	selectedStyle = core_theme.DefaultTheme.Selected
 
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#808080"))
+	dimStyle = core_theme.DefaultTheme.Muted
 
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#626262"))
+	helpStyle = core_theme.DefaultTheme.Faint
 )
 
 // Model for the interactive session manager
@@ -203,12 +197,12 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(core_theme.DefaultColors.Border).
 		BorderBottom(true).
 		Bold(false)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
+		Foreground(core_theme.DefaultColors.LightText).
+		Background(core_theme.DefaultColors.SelectedBackground).
 		Bold(false)
 	t.SetStyles(s)
 
