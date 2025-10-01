@@ -15,11 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
@@ -183,6 +186,64 @@ type keyMapUpdateMsg struct {
 	sessions []models.TmuxSession // Also pass the full session list
 }
 
+// sessionizeKeyMap defines the key bindings for the sessionize TUI
+type sessionizeKeyMap struct {
+	keymap.Base
+	EditKey   key.Binding
+	ClearKey  key.Binding
+	CopyPath  key.Binding
+	CloseSession key.Binding
+}
+
+func (k sessionizeKeyMap) ShortHelp() []key.Binding {
+	// Return empty to show no help in footer - all help goes in popup
+	return []key.Binding{}
+}
+
+func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
+			key.NewBinding(key.WithKeys("j/k, ↑/↓"), key.WithHelp("j/k, ↑/↓", "Move up/down")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "Page up")),
+			key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "Page down")),
+			key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "Go to top")),
+			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
+			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Start filtering")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Create/switch session")),
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
+			k.EditKey,
+			k.ClearKey,
+			k.CopyPath,
+			k.CloseSession,
+			k.Help,
+			k.Quit,
+		},
+	}
+}
+
+var sessionizeKeys = sessionizeKeyMap{
+	Base: keymap.NewBase(),
+	EditKey: key.NewBinding(
+		key.WithKeys("ctrl+e"),
+		key.WithHelp("ctrl+e", "edit key mapping"),
+	),
+	ClearKey: key.NewBinding(
+		key.WithKeys("ctrl+x"),
+		key.WithHelp("ctrl+x", "clear key mapping"),
+	),
+	CopyPath: key.NewBinding(
+		key.WithKeys("ctrl+y"),
+		key.WithHelp("ctrl+y", "copy path to clipboard"),
+	),
+	CloseSession: key.NewBinding(
+		key.WithKeys("X"),
+		key.WithHelp("X", "close session"),
+	),
+}
+
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects                 []manager.DiscoveredProject
@@ -208,13 +269,13 @@ type sessionizeModel struct {
 	keyCursor     int
 	availableKeys []string
 	sessions      []models.TmuxSession
+	help          help.Model
 }
 
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
-	// Create text input for filtering
+	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
-	ti.Placeholder = "Type to filter..."
-	ti.Focus()
+	ti.Placeholder = "Press / to filter..."
 	ti.CharLimit = 256
 	ti.Width = 50
 
@@ -274,6 +335,11 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	// Initialize empty git status map - will be populated asynchronously
 	gitStatusMap := make(map[string]*extendedGitStatus)
 
+	helpModel := help.NewBuilder().
+		WithKeys(sessionizeKeys).
+		WithTitle("Project Sessionizer - Help").
+		Build()
+
 	return sessionizeModel{
 		projects:                 projects,
 		filtered:                 projects,
@@ -294,6 +360,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		keyCursor:                0,
 		availableKeys:            availableKeys,
 		sessions:                 sessions,
+		help:                     helpModel,
 	}
 }
 
@@ -431,7 +498,6 @@ func parseNumstat(output string) (added, deleted int) {
 
 func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
-		textinput.Blink,
 		fetchGitStatusCmd(),
 		fetchClaudeSessionsCmd(),
 		fetchProjectsCmd(m.manager),
@@ -576,6 +642,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.help.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case gitStatusUpdateMsg:
@@ -728,6 +795,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case tea.KeyMsg:
+		// If help is visible, it consumes all key presses
+		if m.help.ShowAll {
+			m.help.Toggle() // Any key closes help
+			return m, nil
+		}
+
 		// Handle key editing mode
 		if m.editingKeys {
 			switch msg.Type {
@@ -783,7 +856,46 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode
+		// Check if filter input is focused and handle special keys
+		if m.filterInput.Focused() {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.filterInput.Blur()
+				return m, nil
+			case tea.KeyEnter:
+				// Select current project even while filtering
+				if m.cursor < len(m.filtered) {
+					m.selected = m.filtered[m.cursor]
+					return m, tea.Quit
+				}
+				return m, nil
+			case tea.KeyUp:
+				// Navigate up while filtering
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				return m, nil
+			case tea.KeyDown:
+				// Navigate down while filtering
+				if m.cursor < len(m.filtered)-1 {
+					m.cursor++
+				}
+				return m, nil
+			default:
+				// Let filter input handle all other keys when focused
+				prevValue := m.filterInput.Value()
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				
+				// If the filter changed, update filtered list
+				if m.filterInput.Value() != prevValue {
+					m.updateFiltered()
+					m.cursor = 0
+				}
+				return m, cmd
+			}
+		}
+
+		// Normal mode (when filter is not focused)
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
 			if m.cursor > 0 {
@@ -792,6 +904,137 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown, tea.KeyCtrlN:
 			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
+			}
+		case tea.KeyCtrlU:
+			// Page up (vim-style)
+			pageSize := 10
+			m.cursor -= pageSize
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case tea.KeyCtrlD:
+			// Page down (vim-style)
+			pageSize := 10
+			m.cursor += pageSize
+			if m.cursor >= len(m.filtered) {
+				m.cursor = len(m.filtered) - 1
+			}
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+		case tea.KeyRunes:
+			switch msg.String() {
+			case "j":
+				// Vim-style down navigation
+				if m.cursor < len(m.filtered)-1 {
+					m.cursor++
+				}
+				return m, nil
+			case "k":
+				// Vim-style up navigation
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				return m, nil
+			case "g":
+				// Handle gg (go to top) - need to check for double g
+				// For simplicity, single g goes to top (common in many TUIs)
+				m.cursor = 0
+				return m, nil
+			case "G":
+				// Go to bottom
+				m.cursor = len(m.filtered) - 1
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+				return m, nil
+			case "X":
+				// Close session (moved from ctrl+d)
+				if m.cursor < len(m.filtered) {
+					project := m.filtered[m.cursor]
+					sessionName := filepath.Base(project.Path)
+					sessionName = strings.ReplaceAll(sessionName, ".", "_")
+
+					// Check if session exists before trying to close it
+					client, err := tmuxclient.NewClient()
+					if err == nil {
+						ctx := context.Background()
+						exists, err := client.SessionExists(ctx, sessionName)
+						if err == nil && exists {
+							// Check if we're in tmux and if this is the current session
+							if os.Getenv("TMUX") != "" {
+								currentSession, err := client.GetCurrentSession(ctx)
+								if err == nil && currentSession == sessionName {
+									// We're closing the current session - need to switch first
+									// Get all sessions
+									sessions, _ := client.ListSessions(ctx)
+
+									// Find the best session to switch to
+									var targetSession string
+
+									// First, try to find the most recently accessed session from our list
+									for _, p := range m.filtered {
+										candidateName := filepath.Base(p.Path)
+										candidateName = strings.ReplaceAll(candidateName, ".", "_")
+
+										// Skip the current session
+										if candidateName == sessionName {
+											continue
+										}
+
+										// Check if this session exists
+										for _, s := range sessions {
+											if s == candidateName {
+												targetSession = candidateName
+												break
+											}
+										}
+
+										if targetSession != "" {
+											break
+										}
+									}
+
+									// If no session from our list, just pick any other session
+									if targetSession == "" {
+										for _, s := range sessions {
+											if s != sessionName {
+												targetSession = s
+												break
+											}
+										}
+									}
+
+									// Switch to the target session before killing current
+									if targetSession != "" {
+										_ = client.SwitchClient(ctx, targetSession)
+									}
+								}
+							}
+
+							// Kill the session
+							if err := client.KillSession(ctx, sessionName); err == nil {
+								// Clear the cached session status
+								delete(m.runningSessions, sessionName)
+							}
+						}
+					}
+				}
+				return m, nil
+			case "?":
+				m.help.Toggle()
+				return m, nil
+			case "/":
+				// Focus filter input for search
+				m.filterInput.Focus()
+				return m, textinput.Blink
+			default:
+				// For other text input, focus the filter and send the key to it
+				m.filterInput.Focus()
+				m.filterInput, cmd = m.filterInput.Update(msg)
+				m.updateFiltered()
+				m.cursor = 0
+				return m, tea.Batch(cmd, textinput.Blink)
 			}
 		case tea.KeyCtrlE:
 			// Enter key editing mode
@@ -830,78 +1073,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					_ = cmd.Run()
 				}
 			}
-		case tea.KeyCtrlD:
-			// Close the selected session
-			if m.cursor < len(m.filtered) {
-				project := m.filtered[m.cursor]
-				sessionName := filepath.Base(project.Path)
-				sessionName = strings.ReplaceAll(sessionName, ".", "_")
-
-				// Check if session exists before trying to close it
-				client, err := tmuxclient.NewClient()
-				if err == nil {
-					ctx := context.Background()
-					exists, err := client.SessionExists(ctx, sessionName)
-					if err == nil && exists {
-						// Check if we're in tmux and if this is the current session
-						if os.Getenv("TMUX") != "" {
-							currentSession, err := client.GetCurrentSession(ctx)
-							if err == nil && currentSession == sessionName {
-								// We're closing the current session - need to switch first
-								// Get all sessions
-								sessions, _ := client.ListSessions(ctx)
-
-								// Find the best session to switch to
-								var targetSession string
-
-								// First, try to find the most recently accessed session from our list
-								for _, p := range m.filtered {
-									candidateName := filepath.Base(p.Path)
-									candidateName = strings.ReplaceAll(candidateName, ".", "_")
-
-									// Skip the current session
-									if candidateName == sessionName {
-										continue
-									}
-
-									// Check if this session exists
-									for _, s := range sessions {
-										if s == candidateName {
-											targetSession = candidateName
-											break
-										}
-									}
-
-									if targetSession != "" {
-										break
-									}
-								}
-
-								// If no session from our list, just pick any other session
-								if targetSession == "" {
-									for _, s := range sessions {
-										if s != sessionName {
-											targetSession = s
-											break
-										}
-									}
-								}
-
-								// Switch to the target session before killing current
-								if targetSession != "" {
-									_ = client.SwitchClient(ctx, targetSession)
-								}
-							}
-						}
-
-						// Kill the session
-						if err := client.KillSession(ctx, sessionName); err == nil {
-							// Clear the cached session status
-							delete(m.runningSessions, sessionName)
-						}
-					}
-				}
-			}
 		case tea.KeyEnter:
 			if m.cursor < len(m.filtered) {
 				m.selected = m.filtered[m.cursor]
@@ -910,16 +1081,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEsc, tea.KeyCtrlC:
 			return m, tea.Quit
 		default:
-			// Update filter input
-			prevValue := m.filterInput.Value()
-			m.filterInput, cmd = m.filterInput.Update(msg)
-
-			// If the filter changed, update filtered list
-			if m.filterInput.Value() != prevValue {
-				m.updateFiltered()
-				m.cursor = 0
-			}
-			return m, cmd
+			// Handle other keys normally
+			return m, nil
 		}
 	}
 
@@ -1231,6 +1394,11 @@ func formatChanges(status *git.StatusInfo, extStatus *extendedGitStatus) string 
 }
 
 func (m sessionizeModel) View() string {
+	// If help is visible, show it and return
+	if m.help.ShowAll {
+		return m.help.View()
+	}
+
 	var b strings.Builder
 
 	// Show key editing mode if active
@@ -1521,18 +1689,10 @@ func (m sessionizeModel) View() string {
 		}
 	}
 
-	// Build help text with highlighted keys
+	// Help text
 	helpStyle := core_theme.DefaultTheme.Muted
-	keyStyle := core_theme.DefaultTheme.Highlight
-
 	b.WriteString("\n")
-	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(": navigate • "))
-	b.WriteString(keyStyle.Render("enter") + helpStyle.Render(": select • "))
-	b.WriteString(keyStyle.Render("ctrl+e") + helpStyle.Render(": edit key • "))
-	b.WriteString(keyStyle.Render("ctrl+x") + helpStyle.Render(": clear key • "))
-	b.WriteString(keyStyle.Render("ctrl+y") + helpStyle.Render(": copy path • "))
-	b.WriteString(keyStyle.Render("ctrl+d") + helpStyle.Render(": close • "))
-	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": quit"))
+	b.WriteString(helpStyle.Render("Press ? for help"))
 
 	// Display search paths at the very bottom
 	if len(m.searchPaths) > 0 {
@@ -1682,7 +1842,7 @@ func (m sessionizeModel) viewKeyEditor() string {
 		b.WriteString(core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("\n(%d-%d of %d)", start+1, end, len(displays))))
 	}
 
-	// Build help text with highlighted keys
+	// Help text for key editor
 	helpStyle := core_theme.DefaultTheme.Muted
 	keyStyle := core_theme.DefaultTheme.Highlight
 

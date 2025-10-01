@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
@@ -16,6 +15,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
@@ -96,6 +97,7 @@ type manageModel struct {
 
 // Key bindings
 type keyMap struct {
+	keymap.Base
 	Up     key.Binding
 	Down   key.Binding
 	Toggle key.Binding
@@ -103,24 +105,35 @@ type keyMap struct {
 	Open   key.Binding
 	Delete key.Binding
 	Save   key.Binding
-	Quit   key.Binding
-	Help   key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Edit, k.Open, k.Delete, k.Save, k.Quit}
+	// Return empty to show no help in footer - all help goes in popup
+	return []key.Binding{}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Up, k.Down},
-		{k.Edit, k.Open, k.Delete},
-		{k.Save, k.Quit},
-		{k.Help},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
+			k.Up,
+			k.Down,
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Switch to session")),
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
+			k.Edit,
+			k.Toggle,
+			k.Delete,
+			k.Save,
+			k.Help,
+			k.Quit,
+		},
 	}
 }
 
 var keys = keyMap{
+	Base: keymap.NewBase(),
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),
 		key.WithHelp("↑/k", "up"),
@@ -148,14 +161,6 @@ var keys = keyMap{
 	Save: key.NewBinding(
 		key.WithKeys("s", "ctrl+s"),
 		key.WithHelp("s/ctrl+s", "save & exit"),
-	),
-	Quit: key.NewBinding(
-		key.WithKeys("q", "esc", "ctrl+c"),
-		key.WithHelp("q/esc", "save & quit"),
-	),
-	Help: key.NewBinding(
-		key.WithKeys("?"),
-		key.WithHelp("?", "toggle help"),
 	),
 }
 
@@ -228,12 +233,17 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 	l.SetFilteringEnabled(false) // We'll do our own filtering
 	l.Styles.Title = titleStyle
 
+	helpModel := help.NewBuilder().
+		WithKeys(keys).
+		WithTitle("Session Key Manager - Help").
+		Build()
+
 	return manageModel{
 		table:       t,
 		sessions:    sessions,
 		manager:     mgr,
 		keys:        keys,
-		help:        help.New(),
+		help:        helpModel,
 		searchInput: ti,
 		projectList: l,
 		projects:    projects,
@@ -348,10 +358,20 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.help.Width = msg.Width
+		m.help.SetSize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
+		// If help is visible, it consumes all key presses
+		if m.help.ShowAll {
+			m.help.Toggle() // Any key closes help
+			return m, nil
+		}
+
 		switch {
+		case key.Matches(msg, m.keys.Help):
+			m.help.Toggle()
+			return m, nil
+
 		case key.Matches(msg, m.keys.Quit):
 			// Auto-save on quit
 			if err := m.manager.UpdateSessions(m.sessions); err != nil {
@@ -521,8 +541,6 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case key.Matches(msg, m.keys.Help):
-			m.help.ShowAll = !m.help.ShowAll
 		}
 	}
 
@@ -533,6 +551,11 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m manageModel) View() string {
 	if m.quitting && m.message != "" {
 		return m.message + "\n"
+	}
+
+	// If help is visible, show it and return
+	if m.help.ShowAll {
+		return m.help.View()
 	}
 
 	var b strings.Builder
@@ -563,8 +586,7 @@ func (m manageModel) View() string {
 		b.WriteString(dimStyle.Render(m.message) + "\n\n")
 	}
 
-	helpView := m.help.View(m.keys)
-	b.WriteString(helpStyle.Render(helpView))
+	b.WriteString(helpStyle.Render("Press ? for help"))
 
 	return b.String()
 }
