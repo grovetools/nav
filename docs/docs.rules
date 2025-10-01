@@ -1,16 +1,1 @@
-# Documentation generation rules for grove-tmux
-
-# Include all repository contents
-*
-
-# Reference docs for tone and structure examples
-../grove-flow/docs
-../grove-context/docs
-
-# Exclude files that would add noise to the context
-!.grove-worktrees
-!**/*_test.go
-!vendor/**/*
-!bin/**/*
-!.git/**/*
-!node_modules
+*.go

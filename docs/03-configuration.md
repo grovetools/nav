@@ -1,46 +1,49 @@
-This document describes the configuration files used by `gmux`, where they are located, and how `gmux` interprets them. Paths with a leading `~` are expanded to the user’s home directory.
+# Configuration
 
-By default, `gmux` looks for configuration under `~/.config/grove`. You can change this with the global flag `--config-dir` on any `gmux` command. Some files support fallback locations as noted below.
+This document describes the configuration files used by `gmux`. Paths with a leading `~` are expanded to the user’s home directory.
+
+By default, `gmux` looks for configuration files in `~/.config/grove`. This can be changed with the global `--config-dir` flag.
 
 ## project-search-paths.yaml
 
-**Purpose**: This file defines where `gmux` discovers projects for the sessionizer (`gmux sz`) and lists any projects that should be included explicitly.
+This file defines which directories `gmux` scans to find projects for the sessionizer (`gmux sz`). It also lists specific project directories to include.
 
-**Location Resolution** (first match wins):
+**Location Resolution** (first match found is used):
 1.  `<config-dir>/project-search-paths.yaml`
 2.  `~/.config/tmux/project-search-paths.yaml`
 3.  `~/.config/grove/project-search-paths.yaml`
 
 ### Schema
 
-*   `search_paths` (map of string to object):
-    *   `path` (string): Directory to scan for projects.
+*   `search_paths` (map of string to object): Defines directories to scan for projects.
+    *   `path` (string): Directory path.
     *   `description` (string, optional): A description for the path.
-    *   `enabled` (bool): Whether to include this search path.
-*   `explicit_projects` (array of objects): Projects to include even if they are not under a search path.
+    *   `enabled` (bool): If `true`, this search path is used.
+*   `explicit_projects` (array of objects): Defines specific project directories to include, regardless of their location.
     *   `path` (string): The path to the project.
-    *   `name` (string, optional): A display name; defaults to the directory name.
+    *   `name` (string, optional): A display name, which defaults to the directory name.
     *   `description` (string, optional): A description for the project.
-    *   `enabled` (bool): Whether to include this project.
-*   `discovery` (object): Controls for how projects are discovered.
-    *   `max_depth` (int): The maximum depth to search within each path.
+    *   `enabled` (bool): If `true`, this project is included.
+*   `discovery` (object): Contains settings for project discovery.
+    *   `max_depth` (int): The maximum depth to search within each `path`.
     *   `min_depth` (int): The minimum depth to search.
     *   `exclude_patterns` ([]string): A list of directory name patterns to exclude from the search.
 
 ### Discovery Logic
 
-The sessionizer discovers projects as follows:
-1.  Each enabled search path is included as a project itself.
-2.  Immediate subdirectories of each search path are included as projects.
-3.  If a discovered project is a Git repository, `gmux` also finds any Git worktrees located in a `.grove-worktrees` subdirectory and groups them under the parent repository.
-4.  All enabled `explicit_projects` are included.
+The sessionizer discovers projects by:
+1.  Including each enabled `search_path` directory itself as a project.
+2.  Scanning immediate subdirectories of each enabled `search_path`.
+3.  Excluding subdirectories with names matching `exclude_patterns`.
+4.  If a discovered directory is a Git repository, `gmux` scans for a `.grove-worktrees` subdirectory and includes any directories within it as Git worktrees grouped under the parent repository.
+5.  Including all enabled `explicit_projects`.
 
 ### Example
 
 ```yaml
 # ~/.config/grove/project-search-paths.yaml
 
-# Search paths define the directories to scan for projects.
+# Defines directories to scan for projects.
 search_paths:
   work:
     path: ~/Work
@@ -51,7 +54,7 @@ search_paths:
     description: "Personal projects"
     enabled: true
 
-# Discovery settings control the scanning process.
+# Controls the directory scanning process.
 discovery:
   max_depth: 2
   min_depth: 0
@@ -62,7 +65,7 @@ discovery:
     - build
     - dist
 
-# Explicit projects are always included, regardless of search paths.
+# Defines specific project directories to always include.
 explicit_projects:
   - path: ~/Code/dotfiles
     enabled: true
@@ -70,18 +73,19 @@ explicit_projects:
 
 ## tmux-sessions.yaml
 
-**Purpose**: This file defines the pool of available hotkeys and maps specific keys to project paths. It is the source of truth for the `gmux key` commands and the generated tmux bindings. While it can be edited manually, using `gmux key manage` is the recommended way to modify it.
+This file defines the available hotkeys and maps them to project paths. It is read by `gmux key` commands and used to generate tmux bindings. The recommended way to modify this file is with the `gmux key manage` command.
 
 **Location**:
 *   `<config-dir>/tmux-sessions.yaml` (default: `~/.config/grove/tmux-sessions.yaml`)
 
 ### Schema
 
-*   `available_keys` ([]string): A list of all characters you want to use as session hotkeys (e.g., `a`, `s`, `d`, `f`).
-*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are not present in this map.
-    *   `path` (string): The project path that the key is mapped to.
-    *   `repo` (string): The display name for the repository.
+*   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).
+*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are present in memory but are not written to the `sessions` map in the file.
+    *   `path` (string): The project path the key is mapped to.
+    *   `repo` (string): The display name for the project.
     *   `description` (string, optional): A free-text description.
+*   `tmux_sessionizer.script_path` (string, optional): Path to an external script to be called by the generated tmux bindings. If omitted, it defaults to `~/.local/bin/scripts/tmux-sessionizer`.
 
 ### Example
 
@@ -99,9 +103,13 @@ available_keys:
   - l
 
 sessions:
-  # Map key 'a' to the grove-tmux project
+  # Maps key 'a' to the grove-tmux project.
   a:
     path: "~/Work/grove-tmux"
     repo: "grove-tmux"
-  # Key 's' is available but currently unmapped
+  # Key 's' is available but currently unmapped.
+
+# Optional: Override the script called by generated bindings.
+tmux_sessionizer:
+  script_path: ~/.local/bin/scripts/tmux-sessionizer
 ```

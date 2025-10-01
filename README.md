@@ -1,27 +1,34 @@
 <!-- DOCGEN:OVERVIEW:START -->
 
 <img src="docs/images/grove-tmux-readme.svg" width="60%" />
-
-`gmux` is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment by providing a live dashboard of your projects, Git repositories, and active development sessions. Inspired by [ThePrimeagen's tmux-sessionizer](https://github.com/ThePrimeagen/tmux-sessionizer), it extends the core concept with deeper ecosystem integrations.
+`gmux` is an interactive session manager for `tmux`. It provides a terminal interface to discover and switch between projects, see `tmux` session status, and view Git repository information.
 
 <!-- placeholder for animated gif -->
 
 ## Key Features
 
-*   **Live Sessionizer (`gmux sz`)**: Opens a live, filterable dashboard of all your development projects. It features automatic project discovery, real-time status indicators for active tmux sessions (`●`), and a compact, live summary of the Git status for each active session.
-*   **Interactive Key Management (`gmux key manage`)**: Provides a terminal user interface (TUI) to visually map, unmap, and edit project-to-key bindings. It includes fuzzy project searching to quickly find and map any discovered project to an available key.
-*   **Hotkey System**: Define a set of hotkeys in a simple configuration file. `gmux` generates the necessary tmux bindings, allowing you to switch to your most-used projects with a single key press.
-*   **Advanced Session Control (`gmux launch`)**: Script the creation of new sessions with specific window names, working directories, and complex, multi-pane layouts, including per-pane working directories.
-*   **Scripting and Automation**: A rich set of subcommands (`session exists`, `session kill`, `session capture`, `wait`) allows for the control and monitoring of tmux from scripts, enabling automation for development and testing workflows.
-*   **Hierarchical Worktree Display**: Automatically discovers and groups Git worktrees under their parent repository in the sessionizer, providing a clean and organized view of complex projects.
+*   **Session Interface (`gmux sz`)**: A terminal interface that lists projects discovered from configured search paths. The list displays active `tmux` sessions and Git status for those sessions, and refreshes its data sources periodically.
+*   **Key Mapping (`gmux key manage`)**: A terminal interface to map project paths to single-character keys. It includes a fuzzy finder to search for unmapped projects from the discovered list.
+*   **Hotkey Generation**: Creates a `tmux` configuration file with `bind-key` commands for each mapped project. This allows switching to projects using a keyboard shortcut from within `tmux`.
+*   **Session Creation (`gmux launch`)**: A command to create `tmux` sessions with specified window names, a session-wide working directory, and multiple panes. Working directories can also be set on a per-pane basis.
+*   **Scripting Commands**: Subcommands (`session exists`, `session kill`, `wait`) for checking and controlling `tmux` session state from shell scripts.
+*   **Worktree Discovery**: Finds Git worktrees located in `.grove-worktrees` subdirectories and lists them hierarchically under their parent repository in the sessionizer interface.
 
 ## Ecosystem Integration
 
-`gmux` is a key component of the Grove ecosystem, designed to create a cohesive and context-aware development environment within tmux.
+`gmux` uses other components of the Grove ecosystem to function.
 
-*   **Grove Configuration**: It uses the central `~/.config/grove/` directory for its configuration files, maintaining consistency with other Grove tools.
-*   **`grove-hooks` Integration**: When `grove-hooks` is installed, `gmux` can display the live status of active Claude AI sessions (e.g., running `▶`, idle `⏸`, completed `✓`) directly in the sessionizer, providing visibility into ongoing AI tasks.
-*   **`grove` Meta-CLI**: Installation and version management of `gmux` are handled by the `grove` meta-CLI, ensuring that the correct binary is available and integrated with the rest of the ecosystem.
+*   **Configuration**: It reads configuration files from the `~/.config/grove/` directory.
+*   **`grove-hooks` Execution**: If the `grove-hooks` binary is found in the `PATH`, `gmux` executes it to fetch and display the status of active Claude AI sessions.
+*   **`grove` Meta-CLI**: The `grove` meta-CLI is the intended tool for installing and managing the `gmux` binary.
+
+## How It Works
+
+The sessionizer (`gmux sz`) is a terminal application that runs background commands every 10 seconds to gather information.
+
+It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It also re-scans project directories defined in `project-search-paths.yaml` and reloads key mappings from `tmux-sessions.yaml`. The terminal interface redraws only if the fetched data differs from its current state.
+
+When key mappings are changed, `gmux` updates `tmux-sessions.yaml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server.
 
 ## Installation
 

@@ -1,1 +1,174 @@
-{}
+{
+  "sections": {
+    "command-reference": {
+      "title": "Command Reference",
+      "content": "This document provides a reference for the `gmux` command-line interface, covering all subcommands and their options.",
+      "subsections": [
+        {
+          "title": "`gmux sessionize` (alias: `sz`)",
+          "content": "Launches an interactive interface to browse and switch between projects.\n\n### Syntax\n\n\n### Description\n\nWhen run without arguments, `gmux sz` starts a terminal user interface (TUI) that lists projects discovered from configured search paths. The list displays project names, paths, and status indicators for running tmux sessions and Git repositories. The view refreshes its data sources every 10 seconds.\n\nIf an optional `[path]` argument is provided, the TUI is bypassed, and the command directly creates or switches to a tmux session for that path.\n\n### Example\n\n\n### `gmux sessionize add`\n\nAdds a project path to the `explicit_projects` list in the configuration file.\n\n#### Syntax\n\n\n#### Description\n\nThis command adds a project that is outside of the configured `search_paths`. If no `[path]` is provided, it adds the current working directory.\n\n#### Example\n\n\n### `gmux sessionize remove`\n\nRemoves a project from the `explicit_projects` list in the configuration file.\n\n#### Syntax\n\n\n#### Description\n\nThis command removes a project previously added with `gmux sz add`. If no `[path]` is provided, it removes the current working directory.\n\n#### Example",
+          "code_blocks": [
+            "gmux sz [path]",
+            "# Open the interactive sessionizer TUI\ngmux sz\n\n# Directly create or switch to a session for a specific project\ngmux sz ~/Work/grove-tmux",
+            "gmux sz add [path]",
+            "# Add the project at ~/Code/special-project to the configuration\ngmux sz add ~/Code/special-project",
+            "gmux sz remove [path]",
+            "# Remove the project at ~/Code/special-project from the configuration\ngmux sz remove ~/Code/special-project"
+          ]
+        },
+        {
+          "title": "`gmux key`",
+          "content": "Manages tmux session hotkey bindings.\n\n### `gmux key list`\n\nLists configured session key bindings.\n\n#### Syntax\n\n\n#### Description\n\nDisplays the mapping between hotkeys and projects from `tmux-sessions.yaml`. The default output is a table.\n\n**Flags**:\n*   `--style \u003cstyle\u003e`: Set the output format. Options are `table` (default) or `compact`.\n\n#### Example\n\n\n### `gmux key manage` (alias: `km`)\n\nOpens a TUI to manage session key bindings.\n\n#### Syntax\n\n\n#### Description\n\nProvides a terminal interface to view available keys, see which projects they are mapped to, and interactively map or unmap bindings. It includes a project search interface. Changes are saved to the configuration file on exit.\n\n#### Example\n\n\n### `gmux key add`\n\nMaps a discovered project to an available key.\n\n#### Syntax\n\n\n#### Description\n\nStarts an interactive workflow that shows a list of unmapped projects discovered from configured search paths, then prompts the user to select an available key to assign.\n\n#### Example\n\n\n### `gmux key unmap`\n\nUnmaps a project from a key.\n\n#### Syntax\n\n\n#### Description\n\nRemoves the project path mapping for a specific key, making the key available again. If `[key]` is not provided, it prompts for a selection from currently mapped keys.\n\n#### Example\n\n\n### `gmux key update`\n\nChanges the key for an existing session mapping.\n\n#### Syntax\n\n\n#### Description\n\nPrompts for a new, available key for an already mapped project. If `[current-key]` is omitted, it prompts for a selection of which mapping to update.\n\n#### Example\n\n\n### `gmux key edit`\n\nEdits the path of a mapped session.\n\n#### Syntax\n\n\n#### Description\n\nAllows changing the file path associated with a specific key. If a `[key]` is not provided, it prompts for a selection of which mapping to edit.\n\n#### Example",
+          "code_blocks": [
+            "gmux key list [--style \u003cstyle\u003e]",
+            "# Show all key mappings in a table\ngmux key list\n\n# Show only mapped keys in a compact format\ngmux key list --style compact",
+            "gmux key manage",
+            "# Open the interactive key manager\ngmux key manage",
+            "gmux key add",
+            "# Start the interactive flow to add a new key mapping\ngmux key add",
+            "gmux key unmap [key]",
+            "# Unmap the project assigned to the 'd' key\ngmux key unmap d",
+            "gmux key update [current-key]",
+            "# Change the key for the session currently mapped to 'a'\ngmux key update a",
+            "gmux key edit [key]",
+            "# Edit the details for the session mapped to the 's' key\ngmux key edit s"
+          ]
+        },
+        {
+          "title": "`gmux launch`",
+          "content": "Launches a new tmux session with specified options.\n\n### Syntax\n\n\n### Description\n\nCreates a new tmux session. It can specify the initial window name, a working directory for the session, and create multiple panes.\n\n**Flags**:\n*   `--window-name \u003cname\u003e`: Name for the initial window.\n*   `--working-dir \u003cpath\u003e`: Working directory for the new session.\n*   `--pane \u003ccommand\u003e`: Adds a pane. Can be used multiple times. Supports `command@/path/to/workdir` syntax to set a working directory for a specific pane.\n\n### Example",
+          "code_blocks": [
+            "gmux launch \u003csession-name\u003e [--window-name \u003cname\u003e] [--working-dir \u003cpath\u003e] [--pane \u003ccommand\u003e]...",
+            "# Launch a session with two panes, each in a different directory\ngmux launch my-app --pane \"npm run dev@/app/frontend\" --pane \"go run .@/app/backend\""
+          ]
+        },
+        {
+          "title": "`gmux session`",
+          "content": "Performs direct operations on tmux sessions.\n\n### `gmux session exists`\n\nChecks if a tmux session exists.\n\n#### Syntax\n\n\n#### Description\n\nExits with code 0 if the session exists, and 1 if it does not. Intended for use in scripts.\n\n#### Example\n\n\n### `gmux session kill`\n\nTerminates a tmux session.\n\n#### Syntax\n\n\n#### Example\n\n\n### `gmux session capture`\n\nCaptures the visible content of a tmux pane and prints it to standard output.\n\n#### Syntax\n\n\n#### Description\n\nThe `\u003ctarget\u003e` can be a session name (`my-session`) or a specific pane target (`my-session:0.1`).\n\n#### Example",
+          "code_blocks": [
+            "gmux session exists \u003csession-name\u003e",
+            "if gmux session exists my-session; then\n  echo \"Session is running.\"\nfi",
+            "gmux session kill \u003csession-name\u003e",
+            "# Kill the session named 'dev-old'\ngmux session kill dev-old",
+            "gmux session capture \u003ctarget\u003e",
+            "# Capture the content of the first pane in the 'my-session' session\ngmux session capture my-session:0.0"
+          ]
+        },
+        {
+          "title": "`gmux status`",
+          "content": "Shows the Git status for repositories configured in `tmux-sessions.yaml`.\n\n### Syntax\n\n\n### Example",
+          "code_blocks": [
+            "gmux status",
+            "gmux status"
+          ]
+        },
+        {
+          "title": "`gmux list`",
+          "content": "Lists configured session key bindings. This is an alias for `gmux key list`.\n\n### Syntax\n\n\n### Example",
+          "code_blocks": [
+            "gmux list [--style \u003cstyle\u003e]",
+            "# Show configured keys in a compact format\ngmux list --style compact"
+          ]
+        },
+        {
+          "title": "`gmux wait`",
+          "content": "Blocks execution until a specified tmux session is closed.\n\n### Syntax\n\n\n### Description\n\nPolls at a regular interval to check if a session still exists. Exits with status 0 when the session closes. Exits with a non-zero status if a timeout is reached.\n\n**Flags**:\n*   `--timeout \u003cduration\u003e`: Maximum time to wait (e.g., `10m`, `30s`). `0s` means wait indefinitely.\n*   `--poll-interval \u003cduration\u003e`: How often to check if the session exists (e.g., `1s`, `500ms`).\n\n### Example",
+          "code_blocks": [
+            "gmux wait \u003csession-name\u003e [--timeout \u003cduration\u003e] [--poll-interval \u003cduration\u003e]",
+            "# Wait up to 5 minutes for the 'review-task' session to close\ngmux wait review-task --timeout 5m"
+          ]
+        },
+        {
+          "title": "`gmux start`",
+          "content": "Starts a pre-configured tmux session by its hotkey.\n\n### Syntax\n\n\n### Description\n\nFinds the project mapped to the given `\u003ckey\u003e` in `tmux-sessions.yaml` and launches a new tmux session for it. The session is named `grove-\u003ckey\u003e`.\n\n### Example",
+          "code_blocks": [
+            "gmux start \u003ckey\u003e",
+            "# Start the session configured for the 'a' key\ngmux start a"
+          ]
+        },
+        {
+          "title": "`gmux version`",
+          "content": "Prints version information for the `gmux` binary.\n\n### Syntax\n\n\n### Flags\n\n*   `--json`: Output version information in JSON format.\n\n### Example",
+          "code_blocks": [
+            "gmux version [--json]",
+            "gmux version"
+          ]
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Configuration Reference",
+      "content": "This document describes the configuration files used by `gmux`. Paths with a leading `~` are expanded to the user’s home directory.\n\nBy default, `gmux` looks for configuration files in `~/.config/grove`. This can be changed with the global `--config-dir` flag.",
+      "subsections": [
+        {
+          "title": "project-search-paths.yaml",
+          "content": "This file defines which directories `gmux` scans to find projects for the sessionizer (`gmux sz`). It also lists specific project directories to include.\n\n**Location Resolution** (first match found is used):\n1.  `\u003cconfig-dir\u003e/project-search-paths.yaml`\n2.  `~/.config/tmux/project-search-paths.yaml`\n3.  `~/.config/grove/project-search-paths.yaml`\n\n### Schema\n\n*   `search_paths` (map of string to object): Defines directories to scan for projects.\n    *   `path` (string): Directory path.\n    *   `description` (string, optional): A description for the path.\n    *   `enabled` (bool): If `true`, this search path is used.\n*   `explicit_projects` (array of objects): Defines specific project directories to include, regardless of their location.\n    *   `path` (string): The path to the project.\n    *   `name` (string, optional): A display name, which defaults to the directory name.\n    *   `description` (string, optional): A description for the project.\n    *   `enabled` (bool): If `true`, this project is included.\n*   `discovery` (object): Contains settings for project discovery.\n    *   `max_depth` (int): The maximum depth to search within each `path`.\n    *   `min_depth` (int): The minimum depth to search.\n    *   `exclude_patterns` ([]string): A list of directory name patterns to exclude from the search.\n\n### Discovery Logic\n\nThe sessionizer discovers projects by:\n1.  Including each enabled `search_path` directory itself as a project.\n2.  Scanning immediate subdirectories of each enabled `search_path`.\n3.  Excluding subdirectories with names matching `exclude_patterns`.\n4.  If a discovered directory is a Git repository, `gmux` scans for a `.grove-worktrees` subdirectory and includes any directories within it as Git worktrees grouped under the parent repository.\n5.  Including all enabled `explicit_projects`.\n\n### Example",
+          "code_blocks": [
+            "# ~/.config/grove/project-search-paths.yaml\n\n# Defines directories to scan for projects.\nsearch_paths:\n  work:\n    path: ~/Work\n    description: \"Work projects\"\n    enabled: true\n  personal:\n    path: ~/Projects\n    description: \"Personal projects\"\n    enabled: true\n\n# Controls the directory scanning process.\ndiscovery:\n  max_depth: 2\n  min_depth: 0\n  exclude_patterns:\n    - node_modules\n    - .cache\n    - target\n    - build\n    - dist\n\n# Defines specific project directories to always include.\nexplicit_projects:\n  - path: ~/Code/dotfiles\n    enabled: true"
+          ]
+        },
+        {
+          "title": "tmux-sessions.yaml",
+          "content": "This file defines the available hotkeys and maps them to project paths. It is read by `gmux key` commands and used to generate tmux bindings. The recommended way to modify this file is with the `gmux key manage` command.\n\n**Location**:\n*   `\u003cconfig-dir\u003e/tmux-sessions.yaml` (default: `~/.config/grove/tmux-sessions.yaml`)\n\n### Schema\n\n*   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).\n*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are present in memory but are not written to the `sessions` map in the file.\n    *   `path` (string): The project path the key is mapped to.\n    *   `repo` (string): The display name for the project.\n    *   `description` (string, optional): A free-text description.\n*   `tmux_sessionizer.script_path` (string, optional): Path to an external script to be called by the generated tmux bindings. If omitted, it defaults to `~/.local/bin/scripts/tmux-sessionizer`.\n\n### Example",
+          "code_blocks": [
+            "# ~/.config/grove/tmux-sessions.yaml\navailable_keys:\n  - a\n  - s\n  - d\n  - f\n  - g\n  - h\n  - j\n  - k\n  - l\n\nsessions:\n  # Maps key 'a' to the grove-tmux project.\n  a:\n    path: \"~/Work/grove-tmux\"\n    repo: \"grove-tmux\"\n  # Key 's' is available but currently unmapped.\n\n# Optional: Override the script called by generated bindings.\ntmux_sessionizer:\n  script_path: ~/.local/bin/scripts/tmux-sessionizer"
+          ]
+        }
+      ]
+    },
+    "examples": {
+      "title": "Examples",
+      "content": "This guide provides examples for common gmux workflows.",
+      "subsections": [
+        {
+          "title": "Example 1: Interactive Session Management (`gmux sz`)",
+          "content": "The `gmux sz` command launches a terminal interface to browse and select projects. The list is generated from configured search paths and updates every 10 seconds to reflect changes to tmux sessions, Git status, and key mappings.\n\n#### Launch the Sessionizer\n\nOpen the interface from your terminal:\n\n#### Interface Elements\n\nEach line provides a summary of a project's state:\n\n-   **Hotkey**: The first character (`a`) is the hotkey mapped to this project.\n-   **Session Indicator (`●`)**:\n    -   Blue (`●`): The current tmux session.\n    -   Green (`●`): A running tmux session in the background.\n-   **Claude Indicator (`▶`)**: Shows Claude AI session status if `grove-hooks` is installed (`▶` running, `⏸` idle, `✓` completed, `✗` failed).\n-   **Project Name**: `my-feature` is the directory name. A `└─` prefix indicates a Git worktree.\n-   **Path**: The full path to the project directory.\n-   **Git Status**: A summary for running sessions.\n    -   `↑N`: Commits ahead of remote.\n    -   `M:N`: Modified files.\n    -   `S:N`: Staged files.\n    -   `+N -N`: Lines added/deleted across staged and unstaged changes.\n    -   `✓`: The repository is clean.\n\n#### Navigation and Selection\n\n-   **Filter**: Type characters to filter the list by project name or path.\n-   **Move**: Use `Up`/`Down` arrow keys or `k`/`j`.\n-   **Select**: Press `Enter` to create a new tmux session or switch to an existing one for the selected project.",
+          "code_blocks": [
+            "gmux sz",
+            "  a ● ▶ my-feature  ~/Work/my-repo/.grove-worktrees/my-feature  ↑1 M:3 S:1 +10 -4\n  s ●   my-repo     ~/Work/my-repo                              ✓\n    ●   another     ~/Personal/another-project"
+          ]
+        },
+        {
+          "title": "Example 2: Interactive Key Mapping (`gmux key manage`)",
+          "content": "The `gmux key manage` command (or `gmux km`) opens a terminal interface for mapping projects to single-character hotkeys defined in `tmux-sessions.yaml`.\n\n#### Launch the Key Manager\n\n\nThe interface shows a table of available keys, the project mapped to each key, and the project's path.\n\n#### Mapping and Unmapping\n\n-   **Map a Project**:\n    1.  Select an unmapped key using the arrow keys.\n    2.  Press `e` to open a searchable list of unmapped projects.\n    3.  Type to filter, select a project, and press `Enter` to confirm.\n-   **Unmap a Project**:\n    1.  Select a mapped key.\n    2.  Press `d` or `spacebar` to clear the mapping.\n\n#### Save and Exit\n\nPress `q` or `Esc` to exit. Changes are saved to `tmux-sessions.yaml`, tmux bindings are regenerated, and the tmux configuration is reloaded if possible.",
+          "code_blocks": [
+            "gmux key manage"
+          ]
+        },
+        {
+          "title": "Example 3: Scripting",
+          "content": "`gmux` commands can be used in scripts for automation. This script sets up a tmux environment for a task and waits for the session to be closed before continuing.\n\n**`setup-debug-session.sh`**\n\nThis script uses `gmux launch` to create a multi-pane layout and `gmux wait` to pause execution until the task is complete.",
+          "code_blocks": [
+            "#!/usr/bin/env bash\nset -euo pipefail\n\nSESSION_NAME=\"debug-api\"\nPROJECT_PATH=\"$HOME/Work/my-api\"\n\n# Launch a new tmux session if it does not already exist.\n# The session has two panes: one for an editor and one for running tests.\nif ! gmux session exists \"$SESSION_NAME\" \u003e/dev/null 2\u003e\u00261; then\n  echo \"Launching new session: $SESSION_NAME\"\n  gmux launch \"$SESSION_NAME\" \\\n    --working-dir \"$PROJECT_PATH\" \\\n    --pane \"nvim .\" \\\n    --pane \"go test -v ./...\"\nelse\n  echo \"Session '$SESSION_NAME' already exists.\"\nfi\n\n# Inform the user how to attach.\necho \"Attach to the session with: tmux attach-session -t $SESSION_NAME\"\necho \"The script will continue after the session is closed.\"\necho\n\n# Block until the session is closed (e.g., via `tmux kill-session`).\ngmux wait \"$SESSION_NAME\"\n\n# Continue with subsequent tasks.\necho \"Session '$SESSION_NAME' closed. Running cleanup tasks...\"\n# ./run_cleanup.sh"
+          ]
+        }
+      ]
+    },
+    "overview": {
+      "title": "Overview",
+      "content": "\u003cimg src=\"./images/grove-tmux-readme.svg\" width=\"60%\" /\u003e\n`gmux` is an interactive session manager for `tmux`. It provides a terminal interface to discover and switch between projects, see `tmux` session status, and view Git repository information.\n\n\u003c!-- placeholder for animated gif --\u003e",
+      "subsections": [
+        {
+          "title": "Key Features",
+          "content": "*   **Session Interface (`gmux sz`)**: A terminal interface that lists projects discovered from configured search paths. The list displays active `tmux` sessions and Git status for those sessions, and refreshes its data sources periodically.\n*   **Key Mapping (`gmux key manage`)**: A terminal interface to map project paths to single-character keys. It includes a fuzzy finder to search for unmapped projects from the discovered list.\n*   **Hotkey Generation**: Creates a `tmux` configuration file with `bind-key` commands for each mapped project. This allows switching to projects using a keyboard shortcut from within `tmux`.\n*   **Session Creation (`gmux launch`)**: A command to create `tmux` sessions with specified window names, a session-wide working directory, and multiple panes. Working directories can also be set on a per-pane basis.\n*   **Scripting Commands**: Subcommands (`session exists`, `session kill`, `wait`) for checking and controlling `tmux` session state from shell scripts.\n*   **Worktree Discovery**: Finds Git worktrees located in `.grove-worktrees` subdirectories and lists them hierarchically under their parent repository in the sessionizer interface."
+        },
+        {
+          "title": "Ecosystem Integration",
+          "content": "`gmux` uses other components of the Grove ecosystem to function.\n\n*   **Configuration**: It reads configuration files from the `~/.config/grove/` directory.\n*   **`grove-hooks` Execution**: If the `grove-hooks` binary is found in the `PATH`, `gmux` executes it to fetch and display the status of active Claude AI sessions.\n*   **`grove` Meta-CLI**: The `grove` meta-CLI is the intended tool for installing and managing the `gmux` binary."
+        },
+        {
+          "title": "How It Works",
+          "content": "The sessionizer (`gmux sz`) is a terminal application that runs background commands every 10 seconds to gather information.\n\nIt executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It also re-scans project directories defined in `project-search-paths.yaml` and reloads key mappings from `tmux-sessions.yaml`. The terminal interface redraws only if the fetched data differs from its current state.\n\nWhen key mappings are changed, `gmux` updates `tmux-sessions.yaml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server."
+        },
+        {
+          "title": "Installation",
+          "content": "Install via the Grove meta-CLI:\n\nVerify installation:\n\nRequires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.",
+          "code_blocks": [
+            "grove install tmux",
+            "gmux version"
+          ]
+        }
+      ]
+    }
+  }
+}

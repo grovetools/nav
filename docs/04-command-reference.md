@@ -1,8 +1,10 @@
-This document provides a comprehensive reference for the `gmux` command-line interface, covering all subcommands and their options.
+# Command Reference
+
+This document provides a reference for the `gmux` command-line interface, covering all subcommands and their options.
 
 ## `gmux sessionize` (alias: `sz`)
 
-The interactive project switcher and sessionizer.
+Launches an interactive interface to browse and switch between projects.
 
 ### Syntax
 
@@ -12,9 +14,9 @@ gmux sz [path]
 
 ### Description
 
-Launches a live, interactive TUI (Terminal User Interface) to browse and switch between discovered projects. The TUI displays project names, paths, running tmux session indicators, Git status, and (if `grove-hooks` is installed) Claude AI session status. The view updates automatically every 10 seconds.
+When run without arguments, `gmux sz` starts a terminal user interface (TUI) that lists projects discovered from configured search paths. The list displays project names, paths, and status indicators for running tmux sessions and Git repositories. The view refreshes its data sources every 10 seconds.
 
-If an optional `[path]` argument is provided, it bypasses the TUI and directly creates or switches to a tmux session for that specific path.
+If an optional `[path]` argument is provided, the TUI is bypassed, and the command directly creates or switches to a tmux session for that path.
 
 ### Example
 
@@ -28,7 +30,7 @@ gmux sz ~/Work/grove-tmux
 
 ### `gmux sessionize add`
 
-Adds a specific project path to the `explicit_projects` list in your configuration.
+Adds a project path to the `explicit_projects` list in the configuration file.
 
 #### Syntax
 
@@ -38,18 +40,18 @@ gmux sz add [path]
 
 #### Description
 
-This command is for adding a project that is outside of your configured `search_paths`. If no `[path]` is given, it adds the current working directory.
+This command adds a project that is outside of the configured `search_paths`. If no `[path]` is provided, it adds the current working directory.
 
 #### Example
 
 ```bash
-# Add the project located at ~/Code/special-project
+# Add the project at ~/Code/special-project to the configuration
 gmux sz add ~/Code/special-project
 ```
 
 ### `gmux sessionize remove`
 
-Removes a project from the `explicit_projects` list.
+Removes a project from the `explicit_projects` list in the configuration file.
 
 #### Syntax
 
@@ -59,12 +61,12 @@ gmux sz remove [path]
 
 #### Description
 
-Removes a previously added explicit project. If no `[path]` is given, it removes the current working directory.
+This command removes a project previously added with `gmux sz add`. If no `[path]` is provided, it removes the current working directory.
 
 #### Example
 
 ```bash
-# Remove the project located at ~/Code/special-project
+# Remove the project at ~/Code/special-project from the configuration
 gmux sz remove ~/Code/special-project
 ```
 
@@ -74,7 +76,7 @@ Manages tmux session hotkey bindings.
 
 ### `gmux key list`
 
-Lists all configured session key bindings.
+Lists configured session key bindings.
 
 #### Syntax
 
@@ -84,10 +86,10 @@ gmux key list [--style <style>]
 
 #### Description
 
-Displays the mapping between hotkeys and projects. The default output is a table.
+Displays the mapping between hotkeys and projects from `tmux-sessions.yaml`. The default output is a table.
 
 **Flags**:
-*   `--style <style>`: Set the output style. Options are `table` (default) or `compact`.
+*   `--style <style>`: Set the output format. Options are `table` (default) or `compact`.
 
 #### Example
 
@@ -101,7 +103,7 @@ gmux key list --style compact
 
 ### `gmux key manage` (alias: `km`)
 
-Opens an interactive TUI to manage session key bindings.
+Opens a TUI to manage session key bindings.
 
 #### Syntax
 
@@ -111,7 +113,7 @@ gmux key manage
 
 #### Description
 
-Provides a full-screen interface to view all available keys, see which projects they are mapped to, and interactively map, unmap, or edit bindings using a fuzzy project search. Changes are saved automatically on exit.
+Provides a terminal interface to view available keys, see which projects they are mapped to, and interactively map or unmap bindings. It includes a project search interface. Changes are saved to the configuration file on exit.
 
 #### Example
 
@@ -122,7 +124,7 @@ gmux key manage
 
 ### `gmux key add`
 
-Interactively maps a discovered project to an available key.
+Maps a discovered project to an available key.
 
 #### Syntax
 
@@ -132,7 +134,7 @@ gmux key add
 
 #### Description
 
-Starts a guided workflow that shows a list of unmapped projects discovered from your configured search paths, and then prompts you to select an available key to assign.
+Starts an interactive workflow that shows a list of unmapped projects discovered from configured search paths, then prompts the user to select an available key to assign.
 
 #### Example
 
@@ -143,7 +145,7 @@ gmux key add
 
 ### `gmux key unmap`
 
-Unmaps a project from a key, making the key available again.
+Unmaps a project from a key.
 
 #### Syntax
 
@@ -153,7 +155,7 @@ gmux key unmap [key]
 
 #### Description
 
-If a `[key]` is provided, it unmaps it directly. If run without arguments, it interactively prompts you to choose which mapped key to unmap.
+Removes the project path mapping for a specific key, making the key available again. If `[key]` is not provided, it prompts for a selection from currently mapped keys.
 
 #### Example
 
@@ -174,7 +176,7 @@ gmux key update [current-key]
 
 #### Description
 
-Prompts you to select a new, available key for an already mapped project. If `[current-key]` is omitted, it prompts you to select which mapping to update.
+Prompts for a new, available key for an already mapped project. If `[current-key]` is omitted, it prompts for a selection of which mapping to update.
 
 #### Example
 
@@ -185,7 +187,7 @@ gmux key update a
 
 ### `gmux key edit`
 
-Edits the details (like the path) of a mapped session.
+Edits the path of a mapped session.
 
 #### Syntax
 
@@ -195,7 +197,7 @@ gmux key edit [key]
 
 #### Description
 
-Allows you to change the file path associated with a specific key. If run without a `[key]`, it prompts you to select which mapping to edit.
+Allows changing the file path associated with a specific key. If a `[key]` is not provided, it prompts for a selection of which mapping to edit.
 
 #### Example
 
@@ -206,7 +208,7 @@ gmux key edit s
 
 ## `gmux launch`
 
-Launches a new tmux session with advanced options.
+Launches a new tmux session with specified options.
 
 ### Syntax
 
@@ -216,7 +218,7 @@ gmux launch <session-name> [--window-name <name>] [--working-dir <path>] [--pane
 
 ### Description
 
-Creates a new tmux session. It can specify the initial window name, a working directory, and create multiple panes, each with an optional command and per-pane working directory.
+Creates a new tmux session. It can specify the initial window name, a working directory for the session, and create multiple panes.
 
 **Flags**:
 *   `--window-name <name>`: Name for the initial window.
@@ -232,7 +234,7 @@ gmux launch my-app --pane "npm run dev@/app/frontend" --pane "go run .@/app/back
 
 ## `gmux session`
 
-Performs direct manipulation of tmux sessions.
+Performs direct operations on tmux sessions.
 
 ### `gmux session exists`
 
@@ -246,7 +248,7 @@ gmux session exists <session-name>
 
 #### Description
 
-Exits with code 0 if the session exists, and 1 if it does not. Useful for scripting.
+Exits with code 0 if the session exists, and 1 if it does not. Intended for use in scripts.
 
 #### Example
 
@@ -285,18 +287,18 @@ gmux session capture <target>
 
 #### Description
 
-The `<target>` can be a session name (e.g., `my-session`) or a specific pane target (e.g., `my-session:0.1`).
+The `<target>` can be a session name (`my-session`) or a specific pane target (`my-session:0.1`).
 
 #### Example
 
 ```bash
-# Capture the content of the first pane in the first window of 'my-session'
+# Capture the content of the first pane in the 'my-session' session
 gmux session capture my-session:0.0
 ```
 
 ## `gmux status`
 
-Shows the Git status for all repositories configured in `tmux-sessions.yaml`.
+Shows the Git status for repositories configured in `tmux-sessions.yaml`.
 
 ### Syntax
 
@@ -312,7 +314,7 @@ gmux status
 
 ## `gmux list`
 
-Lists all configured session key bindings. This is an alias for `gmux key list`.
+Lists configured session key bindings. This is an alias for `gmux key list`.
 
 ### Syntax
 
@@ -339,11 +341,11 @@ gmux wait <session-name> [--timeout <duration>] [--poll-interval <duration>]
 
 ### Description
 
-Useful for scripts that need to wait for a user to finish work in a temporary session.
+Polls at a regular interval to check if a session still exists. Exits with status 0 when the session closes. Exits with a non-zero status if a timeout is reached.
 
 **Flags**:
-*   `--timeout <duration>`: Maximum time to wait (e.g., `10m`, `30s`). `0s` means wait forever.
-*   `--poll-interval <duration>`: How often to check if the session still exists (e.g., `1s`, `500ms`).
+*   `--timeout <duration>`: Maximum time to wait (e.g., `10m`, `30s`). `0s` means wait indefinitely.
+*   `--poll-interval <duration>`: How often to check if the session exists (e.g., `1s`, `500ms`).
 
 ### Example
 
@@ -364,7 +366,7 @@ gmux start <key>
 
 ### Description
 
-Finds the project mapped to the given `<key>` in your `tmux-sessions.yaml` and launches a new tmux session for it. The session is named `grove-<key>`.
+Finds the project mapped to the given `<key>` in `tmux-sessions.yaml` and launches a new tmux session for it. The session is named `grove-<key>`.
 
 ### Example
 
@@ -375,7 +377,7 @@ gmux start a
 
 ## `gmux version`
 
-Prints the version information for the `gmux` binary.
+Prints version information for the `gmux` binary.
 
 ### Syntax
 
@@ -385,7 +387,7 @@ gmux version [--json]
 
 ### Flags
 
-*   `--json`: Output the version information in JSON format.
+*   `--json`: Output version information in JSON format.
 
 ### Example
 
