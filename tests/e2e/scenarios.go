@@ -12,7 +12,7 @@ import (
 	"github.com/mattsolo1/grove-tend/pkg/harness"
 )
 
-// setupMockTmuxConfig creates a mock config directory with tmux-sessions.yaml
+// setupMockTmuxConfig creates a mock config directory with grove.yml and sessions.yml
 func setupMockTmuxConfig(ctx *harness.Context) error {
 	configDir := ctx.NewDir("config")
 	ctx.Set("config_dir", configDir)
@@ -32,24 +32,39 @@ func setupMockTmuxConfig(ctx *harness.Context) error {
 		return fmt.Errorf("failed to setup git config: %w", err)
 	}
 
-	// Create tmux-sessions.yaml
-	sessionsYAML := fmt.Sprintf(`available_keys: [a, b, c]
-sessions:
+	// Create grove.yml with static tmux config (no sessions)
+	groveYAML := `version: "1.0"
+tmux:
+  available_keys: [a, b, c]
+`
+
+	if err := fs.WriteString(filepath.Join(configDir, "grove.yml"), groveYAML); err != nil {
+		return fmt.Errorf("failed to write grove.yml: %w", err)
+	}
+
+	// Create gmux directory
+	gmuxDir := filepath.Join(configDir, "gmux")
+	if err := fs.CreateDir(gmuxDir); err != nil {
+		return fmt.Errorf("failed to create gmux directory: %w", err)
+	}
+
+	// Create sessions.yml with session mappings
+	sessionsYAML := fmt.Sprintf(`sessions:
   a:
     path: %s
-    repo: test-repo-a
+    repository: test-repo-a
     description: Test repository A
   b:
     path: /non/existent/path
-    repo: test-repo-b
+    repository: test-repo-b
     description: Test repository B (no path)
   c:
-    repo: test-repo-c
+    repository: test-repo-c
     description: Test repository C (path not set)
 `, repoDir)
 
-	if err := fs.WriteString(filepath.Join(configDir, "tmux-sessions.yaml"), sessionsYAML); err != nil {
-		return fmt.Errorf("failed to write tmux-sessions.yaml: %w", err)
+	if err := fs.WriteString(filepath.Join(gmuxDir, "sessions.yml"), sessionsYAML); err != nil {
+		return fmt.Errorf("failed to write sessions.yml: %w", err)
 	}
 
 	return nil

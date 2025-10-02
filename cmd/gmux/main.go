@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	configDir    string
-	sessionsFile string
+	configDir string
 )
 
 var rootCmd = &cobra.Command{
@@ -27,7 +26,10 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List tmux sessions from configuration (alias for 'key list')",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -65,7 +67,10 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show git status for configured sessions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		statuses, err := mgr.GetGitStatuses()
 		if err != nil {
 			return fmt.Errorf("failed to get git statuses: %w", err)
@@ -111,7 +116,6 @@ func init() {
 	// Add global flags
 	defaultConfigDir := filepath.Join(os.Getenv("HOME"), ".config", "grove")
 	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", defaultConfigDir, "Configuration directory")
-	rootCmd.PersistentFlags().StringVar(&sessionsFile, "sessions-file", "", "Sessions file path (default: <config-dir>/tmux-sessions.yaml)")
 
 	// Add the --style flag to the alias command as well, so Cobra recognizes it.
 	// It will modify the `listStyle` variable from the key.go file.

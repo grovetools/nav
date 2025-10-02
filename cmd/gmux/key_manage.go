@@ -40,7 +40,10 @@ var keyManageCmd = &cobra.Command{
 	Short:   "Interactively manage tmux session key mappings",
 	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, e/enter to map with fuzzy search, and space to unmap. Changes are auto-saved on exit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 
 		// Get current sessions
 		sessions, err := mgr.GetSessions()

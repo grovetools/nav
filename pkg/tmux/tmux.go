@@ -11,10 +11,14 @@ type Manager struct {
 }
 
 // NewManager creates a new tmux manager
-func NewManager(configDir string, sessionsFile string) *Manager {
-	return &Manager{
-		mgr: manager.NewManager(configDir, sessionsFile),
+func NewManager(configDir string) (*Manager, error) {
+	mgr, err := manager.NewManager(configDir)
+	if err != nil {
+		return nil, err
 	}
+	return &Manager{
+		mgr: mgr,
+	}, nil
 }
 
 // GetSessions returns all configured tmux sessions

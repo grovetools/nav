@@ -26,9 +26,9 @@
 
 The sessionizer (`gmux sz`) is a terminal application that runs background commands every 10 seconds to gather information.
 
-It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It also re-scans project directories defined in `project-search-paths.yaml` and reloads key mappings from `tmux-sessions.yaml`. The terminal interface redraws only if the fetched data differs from its current state.
+It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It also re-scans project directories defined in the `tmux` section of `grove.yml` and reloads key mappings from `~/.config/grove/gmux/sessions.yml`. The terminal interface redraws only if the fetched data differs from its current state.
 
-When key mappings are changed, `gmux` updates `tmux-sessions.yaml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server.
+When key mappings are changed, `gmux` updates `sessions.yml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server.
 
 ## Installation
 

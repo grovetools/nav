@@ -23,7 +23,10 @@ change to the configured directory for that session.`,
 		ctx := context.Background()
 		key := args[0]
 
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to load sessions: %w", err)

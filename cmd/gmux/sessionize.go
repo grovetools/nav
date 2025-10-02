@@ -52,28 +52,37 @@ var sessionizeCmd = &cobra.Command{
 		// If a path is provided as argument, use it directly
 		if len(args) > 0 {
 			// Record access for direct path usage too
-			mgr := tmux.NewManager(configDir, sessionsFile)
+			mgr, err := tmux.NewManager(configDir)
+			if err != nil {
+				return fmt.Errorf("failed to initialize manager: %w", err)
+			}
 			_ = mgr.RecordProjectAccess(args[0])
 			return sessionizeProject(args[0])
 		}
 
 		// Otherwise, show the interactive project picker
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			// Check if the error is related to config loading, but not a simple "not found"
+			if !os.IsNotExist(err) {
+				return fmt.Errorf("failed to initialize manager: %w", err)
+			}
+			// If config is not found, we'll proceed to first run setup.
+		}
+
 		projects, err := mgr.GetAvailableProjectsSorted()
 		if err != nil {
 			// Check if the error is due to missing config file
 			if os.IsNotExist(err) {
 				// Interactive first-run setup
-				return handleFirstRunSetup(configDir)
+				return handleFirstRunSetup(configDir, mgr)
 			}
 			return fmt.Errorf("failed to get available projects: %w", err)
 		}
 
 		if len(projects) == 0 {
 			fmt.Println("No projects found in search paths!")
-			fmt.Println("\nMake sure your search paths are configured in one of:")
-			fmt.Println("  ~/.config/tmux/project-search-paths.yaml")
-			fmt.Println("  ~/.config/grove/project-search-paths.yaml")
+			fmt.Println("\nMake sure your search paths are configured in your grove.yml file under the 'tmux' section.")
 			return nil
 		}
 
@@ -1923,46 +1932,46 @@ func sessionizeProject(projectPath string) error {
 }
 
 // handleFirstRunSetup creates an interactive setup flow for first-time users
-func handleFirstRunSetup(configDir string) error {
+func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	// Welcome message
 	fmt.Println("Welcome to gmux sessionizer!")
-	fmt.Println("It looks like this is your first time running the sessionizer.")
-	fmt.Println("Let's set up your project directories.")
+	fmt.Println("It looks like this is your first time running, or your configuration is missing.")
+	fmt.Println("Let's set up your project directories in your main grove.yml file.")
 	fmt.Println()
-	
+
 	reader := bufio.NewReader(os.Stdin)
-	
+
 	// Collect project directories from the user
 	var searchPaths []struct {
 		key         string
 		path        string
 		description string
 	}
-	
+
 	fmt.Println("Enter your project directories (press Enter with empty input when done):")
 	fmt.Println("Example: ~/Projects, ~/Work, ~/Code")
 	fmt.Println()
-	
+
 	for i := 1; ; i++ {
 		fmt.Printf("Project directory %d (or press Enter to finish): ", i)
-		
+
 		pathInput, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read input: %w", err)
 		}
-		
+
 		pathInput = strings.TrimSpace(pathInput)
 		if pathInput == "" {
 			break
 		}
-		
+
 		// Expand the path to check if it exists
 		expandedPath := expandPath(pathInput)
 		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
 			fmt.Printf("⚠️  Warning: Directory %s doesn't exist. Create it? [Y/n]: ", pathInput)
 			createResponse, _ := reader.ReadString('\n')
 			createResponse = strings.TrimSpace(strings.ToLower(createResponse))
-			
+
 			if createResponse == "" || createResponse == "y" || createResponse == "yes" {
 				if err := os.MkdirAll(expandedPath, 0755); err != nil {
 					fmt.Printf("❌ Failed to create directory: %v\n", err)
@@ -1975,21 +1984,21 @@ func handleFirstRunSetup(configDir string) error {
 				continue
 			}
 		}
-		
+
 		// Ask for a description
 		fmt.Printf("Description for %s (optional): ", pathInput)
 		descInput, _ := reader.ReadString('\n')
 		descInput = strings.TrimSpace(descInput)
-		
+
 		if descInput == "" {
 			descInput = fmt.Sprintf("Projects in %s", filepath.Base(pathInput))
 		}
-		
+
 		// Generate a key from the path
 		key := strings.ToLower(filepath.Base(pathInput))
 		key = strings.ReplaceAll(key, " ", "_")
 		key = strings.ReplaceAll(key, "-", "_")
-		
+
 		// Ensure unique keys
 		for _, sp := range searchPaths {
 			if sp.key == key {
@@ -1997,7 +2006,7 @@ func handleFirstRunSetup(configDir string) error {
 				break
 			}
 		}
-		
+
 		searchPaths = append(searchPaths, struct {
 			key         string
 			path        string
@@ -2007,43 +2016,79 @@ func handleFirstRunSetup(configDir string) error {
 			path:        pathInput,
 			description: descInput,
 		})
-		
+
 		fmt.Printf("✅ Added %s\n\n", pathInput)
 	}
-	
+
 	// Check if user added any paths
 	if len(searchPaths) == 0 {
-		fmt.Println("\nNo directories added. To set up manually, create a file at:")
-		fmt.Printf("  %s/project-search-paths.yaml\n", configDir)
-		fmt.Println("\nExample configuration:")
-		fmt.Println(getDefaultConfigContent())
+		fmt.Println("\nNo directories added. To set up manually, edit your grove.yml file:")
+		fmt.Println("  ~/.config/grove/grove.yml")
+		fmt.Println("\nAnd add a 'tmux' section like this:")
+		fmt.Println(getDefaultTmuxConfigContent())
 		return nil
 	}
-	
-	// Create the config directory if needed
-	expandedConfigDir := expandPath(configDir)
-	if err := os.MkdirAll(expandedConfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+
+	// Generate the tmux config object
+	tmuxCfg := generateTmuxConfigWithPaths(searchPaths)
+
+	// Use the manager to save the configuration.
+	// We need to re-initialize the manager since the config file might not exist yet.
+	mgr, err := tmux.NewManager(configDir)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to re-initialize manager: %w", err)
 	}
-	
-	// Generate the config content with user's directories
-	content := generateConfigWithPaths(searchPaths)
-	
-	// Create the config file
-	configPath := filepath.Join(expandedConfigDir, "project-search-paths.yaml")
-	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+
+	// This part is a bit tricky, as the manager expects to load a config.
+	// We will manually construct what's needed for saving.
+	// This highlights a potential improvement area for the manager API.
+
+	// Create a temporary manager to get access to the internal config struct
+	// and save method.
+	tempMgr, err := manager.NewManager(configDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	// Manually set the tmux config on the manager
+	tempMgr.SetTmuxConfig(&tmuxCfg)
+
+	if err := tempMgr.Save(); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	
-	fmt.Printf("\n✅ Configuration file created at: %s\n", configPath)
-	fmt.Printf("✅ Added %d project director%s\n", len(searchPaths), 
+
+	configPath := tempMgr.GetConfigPath()
+	fmt.Printf("\n✅ Configuration saved to: %s\n", configPath)
+	fmt.Printf("✅ Added %d project director%s\n", len(searchPaths),
 		map[bool]string{true: "ies", false: "y"}[len(searchPaths) != 1])
-	
+
 	fmt.Println("\n✅ Setup complete! Run 'gmux sz' to start using the sessionizer.")
 	return nil
 }
 
-// generateConfigWithPaths creates a configuration file with the user's specified paths
+// generateTmuxConfigWithPaths creates a TmuxConfig object with the user's specified paths
+func generateTmuxConfigWithPaths(searchPaths []struct{ key, path, description string }) manager.TmuxConfig {
+	spMap := make(map[string]manager.SearchPathConfig)
+	for _, sp := range searchPaths {
+		spMap[sp.key] = manager.SearchPathConfig{
+			Path:        sp.path,
+			Description: sp.description,
+			Enabled:     true,
+		}
+	}
+
+	return manager.TmuxConfig{
+		AvailableKeys: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"},
+		SearchPaths:   spMap,
+		Discovery: manager.DiscoveryConfig{
+			MaxDepth:        2,
+			MinDepth:        0,
+			ExcludePatterns: []string{"node_modules", ".cache", "target", "build", "dist"},
+		},
+	}
+}
+
+// generateConfigWithPaths creates a configuration file with the user's specified paths (deprecated - kept for compatibility)
 func generateConfigWithPaths(searchPaths []struct{ key, path, description string }) string {
 	var content strings.Builder
 	
@@ -2097,6 +2142,38 @@ explicit_projects: []
 `)
 	
 	return content.String()
+}
+
+// getDefaultTmuxConfigContent returns a well-commented default configuration for the tmux section
+func getDefaultTmuxConfigContent() string {
+	return `tmux:
+  available_keys: [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z]
+
+  # Search paths: directories where the sessionizer looks for projects
+  search_paths:
+    work:
+      path: ~/Work
+      description: "Work projects"
+      enabled: true
+    personal:
+      path: ~/Projects
+      description: "Personal projects"
+      enabled: true
+
+  # Discovery settings control how projects are found
+  discovery:
+    max_depth: 2
+    min_depth: 0
+    exclude_patterns:
+      - node_modules
+      - .cache
+      - target
+      - build
+      - dist
+
+  # Explicit projects: specific directories to always include
+  explicit_projects: []
+`
 }
 
 // getDefaultConfigContent returns a well-commented default configuration

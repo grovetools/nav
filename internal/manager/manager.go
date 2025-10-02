@@ -10,15 +10,19 @@ import (
 	"strings"
 
 	"github.com/mattsolo1/grove-core/pkg/models"
+	core_config "github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/tmux"
 	"gopkg.in/yaml.v3"
 )
 
 type Manager struct {
-	configDir       string
-	sessionsFile    string
-	searchPathsFile string
-	tmuxClient      *tmux.Client
+	configDir    string
+	coreConfig   *core_config.Config
+	tmuxConfig   *TmuxConfig
+	sessions     map[string]TmuxSessionConfig
+	configPath   string
+	sessionsPath string
+	tmuxClient   *tmux.Client
 }
 
 // expandPath expands ~ to home directory
@@ -38,17 +42,6 @@ type SearchPathConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 }
 
-type ProjectSearchConfig struct {
-	SearchPaths      map[string]SearchPathConfig `yaml:"search_paths"`
-	ExplicitProjects []ExplicitProject           `yaml:"explicit_projects"`
-	Discovery        struct {
-		MaxDepth        int      `yaml:"max_depth"`
-		MinDepth        int      `yaml:"min_depth"`
-		FileTypes       []string `yaml:"file_types"`
-		ExcludePatterns []string `yaml:"exclude_patterns"`
-	} `yaml:"discovery"`
-}
-
 type ExplicitProject struct {
 	Path        string `yaml:"path"`
 	Name        string `yaml:"name,omitempty"`
@@ -56,90 +49,89 @@ type ExplicitProject struct {
 	Enabled     bool   `yaml:"enabled"`
 }
 
+// ProjectSearchConfig is kept for backward compatibility with old code
+// that directly manipulates config files. New code should use TmuxConfig instead.
+type ProjectSearchConfig struct {
+	SearchPaths      map[string]SearchPathConfig `yaml:"search_paths"`
+	ExplicitProjects []ExplicitProject           `yaml:"explicit_projects"`
+	Discovery        DiscoveryConfig             `yaml:"discovery"`
+}
+
 // NewManager creates a new Manager instance
-func NewManager(configDir string, sessionsFile string) *Manager {
+func NewManager(configDir string) (*Manager, error) {
 	// Expand paths
 	configDir = expandPath(configDir)
 
-	// Use provided sessions file or default
-	if sessionsFile == "" {
-		sessionsFile = filepath.Join(configDir, "tmux-sessions.yaml")
-	} else if !filepath.IsAbs(sessionsFile) {
-		// If relative path, make it relative to configDir
-		sessionsFile = filepath.Join(configDir, sessionsFile)
-	} else {
-		// Expand absolute path too
-		sessionsFile = expandPath(sessionsFile)
+	// Load the layered grove.yml configuration
+	coreCfg, err := core_config.LoadFrom(configDir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to load grove config: %w", err)
+	}
+	// If config doesn't exist, proceed with a default config object
+	if coreCfg == nil {
+		coreCfg = &core_config.Config{}
 	}
 
-	// Try multiple locations for search paths file
-	searchPathsFile := ""
-	possiblePaths := []string{
-		filepath.Join(configDir, "project-search-paths.yaml"),
-		expandPath("~/.config/tmux/project-search-paths.yaml"),
-		expandPath("~/.config/grove/project-search-paths.yaml"),
+	// Unmarshal the 'tmux' extension (static config only)
+	var tmuxCfg TmuxConfig
+	if err := coreCfg.UnmarshalExtension("tmux", &tmuxCfg); err != nil {
+		return nil, fmt.Errorf("failed to parse 'tmux' config section: %w", err)
 	}
 
-	for _, path := range possiblePaths {
-		if _, err := os.Stat(path); err == nil {
-			searchPathsFile = path
-			break
+	// Find the primary config file path for saving
+	configPath, err := core_config.FindConfigFile(configDir)
+	if err != nil {
+		// If no file exists, default to the standard global path
+		home, _ := os.UserHomeDir()
+		configPath = filepath.Join(home, ".config", "grove", "grove.yml")
+	}
+
+	// Load sessions from separate file in gmux directory
+	sessionsPath := filepath.Join(configDir, "gmux", "sessions.yml")
+	sessions := make(map[string]TmuxSessionConfig)
+
+	if data, err := os.ReadFile(sessionsPath); err == nil {
+		var sessionsFile TmuxSessionsFile
+		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
+			sessions = sessionsFile.Sessions
 		}
 	}
-
-	// Default to grove config dir if none found
-	if searchPathsFile == "" {
-		searchPathsFile = filepath.Join(configDir, "project-search-paths.yaml")
-	}
+	// If file doesn't exist or is empty, sessions will be an empty map
 
 	// Initialize tmux client
-	tmuxClient, err := tmux.NewClient()
-	if err != nil {
+	tmuxClient, clientErr := tmux.NewClient()
+	if clientErr != nil {
 		// Log warning but don't fail - some operations may still work
-		fmt.Fprintf(os.Stderr, "Warning: could not initialize tmux client: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: could not initialize tmux client: %v\n", clientErr)
 	}
 
 	return &Manager{
-		configDir:       configDir,
-		sessionsFile:    sessionsFile,
-		searchPathsFile: searchPathsFile,
-		tmuxClient:      tmuxClient,
-	}
+		configDir:    configDir,
+		coreConfig:   coreCfg,
+		tmuxConfig:   &tmuxCfg,
+		sessions:     sessions,
+		configPath:   configPath,
+		sessionsPath: sessionsPath,
+		tmuxClient:   tmuxClient,
+	}, nil
 }
 
 func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
-	data, err := os.ReadFile(m.sessionsFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []models.TmuxSession{}, nil
-		}
-		return nil, err
-	}
-
-	// Parse the sessions map format with available keys
-	var config struct {
-		AvailableKeys []string `yaml:"available_keys"`
-		Sessions      map[string]struct {
-			Path        string `yaml:"path"`
-			Repo        string `yaml:"repo"`
-			Description string `yaml:"description"`
-		} `yaml:"sessions"`
-	}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, err
+	if m.tmuxConfig == nil {
+		return []models.TmuxSession{}, nil
 	}
 
 	// Create sessions for all available keys
-	sessions := make([]models.TmuxSession, 0, len(config.AvailableKeys))
+	sessions := make([]models.TmuxSession, 0, len(m.tmuxConfig.AvailableKeys))
 
-	// First, add all available keys as sessions (empty if not configured)
-	for _, key := range config.AvailableKeys {
-		if sessionData, exists := config.Sessions[key]; exists {
+	// Add all available keys as sessions (empty if not configured)
+	for _, key := range m.tmuxConfig.AvailableKeys {
+		if sessionData, exists := m.sessions[key]; exists {
 			// Key has a configured session
 			sessions = append(sessions, models.TmuxSession{
 				Key:         key,
 				Path:        expandPath(sessionData.Path),
-				Repository:  sessionData.Repo,
+				Repository:  sessionData.Repository,
 				Description: sessionData.Description,
 			})
 		} else {
@@ -156,93 +148,119 @@ func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
 	return sessions, nil
 }
 
-func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
-	// First, read the current config to preserve available_keys
-	currentData, err := os.ReadFile(m.sessionsFile)
+// Save persists the tmux configuration:
+// - Static config (search paths, discovery) to grove.yml
+// - Dynamic state (session mappings) to gmux/sessions.yml
+func (m *Manager) Save() error {
+	// Save static config to grove.yml
+	if err := m.saveStaticConfig(); err != nil {
+		return err
+	}
+
+	// Save sessions to separate file
+	return m.saveSessions()
+}
+
+// saveStaticConfig saves the static tmux configuration to grove.yml
+func (m *Manager) saveStaticConfig() error {
+	// Ensure the config directory exists
+	if err := os.MkdirAll(filepath.Dir(m.configPath), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Read the existing file into a generic map to preserve other contents
+	var fullConfig map[string]interface{}
+	data, err := os.ReadFile(m.configPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read existing config file: %w", err)
+	}
+	// If file exists, unmarshal it
+	if len(data) > 0 {
+		if err := yaml.Unmarshal(data, &fullConfig); err != nil {
+			return fmt.Errorf("failed to parse existing config file: %w", err)
+		}
+	} else {
+		fullConfig = make(map[string]interface{})
+	}
+
+	// Update the 'tmux' section (static config only, no sessions)
+	fullConfig["tmux"] = m.tmuxConfig
+
+	// Marshal the full config back to YAML
+	newData, err := yaml.Marshal(fullConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal updated config: %w", err)
 	}
 
-	var currentConfig struct {
-		AvailableKeys []string `yaml:"available_keys"`
-		Sessions      map[string]struct {
-			Path        string `yaml:"path"`
-			Repo        string `yaml:"repo"`
-			Description string `yaml:"description"`
-		} `yaml:"sessions"`
-	}
-	if err := yaml.Unmarshal(currentData, &currentConfig); err != nil {
-		return err
+	return os.WriteFile(m.configPath, newData, 0644)
+}
+
+// saveSessions saves the session mappings to gmux/sessions.yml
+func (m *Manager) saveSessions() error {
+	// Ensure the gmux directory exists
+	gmuxDir := filepath.Dir(m.sessionsPath)
+	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+		return fmt.Errorf("failed to create gmux directory: %w", err)
 	}
 
+	// Create the sessions file structure
+	sessionsFile := TmuxSessionsFile{
+		Sessions: m.sessions,
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(sessionsFile)
+	if err != nil {
+		return fmt.Errorf("failed to marshal sessions: %w", err)
+	}
+
+	return os.WriteFile(m.sessionsPath, data, 0644)
+}
+
+func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
 	// Convert slice back to map format, only including non-empty sessions
-	sessionsMap := make(map[string]struct {
-		Path        string `yaml:"path"`
-		Repo        string `yaml:"repo"`
-		Description string `yaml:"description"`
-	})
+	sessionsMap := make(map[string]TmuxSessionConfig)
 
 	for _, session := range sessions {
 		// Only save sessions that have actual data
 		if session.Path != "" || session.Repository != "" {
-			sessionsMap[session.Key] = struct {
-				Path        string `yaml:"path"`
-				Repo        string `yaml:"repo"`
-				Description string `yaml:"description"`
-			}{
+			sessionsMap[session.Key] = TmuxSessionConfig{
 				Path:        session.Path,
-				Repo:        session.Repository,
+				Repository:  session.Repository,
 				Description: session.Description,
 			}
 		}
 	}
 
-	config := struct {
-		AvailableKeys []string `yaml:"available_keys"`
-		Sessions      map[string]struct {
-			Path        string `yaml:"path"`
-			Repo        string `yaml:"repo"`
-			Description string `yaml:"description"`
-		} `yaml:"sessions"`
-	}{
-		AvailableKeys: currentConfig.AvailableKeys,
-		Sessions:      sessionsMap,
-	}
+	m.sessions = sessionsMap
 
-	data, err := yaml.Marshal(&config)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(m.sessionsFile, data, 0644)
+	return m.Save()
 }
 
 func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) error {
-	// Get all current sessions
-	sessions, err := m.GetSessions()
-	if err != nil {
-		return err
+	if m.sessions == nil {
+		m.sessions = make(map[string]TmuxSessionConfig)
 	}
 
-	// Update the specific session
-	found := false
-	for i, s := range sessions {
-		if s.Key == key {
-			sessions[i] = session
-			sessions[i].Key = key // Ensure key remains the same
-			found = true
+	m.sessions[key] = TmuxSessionConfig{
+		Path:        session.Path,
+		Repository:  session.Repository,
+		Description: session.Description,
+	}
+
+	// Add key to available_keys if it's not there
+	keyExists := false
+	for _, k := range m.tmuxConfig.AvailableKeys {
+		if k == key {
+			keyExists = true
 			break
 		}
 	}
-
-	// If session doesn't exist, add it
-	if !found {
-		session.Key = key
-		sessions = append(sessions, session)
+	if !keyExists {
+		m.tmuxConfig.AvailableKeys = append(m.tmuxConfig.AvailableKeys, key)
 	}
 
-	// Update all sessions
-	return m.UpdateSessions(sessions)
+	return m.Save()
 }
 
 // isGitRepository checks if a directory contains a .git folder or file
@@ -253,16 +271,15 @@ func isGitRepository(path string) bool {
 }
 
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
-	searchConfig, err := m.getSearchPaths()
-	if err != nil {
-		return nil, err
+	if m.tmuxConfig == nil {
+		return nil, os.ErrNotExist
 	}
 
 	projects := []DiscoveredProject{}
 	seen := make(map[string]bool)
 
 	// First, scan search paths
-	for _, sp := range searchConfig.SearchPaths {
+	for _, sp := range m.tmuxConfig.SearchPaths {
 		if !sp.Enabled {
 			continue
 		}
@@ -336,7 +353,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	}
 
 	// Then, add explicit projects (these always override)
-	for _, ep := range searchConfig.ExplicitProjects {
+	for _, ep := range m.tmuxConfig.ExplicitProjects {
 		if !ep.Enabled {
 			continue
 		}
@@ -413,37 +430,18 @@ func (m *Manager) GetAccessHistory() (*AccessHistory, error) {
 }
 
 func (m *Manager) GetEnabledSearchPaths() ([]string, error) {
-	searchConfig, err := m.getSearchPaths()
-	if err != nil {
-		return nil, err
+	if m.tmuxConfig == nil {
+		return []string{}, nil
 	}
 
 	paths := []string{}
-	for _, sp := range searchConfig.SearchPaths {
+	for _, sp := range m.tmuxConfig.SearchPaths {
 		if sp.Enabled {
 			paths = append(paths, expandPath(sp.Path))
 		}
 	}
 
 	return paths, nil
-}
-
-func (m *Manager) getSearchPaths() (*ProjectSearchConfig, error) {
-	data, err := os.ReadFile(m.searchPathsFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Propagate the error up instead of silently returning empty config
-			return nil, err
-		}
-		return nil, fmt.Errorf("failed to read config file %s: %w", m.searchPathsFile, err)
-	}
-
-	var config ProjectSearchConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %w", m.searchPathsFile, err)
-	}
-
-	return &config, nil
 }
 
 func (m *Manager) RegenerateBindings() error {
@@ -719,23 +717,11 @@ func (m *Manager) RegenerateBindingsGo() error {
 	}
 
 	var bindings strings.Builder
-	bindings.WriteString("# Auto-generated tmux key bindings from tmux-sessions.yaml\n")
-	bindings.WriteString("# Generated by tmux-claude-hud\n\n")
+	bindings.WriteString("# Auto-generated tmux key bindings from grove.yml\n")
+	bindings.WriteString("# Generated by grove-tmux\n\n")
 
-	sessionizerPath := "~/.local/bin/scripts/tmux-sessionizer"
-
-	// Check if sessionizer script path is configured
-	data, err := os.ReadFile(m.sessionsFile)
-	if err == nil {
-		var config struct {
-			TmuxSessionizer struct {
-				ScriptPath string `yaml:"script_path"`
-			} `yaml:"tmux_sessionizer"`
-		}
-		if err := yaml.Unmarshal(data, &config); err == nil && config.TmuxSessionizer.ScriptPath != "" {
-			sessionizerPath = config.TmuxSessionizer.ScriptPath
-		}
-	}
+	// Use gmux sessionize as the command path
+	sessionizerPath := "gmux sessionize"
 
 	// Sort sessions by key for consistent output
 	sortedSessions := make([]models.TmuxSession, len(sessions))
@@ -760,7 +746,8 @@ func (m *Manager) RegenerateBindingsGo() error {
 		}
 
 		bindings.WriteString(comment + "\n")
-		bindings.WriteString(fmt.Sprintf("bind-key -r %s run-shell \"%s %s\"\n\n",
+		// Use quotes around the path to handle spaces
+		bindings.WriteString(fmt.Sprintf("bind-key -r %s run-shell \"%s '%s'\"\n\n",
 			session.Key, sessionizerPath, session.Path))
 	}
 
@@ -775,20 +762,7 @@ func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 		return ""
 	}
 
-	// Try to read the tmux sessions config to find matching path
-	data, err := os.ReadFile(m.sessionsFile)
-	if err != nil {
-		return ""
-	}
-
-	// Parse YAML to find matching session
-	var config struct {
-		Sessions map[string]struct {
-			Path string `yaml:"path"`
-		} `yaml:"sessions"`
-	}
-
-	if err := yaml.Unmarshal(data, &config); err != nil {
+	if m.sessions == nil {
 		return ""
 	}
 
@@ -796,7 +770,7 @@ func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 	absWorkingDir, _ := filepath.Abs(workingDir)
 
 	// Find matching session by path
-	for key, session := range config.Sessions {
+	for key, session := range m.sessions {
 		sessionPath := expandPath(session.Path)
 		absSessionPath, _ := filepath.Abs(sessionPath)
 
@@ -811,19 +785,10 @@ func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 
 // GetAvailableKeys returns all available keys from configuration
 func (m *Manager) GetAvailableKeys() []string {
-	data, err := os.ReadFile(m.sessionsFile)
-	if err != nil {
+	if m.tmuxConfig == nil {
 		return []string{}
 	}
-
-	var config struct {
-		AvailableKeys []string `yaml:"available_keys"`
-	}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return []string{}
-	}
-
-	return config.AvailableKeys
+	return m.tmuxConfig.AvailableKeys
 }
 
 // UpdateSessionKey updates the key for a specific session
@@ -832,33 +797,19 @@ func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
 		return nil // No change needed
 	}
 
-	// Read current configuration
-	data, err := os.ReadFile(m.sessionsFile)
-	if err != nil {
-		return fmt.Errorf("failed to read sessions file: %w", err)
-	}
-
-	var config struct {
-		AvailableKeys []string `yaml:"available_keys"`
-		Sessions      map[string]struct {
-			Path        string `yaml:"path"`
-			Repo        string `yaml:"repo"`
-			Description string `yaml:"description"`
-		} `yaml:"sessions"`
-	}
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse sessions file: %w", err)
+	if m.sessions == nil {
+		return fmt.Errorf("sessions not loaded")
 	}
 
 	// Check if old key exists
-	session, exists := config.Sessions[oldKey]
+	session, exists := m.sessions[oldKey]
 	if !exists {
 		return fmt.Errorf("session with key '%s' not found", oldKey)
 	}
 
 	// Check if new key is valid
 	validKey := false
-	for _, k := range config.AvailableKeys {
+	for _, k := range m.tmuxConfig.AvailableKeys {
 		if k == newKey {
 			validKey = true
 			break
@@ -868,22 +819,24 @@ func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
 		return fmt.Errorf("'%s' is not a valid key", newKey)
 	}
 
-	// Check if new key is already in use (unless it's the same session)
-	if _, exists := config.Sessions[newKey]; exists && newKey != oldKey {
+	// Check if new key is already in use
+	if _, exists := m.sessions[newKey]; exists {
 		return fmt.Errorf("key '%s' is already in use", newKey)
 	}
 
 	// Update the session key
-	if oldKey != newKey {
-		config.Sessions[newKey] = session
-		delete(config.Sessions, oldKey)
-	}
+	m.sessions[newKey] = session
+	delete(m.sessions, oldKey)
 
-	// Write back to file
-	newData, err := yaml.Marshal(&config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal sessions: %w", err)
-	}
+	return m.Save()
+}
 
-	return os.WriteFile(m.sessionsFile, newData, 0644)
+// SetTmuxConfig sets the tmux configuration (used by first-run setup)
+func (m *Manager) SetTmuxConfig(cfg *TmuxConfig) {
+	m.tmuxConfig = cfg
+}
+
+// GetConfigPath returns the path to the config file
+func (m *Manager) GetConfigPath() string {
+	return m.configPath
 }

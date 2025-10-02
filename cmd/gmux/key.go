@@ -87,7 +87,10 @@ var keyListCmd = &cobra.Command{
 	Short: "List all configured session keys",
 	// The new RunE function handles both styles
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -126,7 +129,10 @@ var keyUpdateCmd = &cobra.Command{
 	Short: "Update the key binding for a tmux session",
 	Long:  `Update the key binding for an existing tmux session. If no key is provided, shows all sessions for selection.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -249,7 +255,10 @@ var keyEditCmd = &cobra.Command{
 	Short: "Edit the details of a tmux session (path, repository, description)",
 	Long:  `Edit the path, repository name, and description for an existing tmux session. If no key is provided, shows all sessions for selection.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -347,7 +356,10 @@ var keyAddCmd = &cobra.Command{
 	Short: "Add a new session from available projects in search paths",
 	Long:  `Discover projects from configured search paths and quickly map them to available keys.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 
 		// Get current sessions to see which keys are available
 		sessions, err := mgr.GetSessions()
@@ -543,7 +555,10 @@ var keyUnmapCmd = &cobra.Command{
 	Short: "Unmap a session from its key binding",
 	Long:  `Remove the mapping for a specific key, making it available for future use.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr := tmux.NewManager(configDir, sessionsFile)
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)

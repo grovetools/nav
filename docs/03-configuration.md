@@ -1,20 +1,28 @@
 # Configuration
 
-This document describes the configuration files used by `gmux`. Paths with a leading `~` are expanded to the user’s home directory.
+This document describes the configuration files used by `gmux`. Paths with a leading `~` are expanded to the user's home directory.
 
 By default, `gmux` looks for configuration files in `~/.config/grove`. This can be changed with the global `--config-dir` flag.
 
-## project-search-paths.yaml
+## grove.yml (Static Configuration)
 
-This file defines which directories `gmux` scans to find projects for the sessionizer (`gmux sz`). It also lists specific project directories to include.
+`gmux` uses the unified Grove configuration system. Static tmux configuration is stored in the `tmux` section of `grove.yml`, which supports layered configuration (global, project, and override files).
 
-**Location Resolution** (first match found is used):
-1.  `<config-dir>/project-search-paths.yaml`
-2.  `~/.config/tmux/project-search-paths.yaml`
-3.  `~/.config/grove/project-search-paths.yaml`
+**Location**: `~/.config/grove/grove.yml` (or project-specific `grove.yml` files)
+
+The `tmux` section defines:
+- Available hotkeys
+- Project search paths
+- Explicit projects to include
+- Project discovery settings
+
+**Note**: Session key mappings (which change frequently) are stored separately in `~/.config/grove/gmux/sessions.yml` to keep version-controlled config files clean.
 
 ### Schema
 
+The `tmux` section in `grove.yml` contains:
+
+*   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).
 *   `search_paths` (map of string to object): Defines directories to scan for projects.
     *   `path` (string): Directory path.
     *   `description` (string, optional): A description for the path.
@@ -41,75 +49,85 @@ The sessionizer discovers projects by:
 ### Example
 
 ```yaml
-# ~/.config/grove/project-search-paths.yaml
+# ~/.config/grove/grove.yml
 
-# Defines directories to scan for projects.
-search_paths:
-  work:
-    path: ~/Work
-    description: "Work projects"
-    enabled: true
-  personal:
-    path: ~/Projects
-    description: "Personal projects"
-    enabled: true
+version: "1.0"
 
-# Controls the directory scanning process.
-discovery:
-  max_depth: 2
-  min_depth: 0
-  exclude_patterns:
-    - node_modules
-    - .cache
-    - target
-    - build
-    - dist
+# Tmux configuration (static settings only)
+tmux:
+  # Available hotkeys for session switching
+  available_keys: [a, s, d, f, g, h, j, k, l]
 
-# Defines specific project directories to always include.
-explicit_projects:
-  - path: ~/Code/dotfiles
-    enabled: true
+  # Directories to scan for projects
+  search_paths:
+    work:
+      path: ~/Work
+      description: "Work projects"
+      enabled: true
+    personal:
+      path: ~/Projects
+      description: "Personal projects"
+      enabled: true
+
+  # Controls the directory scanning process
+  discovery:
+    max_depth: 2
+    min_depth: 0
+    exclude_patterns:
+      - node_modules
+      - .cache
+      - target
+      - build
+      - dist
+
+  # Specific project directories to always include
+  explicit_projects:
+    - path: ~/Code/dotfiles
+      name: "dotfiles"
+      enabled: true
 ```
 
-## tmux-sessions.yaml
+## gmux/sessions.yml (Dynamic State)
 
-This file defines the available hotkeys and maps them to project paths. It is read by `gmux key` commands and used to generate tmux bindings. The recommended way to modify this file is with the `gmux key manage` command.
+This file stores session key mappings (which change frequently when you map/unmap projects). It is automatically managed by `gmux key` commands and is stored separately from `grove.yml` to avoid polluting version control.
 
-**Location**:
-*   `<config-dir>/tmux-sessions.yaml` (default: `~/.config/grove/tmux-sessions.yaml`)
+**Location**: `~/.config/grove/gmux/sessions.yml`
+
+The recommended way to modify this file is with the `gmux key manage` command, which provides an interactive interface for mapping projects to keys.
 
 ### Schema
 
-*   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).
-*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are present in memory but are not written to the `sessions` map in the file.
+*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are not written to this file.
     *   `path` (string): The project path the key is mapped to.
-    *   `repo` (string): The display name for the project.
+    *   `repository` (string): The display name for the project.
     *   `description` (string, optional): A free-text description.
-*   `tmux_sessionizer.script_path` (string, optional): Path to an external script to be called by the generated tmux bindings. If omitted, it defaults to `~/.local/bin/scripts/tmux-sessionizer`.
 
 ### Example
 
 ```yaml
-# ~/.config/grove/tmux-sessions.yaml
-available_keys:
-  - a
-  - s
-  - d
-  - f
-  - g
-  - h
-  - j
-  - k
-  - l
-
+# ~/.config/grove/gmux/sessions.yml
 sessions:
-  # Maps key 'a' to the grove-tmux project.
+  # Maps key 'a' to the grove-tmux project
   a:
     path: "~/Work/grove-tmux"
-    repo: "grove-tmux"
-  # Key 's' is available but currently unmapped.
+    repository: "grove-tmux"
+    description: ""
 
-# Optional: Override the script called by generated bindings.
-tmux_sessionizer:
-  script_path: ~/.local/bin/scripts/tmux-sessionizer
+  # Maps key 'd' to another project
+  d:
+    path: "~/Projects/my-app"
+    repository: "my-app"
+    description: "My awesome application"
+
+  # Keys 's', 'f', 'g', etc. are available but currently unmapped
+```
+
+### Version Control Recommendation
+
+Add `gmux/sessions.yml` to your `.gitignore` to prevent session mappings from polluting your version control history:
+
+```gitignore
+# In ~/.config/grove/.gitignore
+gmux/sessions.yml
+gmux/access-history.json
 ```
