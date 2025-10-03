@@ -1,3 +1,5 @@
+## v0.1.1-nightly.2817cba (2025-10-03)
+
 ## v0.1.0 (2025-10-01)
 
 This release introduces significant improvements to the Terminal User Interfaces (TUIs) in `gmux`. The sessionizer (`gmux sz`) and key manager (`gmux key manage`) now use the centralized Kanagawa theme for a consistent look and feel across the Grove ecosystem (4224b82). A standardized help system has been implemented in both interfaces, providing more detailed and structured guidance (ca2cc26). Navigation in the sessionizer is now more intuitive with the addition of vim-style keys (`j/k`, `ctrl+u/d`, `g/G`) and a clearer separation between navigation and filtering modes. The key binding for closing a session has been changed from `ctrl+d` to `X` to avoid conflicts (ca2cc26).
