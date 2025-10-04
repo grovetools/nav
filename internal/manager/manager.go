@@ -275,9 +275,10 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	// First, add ecosystems themselves as discoverable projects
 	for _, eco := range result.Ecosystems {
 		projects = append(projects, DiscoveredProject{
-			Name:       eco.Name,
-			Path:       eco.Path,
-			IsWorktree: false,
+			Name:        eco.Name,
+			Path:        eco.Path,
+			IsWorktree:  false,
+			IsEcosystem: true,
 		})
 	}
 
@@ -288,28 +289,34 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 
 		if isEcosystemWorktree {
 			// Ecosystem worktrees should be treated as worktrees of the ecosystem
+			// Use the directory name as the display name
+			wtName := filepath.Base(proj.Path)
 			projects = append(projects, DiscoveredProject{
-				Name:       proj.Name,
-				Path:       proj.Path,
-				ParentPath: proj.ParentEcosystemPath,
-				IsWorktree: true,
+				Name:                wtName,
+				Path:                proj.Path,
+				ParentPath:          proj.ParentEcosystemPath,
+				IsWorktree:          true,
+				ParentEcosystemPath: proj.ParentEcosystemPath,
+				IsEcosystem:         true, // Ecosystem worktrees are also ecosystems
 			})
 		} else {
 			// Regular projects (including those within ecosystems)
 			projects = append(projects, DiscoveredProject{
-				Name:       proj.Name,
-				Path:       proj.Path,
-				IsWorktree: false,
+				Name:                proj.Name,
+				Path:                proj.Path,
+				IsWorktree:          false,
+				ParentEcosystemPath: proj.ParentEcosystemPath,
 			})
 
 			// Add all associated Worktree Workspaces
 			for _, ws := range proj.Workspaces {
 				if ws.Type == workspace.WorkspaceTypeWorktree {
 					projects = append(projects, DiscoveredProject{
-						Name:       ws.Name,
-						Path:       ws.Path,
-						ParentPath: ws.ParentProjectPath,
-						IsWorktree: true,
+						Name:                ws.Name,
+						Path:                ws.Path,
+						ParentPath:          ws.ParentProjectPath,
+						IsWorktree:          true,
+						ParentEcosystemPath: proj.ParentEcosystemPath,
 					})
 				}
 			}
