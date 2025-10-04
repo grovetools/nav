@@ -6,45 +6,71 @@ By default, `gmux` looks for configuration files in `~/.config/grove`. This can 
 
 ## grove.yml (Static Configuration)
 
-`gmux` uses the unified Grove configuration system. Static tmux configuration is stored in the `tmux` section of `grove.yml`, which supports layered configuration (global, project, and override files).
+`gmux` uses the unified Grove configuration system. Configuration is stored in `grove.yml`, which supports layered configuration (global, project, and override files).
 
 **Location**: `~/.config/grove/grove.yml` (or project-specific `grove.yml` files)
 
-The `tmux` section defines:
-- Available hotkeys
-- Project search paths
-- Explicit projects to include
-- Project discovery settings
-
 **Note**: Session key mappings (which change frequently) are stored separately in `~/.config/grove/gmux/sessions.yml` to keep version-controlled config files clean.
+
+### Project Discovery
+
+**As of this version**, project discovery is managed centrally by `grove-core`'s DiscoveryService. Projects are discovered from paths defined in the global `groves` configuration section.
+
+The `groves` section in your global `~/.config/grove/grove.yml` defines:
+- Root directories to search for projects and ecosystems
+
+The `tmux` section defines:
+- Available hotkeys for session switching
 
 ### Schema
 
-The `tmux` section in `grove.yml` contains:
+**Global Configuration** (`~/.config/grove/grove.yml`):
 
-*   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).
-*   `search_paths` (map of string to object): Defines directories to scan for projects.
-    *   `path` (string): Directory path.
-    *   `description` (string, optional): A description for the path.
-    *   `enabled` (bool): If `true`, this search path is used.
-*   `explicit_projects` (array of objects): Defines specific project directories to include, regardless of their location.
+*   `groves` (map of string to object): Defines root directories to scan for projects.
+    *   `path` (string): Directory path to scan.
+    *   `description` (string, optional): A description for the grove.
+    *   `enabled` (bool): If `true`, this path is scanned for projects.
+
+*   `explicit_projects` (array of objects): Defines specific projects to include without discovery.
     *   `path` (string): The path to the project.
-    *   `name` (string, optional): A display name, which defaults to the directory name.
+    *   `name` (string, optional): A display name, defaults to the directory name.
     *   `description` (string, optional): A description for the project.
     *   `enabled` (bool): If `true`, this project is included.
-*   `discovery` (object): Contains settings for project discovery.
-    *   `max_depth` (int): The maximum depth to search within each `path`.
-    *   `min_depth` (int): The minimum depth to search.
-    *   `exclude_patterns` ([]string): A list of directory name patterns to exclude from the search.
+
+*   `tmux` (object): Tmux-specific configuration.
+    *   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).
 
 ### Discovery Logic
 
-The sessionizer discovers projects by:
-1.  Including each enabled `search_path` directory itself as a project.
-2.  Scanning immediate subdirectories of each enabled `search_path`.
-3.  Excluding subdirectories with names matching `exclude_patterns`.
-4.  If a discovered directory is a Git repository, `gmux` scans for a `.grove-worktrees` subdirectory and includes any directories within it as Git worktrees grouped under the parent repository.
-5.  Including all enabled `explicit_projects`.
+The sessionizer discovers projects using `grove-core`'s DiscoveryService:
+1.  Scans all enabled `groves` paths for projects with `grove.yml` files.
+2.  Identifies ecosystems (directories with `grove.yml` containing a `workspaces` key).
+3.  Discovers projects (directories with `grove.yml` but no `workspaces` key).
+4.  For each project, scans for `.grove-worktrees` subdirectories and includes worktrees hierarchically.
+5.  Includes non-Grove directories (directories with `.git` but no `grove.yml`).
+6.  Adds all enabled `explicit_projects` (useful for including specific directories like dotfiles).
+
+### Migration from Old Configuration
+
+**If you previously used `search_paths`, `explicit_projects`, or `discovery` settings**, these are now deprecated. Migrate to the new `groves` configuration:
+
+**Old configuration** (deprecated):
+```yaml
+tmux:
+  search_paths:
+    work:
+      path: ~/Work
+      enabled: true
+```
+
+**New configuration**:
+```yaml
+groves:
+  work:
+    path: ~/Work
+    enabled: true
+    description: "Work projects"
+```
 
 ### Example
 
@@ -53,38 +79,28 @@ The sessionizer discovers projects by:
 
 version: "1.0"
 
+# Project discovery paths (global configuration)
+groves:
+  work:
+    path: ~/Work
+    description: "Work projects"
+    enabled: true
+  personal:
+    path: ~/Projects
+    description: "Personal projects"
+    enabled: true
+
+# Explicit projects (specific directories to include)
+explicit_projects:
+  - path: ~/.config
+    name: "dotfiles"
+    description: "Configuration files"
+    enabled: true
+
 # Tmux configuration (static settings only)
 tmux:
   # Available hotkeys for session switching
   available_keys: [a, s, d, f, g, h, j, k, l]
-
-  # Directories to scan for projects
-  search_paths:
-    work:
-      path: ~/Work
-      description: "Work projects"
-      enabled: true
-    personal:
-      path: ~/Projects
-      description: "Personal projects"
-      enabled: true
-
-  # Controls the directory scanning process
-  discovery:
-    max_depth: 2
-    min_depth: 0
-    exclude_patterns:
-      - node_modules
-      - .cache
-      - target
-      - build
-      - dist
-
-  # Specific project directories to always include
-  explicit_projects:
-    - path: ~/Code/dotfiles
-      name: "dotfiles"
-      enabled: true
 ```
 
 ## gmux/sessions.yml (Dynamic State)

@@ -26,9 +26,32 @@
 
 The sessionizer (`gmux sz`) is a terminal application that runs background commands every 10 seconds to gather information.
 
-It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It also re-scans project directories defined in the `tmux` section of `grove.yml` and reloads key mappings from `~/.config/grove/gmux/sessions.yml`. The terminal interface redraws only if the fetched data differs from its current state.
+It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It uses `grove-core`'s DiscoveryService to discover projects from paths configured in the global `groves` section of `grove.yml` and reloads key mappings from `~/.config/grove/gmux/sessions.yml`. The terminal interface redraws only if the fetched data differs from its current state.
 
 When key mappings are changed, `gmux` updates `sessions.yml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server.
+
+## Configuration Migration Notice
+
+**Important**: Project discovery has been centralized to `grove-core`. If you previously configured search paths in the `tmux` section of your `grove.yml`, you need to migrate to the new `groves` configuration.
+
+**Old configuration** (no longer supported):
+```yaml
+tmux:
+  search_paths:
+    work:
+      path: ~/Work
+      enabled: true
+```
+
+**New configuration** (in global `~/.config/grove/grove.yml`):
+```yaml
+groves:
+  work:
+    path: ~/Work
+    enabled: true
+```
+
+See the [Configuration Reference](docs/03-configuration.md) for details.
 
 ## Installation
 

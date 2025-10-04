@@ -1283,62 +1283,114 @@ func (m *sessionizeModel) updateFiltered() {
 	} else {
 		// Filtered View: Show all matching projects, grouped by activity
 		
-		// sortByMatchQuality sorts projects by match quality (exact, prefix, contains, path)
+		// sortByMatchQuality sorts projects by match quality while preserving parent-child grouping
 		sortByMatchQuality := func(projects []manager.DiscoveredProject, filter string) []manager.DiscoveredProject {
-			// Separate matches into priority groups
-			var exactNameMatches []manager.DiscoveredProject    // Exact match on project name
-			var prefixNameMatches []manager.DiscoveredProject   // Prefix match on project name
-			var containsNameMatches []manager.DiscoveredProject // Contains in project name
-			var pathMatches []manager.DiscoveredProject         // Matches elsewhere in the path
+			// Build a map of parents to their worktrees
+			parentWorktrees := make(map[string][]manager.DiscoveredProject)
+			parents := []manager.DiscoveredProject{}
 
 			for _, p := range projects {
-				lowerName := strings.ToLower(p.Name)
-				lowerPath := strings.ToLower(p.Path)
-
-				if lowerName == filter {
-					// Exact match on name - highest priority
-					exactNameMatches = append(exactNameMatches, p)
-				} else if strings.HasPrefix(lowerName, filter) {
-					// Prefix match on name - high priority
-					prefixNameMatches = append(prefixNameMatches, p)
-				} else if strings.Contains(lowerName, filter) {
-					// Contains in name - medium priority
-					containsNameMatches = append(containsNameMatches, p)
-				} else if strings.Contains(lowerPath, filter) {
-					// Match elsewhere in the path - lower priority
-					pathMatches = append(pathMatches, p)
+				if p.IsWorktree {
+					parentWorktrees[p.ParentPath] = append(parentWorktrees[p.ParentPath], p)
+				} else {
+					parents = append(parents, p)
 				}
 			}
 
-			// Combine results in priority order
+			// Calculate match quality for sorting (name only, not path)
+			getMatchQuality := func(p manager.DiscoveredProject) int {
+				lowerName := strings.ToLower(p.Name)
+
+				if lowerName == filter {
+					return 3 // Exact match
+				} else if strings.HasPrefix(lowerName, filter) {
+					return 2 // Prefix match
+				} else if strings.Contains(lowerName, filter) {
+					return 1 // Contains in name
+				}
+				return 0 // No direct match (included because child matched)
+			}
+
+			// Sort parents by match quality
+			sort.SliceStable(parents, func(i, j int) bool {
+				return getMatchQuality(parents[i]) > getMatchQuality(parents[j])
+			})
+
+			// Build result with parents followed by their worktrees
 			var result []manager.DiscoveredProject
-			result = append(result, exactNameMatches...)
-			result = append(result, prefixNameMatches...)
-			result = append(result, containsNameMatches...)
-			result = append(result, pathMatches...)
+			for _, parent := range parents {
+				result = append(result, parent)
+
+				// Add worktrees for this parent, sorted by match quality
+				worktrees := parentWorktrees[parent.Path]
+				sort.SliceStable(worktrees, func(i, j int) bool {
+					return getMatchQuality(worktrees[i]) > getMatchQuality(worktrees[j])
+				})
+				result = append(result, worktrees...)
+			}
+
 			return result
 		}
 		
-		// Partition matches by group activity
+		// Partition matches by group activity, keeping parent-worktree hierarchy
+		matchedParents := make(map[string]bool) // Track which parent projects matched
+		parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
 		var activeGroupMatches []manager.DiscoveredProject
 		var inactiveGroupMatches []manager.DiscoveredProject
 
+		// First pass: find matching parent projects (search name only)
 		for _, p := range m.projects {
-			lowerName := strings.ToLower(p.Name)
-			lowerPath := strings.ToLower(p.Path)
+			if p.IsWorktree {
+				continue // Skip worktrees in first pass
+			}
 
-			// Check if this project matches the filter
-			if lowerName == filter || strings.HasPrefix(lowerName, filter) || 
-			   strings.Contains(lowerName, filter) || strings.Contains(lowerPath, filter) {
-				
-				// Determine group key
-				groupKey := p.Path
-				if p.IsWorktree {
-					groupKey = p.ParentPath
-				}
-				
+			lowerName := strings.ToLower(p.Name)
+
+			// Check if this parent project matches the filter (name only, not full path)
+			if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+			   strings.Contains(lowerName, filter) {
+				matchedParents[p.Path] = true
+			}
+		}
+
+		// Second pass: find worktrees that match and mark their parents for inclusion (search name only)
+		for _, p := range m.projects {
+			if !p.IsWorktree {
+				continue
+			}
+
+			lowerName := strings.ToLower(p.Name)
+
+			// Check if this worktree matches the filter (name only, not full path)
+			if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+			   strings.Contains(lowerName, filter) {
+				// Mark parent for inclusion even if parent didn't match directly
+				parentsWithMatchingWorktrees[p.ParentPath] = true
+			}
+		}
+
+		// Third pass: add matched parents and their worktrees
+		for _, p := range m.projects {
+			shouldInclude := false
+			parentPath := p.Path
+
+			if p.IsWorktree {
+				parentPath = p.ParentPath
+				// Include worktree if: it matches itself OR its parent matched
+				lowerName := strings.ToLower(p.Name)
+				worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+					strings.Contains(lowerName, filter)
+				parentMatched := matchedParents[p.ParentPath]
+
+				shouldInclude = worktreeMatches || parentMatched
+			} else {
+				// Include parent if it matched OR if any of its worktrees matched
+				shouldInclude = matchedParents[p.Path] || parentsWithMatchingWorktrees[p.Path]
+			}
+
+			if shouldInclude {
 				// Check group activity
-				if activeGroups[groupKey] {
+				if activeGroups[parentPath] {
 					activeGroupMatches = append(activeGroupMatches, p)
 				} else {
 					inactiveGroupMatches = append(inactiveGroupMatches, p)
@@ -1346,7 +1398,7 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 		}
 
-		// Sort both groups by match quality
+		// Sort both groups by match quality (parents will naturally group with their worktrees)
 		activeGroupMatches = sortByMatchQuality(activeGroupMatches, filter)
 		inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
 
@@ -1355,6 +1407,35 @@ func (m *sessionizeModel) updateFiltered() {
 		m.filtered = append(m.filtered, activeGroupMatches...)
 		m.filtered = append(m.filtered, inactiveGroupMatches...)
 	}
+}
+
+// highlightMatch highlights the matching portion of text with the search filter
+func highlightMatch(text, filter string) string {
+	if filter == "" {
+		return text
+	}
+
+	lowerText := strings.ToLower(text)
+	lowerFilter := strings.ToLower(filter)
+
+	// Find the position of the match
+	index := strings.Index(lowerText, lowerFilter)
+	if index == -1 {
+		return text
+	}
+
+	// Split the text into parts: before, match, after
+	before := text[:index]
+	match := text[index : index+len(filter)]
+	after := text[index+len(filter):]
+
+	// Highlight the match with yellow background
+	highlightStyle := lipgloss.NewStyle().
+		Foreground(core_theme.DefaultColors.DarkText).
+		Background(core_theme.DefaultColors.Yellow).
+		Bold(true)
+
+	return before + highlightStyle.Render(match) + after
 }
 
 // formatChanges formats the git status into a styled string.
@@ -1561,15 +1642,21 @@ func (m sessionizeModel) View() string {
 		changesStr := formatChanges(project.GitStatus, extStatus)
 
 		// Prepare display elements
-		prefix := ""
+		prefix := "  "
 		displayName := project.Name
 		if project.IsWorktree {
-			prefix = "└─ "
+			prefix = "  └─ "
 		}
 
 		// If this is a Claude session, add PID to the name
 		if project.ClaudeSessionID != "" {
 			displayName = fmt.Sprintf("%s [PID:%d]", project.Name, project.ClaudeSessionPID)
+		}
+
+		// Highlight matching search terms
+		filter := strings.ToLower(m.filterInput.Value())
+		if filter != "" {
+			displayName = highlightMatch(displayName, filter)
 		}
 
 		if i == m.cursor {
@@ -1627,8 +1714,15 @@ func (m sessionizeModel) View() string {
 
 			b.WriteString(line)
 		} else {
-			// Normal line with colored name
-			nameStyle := core_theme.DefaultTheme.Info
+			// Normal line with colored name - style based on project type
+			var nameStyle lipgloss.Style
+			if project.IsWorktree {
+				// Worktrees: Info style (blue)
+				nameStyle = core_theme.DefaultTheme.Info
+			} else {
+				// Primary repos: Highlight style, bold (orange and bold)
+				nameStyle = core_theme.DefaultTheme.Highlight.Copy().Bold(true)
+			}
 			pathStyle := core_theme.DefaultTheme.Muted
 
 			// Always reserve space for key indicator
@@ -2066,25 +2160,10 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	return nil
 }
 
-// generateTmuxConfigWithPaths creates a TmuxConfig object with the user's specified paths
+// generateTmuxConfigWithPaths creates a TmuxConfig object (simplified after DiscoveryService migration)
 func generateTmuxConfigWithPaths(searchPaths []struct{ key, path, description string }) manager.TmuxConfig {
-	spMap := make(map[string]manager.SearchPathConfig)
-	for _, sp := range searchPaths {
-		spMap[sp.key] = manager.SearchPathConfig{
-			Path:        sp.path,
-			Description: sp.description,
-			Enabled:     true,
-		}
-	}
-
 	return manager.TmuxConfig{
 		AvailableKeys: []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"},
-		SearchPaths:   spMap,
-		Discovery: manager.DiscoveryConfig{
-			MaxDepth:        2,
-			MinDepth:        0,
-			ExcludePatterns: []string{"node_modules", ".cache", "target", "build", "dist"},
-		},
 	}
 }
 

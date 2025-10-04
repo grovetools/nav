@@ -12,6 +12,8 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/models"
 	core_config "github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,26 +38,8 @@ func expandPath(path string) string {
 	return path
 }
 
-type SearchPathConfig struct {
-	Path        string `yaml:"path"`
-	Description string `yaml:"description"`
-	Enabled     bool   `yaml:"enabled"`
-}
-
-type ExplicitProject struct {
-	Path        string `yaml:"path"`
-	Name        string `yaml:"name,omitempty"`
-	Description string `yaml:"description,omitempty"`
-	Enabled     bool   `yaml:"enabled"`
-}
-
-// ProjectSearchConfig is kept for backward compatibility with old code
-// that directly manipulates config files. New code should use TmuxConfig instead.
-type ProjectSearchConfig struct {
-	SearchPaths      map[string]SearchPathConfig `yaml:"search_paths"`
-	ExplicitProjects []ExplicitProject           `yaml:"explicit_projects"`
-	Discovery        DiscoveryConfig             `yaml:"discovery"`
-}
+// Legacy types removed as discovery is now handled by grove-core's DiscoveryService.
+// SearchPathConfig, ExplicitProject, and ProjectSearchConfig are no longer needed.
 
 // NewManager creates a new Manager instance
 func NewManager(configDir string) (*Manager, error) {
@@ -270,130 +254,75 @@ func isGitRepository(path string) bool {
 	return err == nil
 }
 
+// GetAvailableProjects now uses the DiscoveryService from grove-core.
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
-	if m.tmuxConfig == nil {
-		return nil, os.ErrNotExist
+	// Initialize the DiscoveryService
+	logger := logrus.New()
+	logger.SetOutput(os.Stderr)
+	logger.SetLevel(logrus.WarnLevel)
+	discoverySvc := workspace.NewDiscoveryService(logger)
+
+	// Run the discovery
+	result, err := discoverySvc.DiscoverAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run discovery service: %w", err)
 	}
 
-	projects := []DiscoveredProject{}
-	seen := make(map[string]bool)
+	// Transform the core data model into the one expected by the TUI.
+	// This provides a layer of abstraction.
+	var projects []DiscoveredProject
 
-	// First, scan search paths
-	for _, sp := range m.tmuxConfig.SearchPaths {
-		if !sp.Enabled {
-			continue
-		}
+	// First, add ecosystems themselves as discoverable projects
+	for _, eco := range result.Ecosystems {
+		projects = append(projects, DiscoveredProject{
+			Name:       eco.Name,
+			Path:       eco.Path,
+			IsWorktree: false,
+		})
+	}
 
-		expandedPath := expandPath(sp.Path)
+	for _, proj := range result.Projects {
+		// Check if this is an ecosystem worktree (has ParentEcosystemPath and is in .grove-worktrees)
+		isEcosystemWorktree := proj.ParentEcosystemPath != "" &&
+			strings.Contains(proj.Path, filepath.Join(proj.ParentEcosystemPath, ".grove-worktrees"))
 
-		// Add the search path itself as a project if it's a directory
-		absPath, err := filepath.Abs(expandedPath)
-		if err == nil {
-			if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-				if !seen[absPath] {
-					project := DiscoveredProject{
-						Name:       filepath.Base(absPath),
-						Path:       absPath,
-						ParentPath: "",
-						IsWorktree: false,
-					}
-					projects = append(projects, project)
-					seen[absPath] = true
-				}
-			}
-		}
+		if isEcosystemWorktree {
+			// Ecosystem worktrees should be treated as worktrees of the ecosystem
+			projects = append(projects, DiscoveredProject{
+				Name:       proj.Name,
+				Path:       proj.Path,
+				ParentPath: proj.ParentEcosystemPath,
+				IsWorktree: true,
+			})
+		} else {
+			// Regular projects (including those within ecosystems)
+			projects = append(projects, DiscoveredProject{
+				Name:       proj.Name,
+				Path:       proj.Path,
+				IsWorktree: false,
+			})
 
-		// Then scan its subdirectories
-		entries, err := os.ReadDir(expandedPath)
-		if err != nil {
-			continue
-		}
-
-		for _, entry := range entries {
-			if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
-				fullPath := filepath.Join(expandedPath, entry.Name())
-				if !seen[fullPath] {
-					project := DiscoveredProject{
-						Name:       entry.Name(),
-						Path:       fullPath,
-						ParentPath: "",
-						IsWorktree: false,
-					}
-					projects = append(projects, project)
-					seen[fullPath] = true
-
-					// If this is a Git repository, check for .grove-worktrees
-					if isGitRepository(fullPath) {
-						worktreesPath := filepath.Join(fullPath, ".grove-worktrees")
-						if worktreeInfo, err := os.Stat(worktreesPath); err == nil && worktreeInfo.IsDir() {
-							// Scan worktrees directory
-							worktreeEntries, err := os.ReadDir(worktreesPath)
-							if err == nil {
-								for _, wtEntry := range worktreeEntries {
-									if wtEntry.IsDir() && !strings.HasPrefix(wtEntry.Name(), ".") {
-										wtFullPath := filepath.Join(worktreesPath, wtEntry.Name())
-										if !seen[wtFullPath] {
-											wtProject := DiscoveredProject{
-												Name:       wtEntry.Name(),
-												Path:       wtFullPath,
-												ParentPath: fullPath,
-												IsWorktree: true,
-											}
-											projects = append(projects, wtProject)
-											seen[wtFullPath] = true
-										}
-									}
-								}
-							}
-						}
-					}
+			// Add all associated Worktree Workspaces
+			for _, ws := range proj.Workspaces {
+				if ws.Type == workspace.WorkspaceTypeWorktree {
+					projects = append(projects, DiscoveredProject{
+						Name:       ws.Name,
+						Path:       ws.Path,
+						ParentPath: ws.ParentProjectPath,
+						IsWorktree: true,
+					})
 				}
 			}
 		}
 	}
 
-	// Then, add explicit projects (these always override)
-	for _, ep := range m.tmuxConfig.ExplicitProjects {
-		if !ep.Enabled {
-			continue
-		}
-
-		expandedPath := expandPath(ep.Path)
-		// Get absolute path to ensure consistency
-		absPath, err := filepath.Abs(expandedPath)
-		if err != nil {
-			absPath = expandedPath
-		}
-
-		// Verify the path exists
-		if info, err := os.Stat(absPath); err == nil && info.IsDir() {
-			// Always add explicit projects, even if seen
-			// Remove from seen first to ensure it's added
-			found := false
-			for i, p := range projects {
-				if p.Path == absPath {
-					// Update existing project if found
-					projects[i] = DiscoveredProject{
-						Name:       filepath.Base(absPath),
-						Path:       absPath,
-						ParentPath: "",
-						IsWorktree: false,
-					}
-					found = true
-					break
-				}
-			}
-			if !found {
-				project := DiscoveredProject{
-					Name:       filepath.Base(absPath),
-					Path:       absPath,
-					ParentPath: "",
-					IsWorktree: false,
-				}
-				projects = append(projects, project)
-			}
-			seen[absPath] = true
-		}
+	// Also include Non-Grove Directories
+	for _, path := range result.NonGroveDirectories {
+		projects = append(projects, DiscoveredProject{
+			Name:       filepath.Base(path),
+			Path:       path,
+			IsWorktree: false,
+		})
 	}
 
 	return projects, nil
@@ -429,19 +358,12 @@ func (m *Manager) GetAccessHistory() (*AccessHistory, error) {
 	return LoadAccessHistory(m.configDir)
 }
 
+// GetEnabledSearchPaths is deprecated as search paths are now managed
+// via grove-core's DiscoveryService using the global grove.yml 'groves' configuration.
 func (m *Manager) GetEnabledSearchPaths() ([]string, error) {
-	if m.tmuxConfig == nil {
-		return []string{}, nil
-	}
-
-	paths := []string{}
-	for _, sp := range m.tmuxConfig.SearchPaths {
-		if sp.Enabled {
-			paths = append(paths, expandPath(sp.Path))
-		}
-	}
-
-	return paths, nil
+	// This method is kept for backward compatibility but no longer used.
+	// Discovery is now handled by DiscoveryService.
+	return []string{}, nil
 }
 
 func (m *Manager) RegenerateBindings() error {
