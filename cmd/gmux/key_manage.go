@@ -91,12 +91,13 @@ type manageModel struct {
 	quitting bool
 	message  string
 	// Fuzzy search state
-	searching    bool
-	searchInput  textinput.Model
-	projectList  list.Model
-	projects     []manager.DiscoveredProject
-	filteredProj []manager.DiscoveredProject
-	selectedKey  string
+	searching       bool
+	searchInput     textinput.Model
+	projectList     list.Model
+	projects        []manager.DiscoveredProject
+	filteredProj    []manager.DiscoveredProject
+	selectedKey     string
+	projectsLoading bool
 }
 
 // Key bindings
@@ -221,9 +222,6 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 	ti.CharLimit = 100
 	ti.Width = 50
 
-	// Get available projects
-	projects, _ := mgr.GetAvailableProjects()
-
 	// Create list for projects with custom delegate
 	delegate := list.NewDefaultDelegate()
 	delegate.SetHeight(2)
@@ -243,19 +241,21 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 		Build()
 
 	return manageModel{
-		table:       t,
-		sessions:    sessions,
-		manager:     mgr,
-		keys:        keys,
-		help:        helpModel,
-		searchInput: ti,
-		projectList: l,
-		projects:    projects,
+		table:           t,
+		sessions:        sessions,
+		manager:         mgr,
+		keys:            keys,
+		help:            helpModel,
+		searchInput:     ti,
+		projectList:     l,
+		projects:        []manager.DiscoveredProject{},
+		projectsLoading: true,
 	}
 }
 
 func (m manageModel) Init() tea.Cmd {
-	return nil
+	// Fetch projects without enrichment for speed.
+	return fetchProjectsCmd(m.manager, false, false)
 }
 
 func (m manageModel) rebuildTable() table.Model {
@@ -361,6 +361,11 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case projectsUpdateMsg:
+		m.projects = msg.projects
+		m.projectsLoading = false
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.help.SetSize(msg.Width, msg.Height)
 
@@ -421,6 +426,10 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.Edit):
+			if m.projectsLoading {
+				m.message = "Projects are still loading, please wait..."
+				return m, nil
+			}
 			// Enter fuzzy search mode
 			cursor := m.table.Cursor()
 			if cursor < len(m.sessions) {
