@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -280,27 +279,6 @@ var sessionizeKeys = sessionizeKeyMap{
 	),
 }
 
-// ecosystemItem implements list.Item for the focus picker
-type ecosystemItem struct {
-	project manager.DiscoveredProject
-}
-
-func (i ecosystemItem) Title() string {
-	// Always use the directory name for display to avoid duplicates
-	// This works for both main ecosystems and worktrees
-	baseName := filepath.Base(i.project.Path)
-
-	// If it's a worktree, show it as "name (worktree)"
-	if i.project.IsWorktree {
-		return baseName + " (worktree)"
-	}
-	return baseName
-}
-func (i ecosystemItem) Description() string { return i.project.Path }
-func (i ecosystemItem) FilterValue() string {
-	return filepath.Base(i.project.Path)
-}
-
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects                 []manager.DiscoveredProject
@@ -329,10 +307,9 @@ type sessionizeModel struct {
 	help          help.Model
 
 	// Focus mode state
-	focusPickerVisible bool
-	focusedProject     *manager.DiscoveredProject
-	ecosystemPicker    list.Model
-	worktreesFolded    bool // Whether worktrees are hidden/collapsed
+	ecosystemPickerMode bool                       // True when showing only ecosystems for selection
+	focusedProject      *manager.DiscoveredProject
+	worktreesFolded     bool // Whether worktrees are hidden/collapsed
 }
 
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
@@ -403,17 +380,6 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		WithTitle("Project Sessionizer - Help").
 		Build()
 
-	// Create ecosystem picker
-	ecoDelegate := list.NewDefaultDelegate()
-	ecoDelegate.SetHeight(1)
-	ecoDelegate.SetSpacing(0)
-	ecoPicker := list.New([]list.Item{}, ecoDelegate, 60, 15)
-	ecoPicker.Title = "Focus on Project Group"
-	ecoPicker.SetShowHelp(false)
-	ecoPicker.SetShowStatusBar(false)
-	ecoPicker.SetFilteringEnabled(false)
-	ecoPicker.Styles.Title = core_theme.DefaultTheme.Header
-
 	// Load previously focused ecosystem and fold state
 	var focusedProject *manager.DiscoveredProject
 	var worktreesFolded bool
@@ -451,9 +417,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		availableKeys:            availableKeys,
 		sessions:                 sessions,
 		help:                     helpModel,
-		focusPickerVisible:       false,
 		focusedProject:           focusedProject,
-		ecosystemPicker:          ecoPicker,
 		worktreesFolded:          worktreesFolded,
 	}
 }
@@ -732,36 +696,6 @@ func fetchKeyMapCmd(mgr *tmux.Manager) tea.Cmd {
 func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// Handle focus picker mode
-	if m.focusPickerVisible {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.Type {
-			case tea.KeyEsc:
-				m.focusPickerVisible = false
-				return m, nil
-			case tea.KeyEnter:
-				if i, ok := m.ecosystemPicker.SelectedItem().(ecosystemItem); ok {
-					m.focusedProject = &i.project
-					m.updateFiltered()
-					m.cursor = 0 // Reset cursor after focusing
-
-					// Save the focused ecosystem to state
-					state := &manager.SessionizerState{
-						FocusedEcosystemPath: m.focusedProject.Path,
-						WorktreesFolded:      m.worktreesFolded,
-					}
-					_ = state.Save(m.configDir)
-				}
-				m.focusPickerVisible = false
-				return m, nil
-			}
-		}
-		var pickerCmd tea.Cmd
-		m.ecosystemPicker, pickerCmd = m.ecosystemPicker.Update(msg)
-		return m, pickerCmd
-	}
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -928,24 +862,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle main key bindings before specific modes
 		switch {
 		case key.Matches(msg, sessionizeKeys.FocusEcosystem):
-			m.focusPickerVisible = true
-			var items []list.Item
-			// Only show ecosystems in the picker
-			ecosystems := make(map[string]manager.DiscoveredProject)
-			for _, p := range m.projects {
-				if p.IsEcosystem {
-					ecosystems[p.Path] = p
-				}
-			}
-			for _, p := range ecosystems {
-				items = append(items, ecosystemItem{project: p})
-			}
-			// Sort items alphabetically
-			sort.Slice(items, func(i, j int) bool {
-				return items[i].(ecosystemItem).Title() < items[j].(ecosystemItem).Title()
-			})
-			m.ecosystemPicker.SetItems(items)
-			m.ecosystemPicker.ResetSelected()
+			// Enter ecosystem picker mode
+			m.ecosystemPickerMode = true
+			m.updateFiltered() // Will filter to ecosystems only
+			m.cursor = 0
 			return m, nil
 
 		case key.Matches(msg, sessionizeKeys.ToggleWorktrees):
@@ -1038,9 +958,33 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filterInput.Focused() {
 			switch msg.Type {
 			case tea.KeyEsc:
+				if m.ecosystemPickerMode {
+					m.ecosystemPickerMode = false
+					m.updateFiltered()
+					return m, nil
+				}
 				m.filterInput.Blur()
 				return m, nil
 			case tea.KeyEnter:
+				// Handle ecosystem picker mode
+				if m.ecosystemPickerMode {
+					if m.cursor < len(m.filtered) {
+						// Make a copy to avoid pointer issues
+						selected := m.filtered[m.cursor]
+						m.focusedProject = &selected
+						m.ecosystemPickerMode = false
+						m.updateFiltered() // Now filter to focused ecosystem
+						m.cursor = 0
+
+						// Save state
+						state := &manager.SessionizerState{
+							FocusedEcosystemPath: m.focusedProject.Path,
+							WorktreesFolded:      m.worktreesFolded,
+						}
+						_ = state.Save(m.configDir)
+					}
+					return m, nil
+				}
 				// Select current project even while filtering
 				if m.cursor < len(m.filtered) {
 					m.selected = m.filtered[m.cursor]
@@ -1386,53 +1330,78 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 func (m *sessionizeModel) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
 
+	// Handle ecosystem picker mode - show ecosystems with their worktrees in a tree
+	if m.ecosystemPickerMode {
+		m.filtered = []manager.DiscoveredProject{}
+
+		// Separate into main ecosystems and worktrees
+		mainEcosystemsMap := make(map[string]manager.DiscoveredProject)
+		worktreesByParent := make(map[string][]manager.DiscoveredProject)
+
+		for _, p := range m.projects {
+			if !p.IsEcosystem {
+				continue
+			}
+
+			// Apply filter
+			matchesFilter := filter == "" ||
+				strings.Contains(strings.ToLower(p.Name), filter) ||
+				strings.Contains(strings.ToLower(p.Path), filter)
+
+			if !matchesFilter {
+				continue
+			}
+
+			if p.IsWorktree && p.ParentPath != "" {
+				// This is a worktree - group by parent
+				worktreesByParent[p.ParentPath] = append(worktreesByParent[p.ParentPath], p)
+			} else {
+				// This is a main ecosystem
+				mainEcosystemsMap[p.Path] = p
+			}
+		}
+
+		// Convert map to slice and sort
+		var mainEcosystems []manager.DiscoveredProject
+		for _, eco := range mainEcosystemsMap {
+			mainEcosystems = append(mainEcosystems, eco)
+		}
+		sort.Slice(mainEcosystems, func(i, j int) bool {
+			return strings.ToLower(mainEcosystems[i].Name) < strings.ToLower(mainEcosystems[j].Name)
+		})
+
+		// Build filtered list: main ecosystem followed by its worktrees
+		for _, eco := range mainEcosystems {
+			m.filtered = append(m.filtered, eco)
+
+			if worktrees, hasWorktrees := worktreesByParent[eco.Path]; hasWorktrees {
+				// Sort worktrees alphabetically
+				sort.Slice(worktrees, func(i, j int) bool {
+					return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
+				})
+				m.filtered = append(m.filtered, worktrees...)
+			}
+		}
+		return
+	}
+
 	// Create a working list of projects, either all projects or just the focused ecosystem
 	var projectsToFilter []manager.DiscoveredProject
-	if m.focusedProject != nil {
-		// Focus is active - show the hierarchical "folded out" view
+	if m.focusedProject != nil && m.focusedProject.IsEcosystem {
+		// Focus is active on an ecosystem - show it and all its children
 		// 1. The focused ecosystem itself
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
 
-		// 2. Direct worktrees of the focused ecosystem (only if focusing on main ecosystem, not a worktree)
-		if !m.focusedProject.IsWorktree {
-			for _, p := range m.projects {
-				if p.IsWorktree && p.ParentPath == m.focusedProject.Path {
-					projectsToFilter = append(projectsToFilter, p)
-				}
-			}
-		}
-
-		// 3. Sub-projects within the ecosystem
-		// These are repos that are physically located within the focused path
-		focusedPathPrefix := m.focusedProject.Path + string(filepath.Separator)
+		// 2. All children of the focused ecosystem (using ParentEcosystemPath)
 		for _, p := range m.projects {
-			// Check if this project is a direct child of the focused ecosystem path
-			if strings.HasPrefix(p.Path, focusedPathPrefix) && p.Path != m.focusedProject.Path {
-				// Make sure it's a direct child, not a deeper nested project
-				relativePath := strings.TrimPrefix(p.Path, focusedPathPrefix)
-				// Count separators - 0 means direct child (e.g., "grove-core")
-				// More than 0 means nested (e.g., "grove-core/subdir")
-				separatorCount := strings.Count(relativePath, string(filepath.Separator))
-				if separatorCount == 0 {
-					projectsToFilter = append(projectsToFilter, p)
-				}
-			}
-		}
-
-		// 4. Worktrees of those sub-projects
-		// First collect all sub-project paths we just added
-		subProjectPaths := make(map[string]bool)
-		for _, p := range projectsToFilter {
-			if !p.IsWorktree && p.Path != m.focusedProject.Path {
-				subProjectPaths[p.Path] = true
-			}
-		}
-		// Then find their worktrees
-		for _, p := range m.projects {
-			if p.IsWorktree && subProjectPaths[p.ParentPath] {
+			if p.ParentEcosystemPath == m.focusedProject.Path {
 				projectsToFilter = append(projectsToFilter, p)
 			}
 		}
+	} else if m.focusedProject != nil {
+		// Focused on something that is not an ecosystem (a regular project)
+		// Just show that project
+		projectsToFilter = append(projectsToFilter, *m.focusedProject)
 	} else {
 		// No focus, use all projects
 		projectsToFilter = m.projects
@@ -1758,10 +1727,6 @@ func (m sessionizeModel) View() string {
 		return m.help.View()
 	}
 
-	if m.focusPickerVisible {
-		return m.viewEcosystemPicker()
-	}
-
 	var b strings.Builder
 
 	// Show key editing mode if active
@@ -1771,7 +1736,10 @@ func (m sessionizeModel) View() string {
 
 	// Header with filter input (always at top)
 	var header strings.Builder
-	if m.focusedProject != nil {
+	if m.ecosystemPickerMode {
+		header.WriteString(core_theme.DefaultTheme.Info.Render("[Select Ecosystem to Focus]"))
+		header.WriteString(" ")
+	} else if m.focusedProject != nil {
 		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("[Focus: %s]", m.focusedProject.Name))
 		header.WriteString(focusIndicator)
 		header.WriteString(" ")
@@ -1925,8 +1893,28 @@ func (m sessionizeModel) View() string {
 		prefix := "  "
 		displayName := project.Name
 
-		// Determine prefix based on focus mode
-		if m.focusedProject != nil {
+		// Determine prefix based on mode
+		if m.ecosystemPickerMode {
+			// In ecosystem picker mode - show tree structure
+			if project.IsWorktree {
+				// Check if this is the last worktree of its parent
+				isLast := true
+				for j := i + 1; j < len(m.filtered); j++ {
+					if m.filtered[j].IsWorktree && m.filtered[j].ParentPath == project.ParentPath {
+						isLast = false
+						break
+					}
+				}
+				if isLast {
+					prefix = "  └─ "
+				} else {
+					prefix = "  ├─ "
+				}
+			} else {
+				// Main ecosystem - no prefix
+				prefix = "  "
+			}
+		} else if m.focusedProject != nil {
 			// In focus mode
 			if project.Path == m.focusedProject.Path {
 				// This is the focused ecosystem/worktree - show as parent
@@ -2098,7 +2086,9 @@ func (m sessionizeModel) View() string {
 	// Help text
 	helpStyle := core_theme.DefaultTheme.Muted
 	b.WriteString("\n")
-	if m.focusedProject != nil {
+	if m.ecosystemPickerMode {
+		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
+	} else if m.focusedProject != nil {
 		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear focus"))
 	} else {
 		b.WriteString(helpStyle.Render("Press ? for help"))
@@ -2261,14 +2251,6 @@ func (m sessionizeModel) viewKeyEditor() string {
 	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(" + ") + keyStyle.Render("enter") + helpStyle.Render(" to assign • "))
 	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": cancel"))
 
-	return b.String()
-}
-
-func (m sessionizeModel) viewEcosystemPicker() string {
-	var b strings.Builder
-	b.WriteString(core_theme.DefaultTheme.Header.Render("Focus on Project Group") + "\n\n")
-	b.WriteString(m.ecosystemPicker.View())
-	b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("↑↓ Navigate • Enter to select • Esc to cancel") + "\n")
 	return b.String()
 }
 
