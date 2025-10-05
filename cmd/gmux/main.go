@@ -114,7 +114,7 @@ func init() {
 `)
 
 	// Add global flags
-	defaultConfigDir := filepath.Join(os.Getenv("HOME"), ".config", "grove")
+	defaultConfigDir := filepath.Join(os.Getenv("HOME"), ".grove")
 	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", defaultConfigDir, "Configuration directory")
 
 	// Add the --style flag to the alias command as well, so Cobra recognizes it.

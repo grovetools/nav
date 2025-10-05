@@ -981,7 +981,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							FocusedEcosystemPath: m.focusedProject.Path,
 							WorktreesFolded:      m.worktreesFolded,
 						}
-						_ = state.Save(m.configDir)
+						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
+						if err := state.Save(m.configDir); err != nil {
+							// Log error but don't fail the operation
+							fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
+						} else {
+							fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
+						}
 					}
 					return m, nil
 				}
@@ -1196,6 +1202,31 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case tea.KeyEnter:
+			// Handle ecosystem picker mode
+			if m.ecosystemPickerMode {
+				if m.cursor < len(m.filtered) {
+					// Make a copy to avoid pointer issues
+					selected := m.filtered[m.cursor]
+					m.focusedProject = &selected
+					m.ecosystemPickerMode = false
+					m.updateFiltered() // Now filter to focused ecosystem
+					m.cursor = 0
+
+					// Save state
+					state := &manager.SessionizerState{
+						FocusedEcosystemPath: m.focusedProject.Path,
+						WorktreesFolded:      m.worktreesFolded,
+					}
+					fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
+					if err := state.Save(m.configDir); err != nil {
+						fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
+					} else {
+						fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
+					}
+				}
+				return m, nil
+			}
+			// Normal mode - select project and quit
 			if m.cursor < len(m.filtered) {
 				m.selected = m.filtered[m.cursor]
 				return m, tea.Quit
