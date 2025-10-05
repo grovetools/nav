@@ -31,6 +31,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// buildEnrichmentOptions creates options that only fetch Git status for active tmux sessions
+func buildEnrichmentOptions() *workspace.EnrichmentOptions {
+	gitStatusPaths := make(map[string]bool)
+
+	if os.Getenv("TMUX") != "" {
+		client, err := tmuxclient.NewClient()
+		if err == nil {
+			ctx := context.Background()
+			sessionNames, _ := client.ListSessions(ctx)
+			for _, sessionName := range sessionNames {
+				// Get working directory for each session
+				cwd, err := client.GetSessionPath(ctx, sessionName)
+				if err == nil && cwd != "" {
+					cleanPath := filepath.Clean(cwd)
+					gitStatusPaths[cleanPath] = true
+				}
+			}
+		}
+	}
+
+	return &workspace.EnrichmentOptions{
+		FetchClaudeSessions: true,
+		FetchGitStatus:      true,
+		GitStatusPaths:      gitStatusPaths, // Only fetch for active sessions
+	}
+}
+
 // getWorktreeParent checks if a path is a Git worktree and returns the parent path
 func getWorktreeParent(path string) string {
 	// Check if this is inside a .grove-worktrees directory
@@ -71,7 +98,9 @@ var sessionizeCmd = &cobra.Command{
 			// If config is not found, we'll proceed to first run setup.
 		}
 
-		projects, err := mgr.GetAvailableProjectsSorted()
+		// Use selective enrichment to only fetch Git status for active sessions
+		enrichOpts := buildEnrichmentOptions()
+		projects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
 		if err != nil {
 			// Check if the error is due to missing config file
 			if os.IsNotExist(err) {
@@ -79,6 +108,11 @@ var sessionizeCmd = &cobra.Command{
 				return handleFirstRunSetup(configDir, mgr)
 			}
 			return fmt.Errorf("failed to get available projects: %w", err)
+		}
+
+		// Sort by access history
+		if history, err := mgr.GetAccessHistory(); err == nil {
+			projects = history.SortProjectsByAccess(projects)
 		}
 
 		if len(projects) == 0 {
@@ -650,9 +684,18 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 }
 
 // fetchProjectsCmd returns a command that re-scans the configured search paths
+// It uses selective enrichment to only fetch Git status for active tmux sessions
 func fetchProjectsCmd(mgr *tmux.Manager) tea.Cmd {
 	return func() tea.Msg {
-		projects, _ := mgr.GetAvailableProjectsSorted()
+		// Use selective enrichment to only fetch Git status for active sessions
+		enrichOpts := buildEnrichmentOptions()
+		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
+
+		// Sort by access history
+		if history, err := mgr.GetAccessHistory(); err == nil {
+			projects = history.SortProjectsByAccess(projects)
+		}
+
 		return projectsUpdateMsg{projects: projects}
 	}
 }

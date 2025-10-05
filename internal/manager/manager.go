@@ -256,6 +256,11 @@ func isGitRepository(path string) bool {
 
 // GetAvailableProjects now uses the DiscoveryService, transform, and enrichment from grove-core.
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
+	return m.GetAvailableProjectsWithOptions(nil)
+}
+
+// GetAvailableProjectsWithOptions allows controlling enrichment behavior
+func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts *workspace.EnrichmentOptions) ([]DiscoveredProject, error) {
 	// Initialize the DiscoveryService
 	logger := logrus.New()
 	logger.SetOutput(os.Stderr)
@@ -273,7 +278,7 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 
 	// Step 3: Enrich with Git and Claude session data
 	ctx := context.Background()
-	if err := workspace.EnrichProjects(ctx, projectInfos); err != nil {
+	if err := workspace.EnrichProjects(ctx, projectInfos, enrichOpts); err != nil {
 		// Log but don't fail - enrichment is optional
 		fmt.Fprintf(os.Stderr, "Warning: failed to enrich projects: %v\n", err)
 	}

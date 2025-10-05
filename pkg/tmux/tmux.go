@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 )
 
@@ -41,6 +42,11 @@ func (m *Manager) GetAvailableProjects() ([]manager.DiscoveredProject, error) {
 	return m.mgr.GetAvailableProjects()
 }
 
+// GetAvailableProjectsWithOptions returns available projects with custom enrichment options
+func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts *workspace.EnrichmentOptions) ([]manager.DiscoveredProject, error) {
+	return m.mgr.GetAvailableProjectsWithOptions(enrichOpts)
+}
+
 // GetAvailableProjectsSorted returns available projects sorted by last access time
 func (m *Manager) GetAvailableProjectsSorted() ([]manager.DiscoveredProject, error) {
 	return m.mgr.GetAvailableProjectsSorted()
@@ -52,7 +58,7 @@ func (m *Manager) RecordProjectAccess(path string) error {
 }
 
 // GetAccessHistory returns the project access history
-func (m *Manager) GetAccessHistory() (interface{}, error) {
+func (m *Manager) GetAccessHistory() (*manager.AccessHistory, error) {
 	return m.mgr.GetAccessHistory()
 }
 
