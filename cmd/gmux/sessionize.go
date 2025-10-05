@@ -1271,13 +1271,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Focus filter input for search
 				m.filterInput.Focus()
 				return m, textinput.Blink
-			default:
-				// For other text input, focus the filter and send the key to it
-				m.filterInput.Focus()
-				m.filterInput, cmd = m.filterInput.Update(msg)
-				m.updateFiltered()
-				m.cursor = 0
-				return m, tea.Batch(cmd, textinput.Blink)
 			}
 		case tea.KeyCtrlE:
 			// Enter key editing mode
