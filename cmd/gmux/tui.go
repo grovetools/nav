@@ -558,7 +558,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Close session (moved from ctrl+d)
 				if m.cursor < len(m.filtered) {
 					project := m.filtered[m.cursor]
-					sessionName := project.SessionIdentifier()
+					sessionName := project.Identifier()
 
 					// Check if session exists before trying to close it
 					client, err := tmuxclient.NewClient()
@@ -579,7 +579,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 									// First, try to find the most recently accessed session from our list
 									for _, p := range m.filtered {
-										candidateName := p.SessionIdentifier()
+										candidateName := p.Identifier()
 
 										// Skip the current session
 										if candidateName == sessionName {
@@ -922,7 +922,7 @@ func (m *sessionizeModel) updateFiltered() {
 			continue
 		}
 
-		sessionName := p.SessionIdentifier()
+		sessionName := p.Identifier()
 		if m.runningSessions[sessionName] {
 			activeGroups[groupKey] = true
 		}
@@ -1006,7 +1006,7 @@ func (m *sessionizeModel) updateFiltered() {
 					m.filtered = append(m.filtered, p)
 				} else {
 					// Only include worktrees with active sessions
-					sessionName := p.SessionIdentifier()
+					sessionName := p.Identifier()
 					if m.runningSessions[sessionName] {
 						m.filtered = append(m.filtered, p)
 					}
@@ -1228,7 +1228,7 @@ func (m sessionizeModel) View() string {
 		}
 
 		// Check if session exists for this project
-		sessionName := project.SessionIdentifier()
+		sessionName := project.Identifier()
 		sessionExists := m.runningSessions[sessionName]
 
 		// Get Claude session status

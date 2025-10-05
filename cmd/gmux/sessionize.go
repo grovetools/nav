@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	core_config "github.com/mattsolo1/grove-core/config"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -145,69 +144,14 @@ func sessionizeProject(projectPath string) error {
 		}
 	}
 
-	// Get absolute path
-	absPath, err := filepath.Abs(projectPath)
+	// Use the centralized function from grove-core to get project info
+	projInfo, err := workspace.GetProjectByPath(projectPath)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return fmt.Errorf("failed to analyze project path: %w", err)
 	}
 
-	// Check if directory exists
-	if info, err := os.Stat(absPath); err != nil || !info.IsDir() {
-		return fmt.Errorf("directory does not exist: %s", absPath)
-	}
-
-	// Find parent ecosystem using the exported function
-	ecoPath := core_config.FindEcosystemConfig(absPath)
-
-	// Check if it's a worktree
-	var isWorktree bool
-	var parentPath string
-	gitDirFile := filepath.Join(absPath, ".git")
-	if stat, err := os.Stat(gitDirFile); err == nil && !stat.IsDir() {
-		isWorktree = true
-		// Determine parent path if it's in a .grove-worktrees dir
-		if strings.Contains(absPath, ".grove-worktrees") {
-			parts := strings.Split(absPath, ".grove-worktrees")
-			if len(parts) > 0 {
-				parentPath = strings.TrimSuffix(parts[0], string(filepath.Separator))
-			}
-		}
-	}
-
-	// Determine parent ecosystem path and worktree name
-	var parentEcosystemPath string
-	var worktreeName string
-
-	if ecoPath != "" {
-		ecoDir := filepath.Dir(ecoPath) // Get directory containing grove.yml
-
-		// Only set ParentEcosystemPath if this project is NOT the ecosystem itself
-		if absPath != ecoDir {
-			parentEcosystemPath = ecoDir
-
-			// Extract worktree name if this project is inside .grove-worktrees
-			if strings.Contains(absPath, ".grove-worktrees") {
-				relPath, err := filepath.Rel(ecoDir, absPath)
-				if err == nil {
-					parts := strings.Split(relPath, string(filepath.Separator))
-					if len(parts) >= 2 && parts[0] == ".grove-worktrees" {
-						worktreeName = parts[1]
-					}
-				}
-			}
-		}
-	}
-
-	// Construct a temporary ProjectInfo to call the identifier method
-	projInfo := &workspace.ProjectInfo{
-		Name:                filepath.Base(absPath),
-		Path:                absPath,
-		ParentEcosystemPath: parentEcosystemPath,
-		IsWorktree:          isWorktree,
-		WorktreeName:        worktreeName,
-		ParentPath:          parentPath,
-	}
-	sessionName := projInfo.SessionIdentifier()
+	sessionName := projInfo.Identifier()
+	absPath := projInfo.Path // Get the absolute path from the returned info
 
 	// Check if we're in tmux
 	if os.Getenv("TMUX") == "" {
