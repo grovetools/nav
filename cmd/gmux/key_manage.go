@@ -10,14 +10,15 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
+	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -34,6 +35,16 @@ type projectItem struct {
 func (i projectItem) Title() string       { return i.name }
 func (i projectItem) Description() string { return i.path }
 func (i projectItem) FilterValue() string { return i.name + " " + i.path }
+
+// Message for enriched data of mapped projects
+type enrichedProjectsMsg struct {
+	projects []*workspace.ProjectInfo
+}
+
+// Message for all discoverable projects for the fuzzy finder
+type allProjectsMsg struct {
+	projects []manager.DiscoveredProject
+}
 
 var keyManageCmd = &cobra.Command{
 	Use:     "manage",
@@ -83,7 +94,7 @@ var (
 
 // Model for the interactive session manager
 type manageModel struct {
-	table    table.Model
+	cursor   int
 	sessions []models.TmuxSession
 	manager  *tmux.Manager
 	keys     keyMap
@@ -98,6 +109,9 @@ type manageModel struct {
 	filteredProj    []manager.DiscoveredProject
 	selectedKey     string
 	projectsLoading bool
+	// Enriched data
+	enrichedProjects map[string]*workspace.ProjectInfo // Caches enriched data by path
+	allProjects      []manager.DiscoveredProject       // Caches all discoverable projects
 }
 
 // Key bindings
@@ -170,52 +184,6 @@ var keys = keyMap{
 }
 
 func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageModel {
-	// Build table columns
-	columns := []table.Column{
-		{Title: "Key", Width: 5},
-		{Title: "Repository", Width: 25},
-		{Title: "Path", Width: 60},
-	}
-
-	// Build table rows
-	var rows []table.Row
-	for _, s := range sessions {
-		repo := ""
-		path := ""
-
-		if s.Path != "" {
-			repo = filepath.Base(s.Path)
-			path = s.Path
-		}
-
-		rows = append(rows, table.Row{
-			s.Key,
-			repo,
-			path,
-		})
-	}
-
-	// Create table
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithRows(rows),
-		table.WithFocused(true),
-		table.WithHeight(len(rows)),
-	)
-
-	// Style the table
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(core_theme.DefaultColors.Border).
-		BorderBottom(true).
-		Bold(false)
-	s.Selected = s.Selected.
-		Foreground(core_theme.DefaultColors.LightText).
-		Background(core_theme.DefaultColors.SelectedBackground).
-		Bold(false)
-	t.SetStyles(s)
-
 	// Initialize search input
 	ti := textinput.New()
 	ti.Placeholder = "Type to filter projects..."
@@ -241,50 +209,74 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageMode
 		Build()
 
 	return manageModel{
-		table:           t,
-		sessions:        sessions,
-		manager:         mgr,
-		keys:            keys,
-		help:            helpModel,
-		searchInput:     ti,
-		projectList:     l,
-		projects:        []manager.DiscoveredProject{},
-		projectsLoading: true,
+		cursor:           0,
+		sessions:         sessions,
+		manager:          mgr,
+		keys:             keys,
+		help:             helpModel,
+		searchInput:      ti,
+		projectList:      l,
+		projects:         []manager.DiscoveredProject{},
+		projectsLoading:  true,
+		enrichedProjects: make(map[string]*workspace.ProjectInfo),
+		allProjects:      []manager.DiscoveredProject{},
 	}
 }
 
 func (m manageModel) Init() tea.Cmd {
-	// Fetch projects without enrichment for speed.
-	return fetchProjectsCmd(m.manager, false, false)
+	return tea.Batch(
+		enrichMappedProjectsCmd(m.sessions),
+		fetchAllProjectsCmd(m.manager),
+	)
 }
 
-func (m manageModel) rebuildTable() table.Model {
-	// Build table rows from current sessions
-	var rows []table.Row
-	for _, s := range m.sessions {
-		repo := ""
-		path := ""
+// enrichMappedProjectsCmd fetches enriched data for mapped sessions
+func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
+	return func() tea.Msg {
+		var projects []*workspace.ProjectInfo
 
-		if s.Path != "" {
-			repo = filepath.Base(s.Path)
-			path = s.Path
+		for _, s := range sessions {
+			if s.Path == "" {
+				continue
+			}
+
+			// Get project info
+			projInfo, err := workspace.GetProjectByPath(s.Path)
+			if err != nil {
+				continue
+			}
+
+			projects = append(projects, projInfo)
 		}
 
-		rows = append(rows, table.Row{
-			s.Key,
-			repo,
-			path,
-		})
-	}
+		// Enrich all projects with Git and Claude status
+		ctx := context.Background()
+		enrichOpts := &workspace.EnrichmentOptions{
+			FetchGitStatus:      true,
+			FetchClaudeSessions: true,
+		}
+		workspace.EnrichProjects(ctx, projects, enrichOpts)
 
-	// Update the table rows
-	newTable := m.table
-	newTable.SetRows(rows)
-	return newTable
+		return enrichedProjectsMsg{projects: projects}
+	}
+}
+
+// fetchAllProjectsCmd fetches all discoverable projects without enrichment
+func fetchAllProjectsCmd(mgr *tmux.Manager) tea.Cmd {
+	return func() tea.Msg {
+		enrichOpts := buildEnrichmentOptions(false, false)
+		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
+
+		// Sort by access history
+		if history, err := mgr.GetAccessHistory(); err == nil {
+			projects = history.SortProjectsByAccess(projects)
+		}
+
+		return allProjectsMsg{projects: projects}
+	}
 }
 
 func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
 	// Handle search mode
@@ -300,13 +292,10 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Select the project
 				if i, ok := m.projectList.SelectedItem().(projectItem); ok {
 					// Update the session with the selected project
-					cursor := m.table.Cursor()
-					if cursor < len(m.sessions) {
-						m.sessions[cursor].Path = i.path
-						m.sessions[cursor].Repository = ""
-						m.sessions[cursor].Description = ""
-						m.table = m.rebuildTable()
-						m.table.SetCursor(cursor)
+					if m.cursor < len(m.sessions) {
+						m.sessions[m.cursor].Path = i.path
+						m.sessions[m.cursor].Repository = ""
+						m.sessions[m.cursor].Description = ""
 						m.message = fmt.Sprintf("Mapped %s to %s", m.selectedKey, i.name)
 					}
 				}
@@ -334,7 +323,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		for _, p := range m.projects {
+		for _, p := range m.allProjects {
 			absPath, _ := filepath.Abs(expandPath(p.Path))
 			if existingPaths[absPath] {
 				continue // Skip already mapped projects
@@ -361,6 +350,19 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case enrichedProjectsMsg:
+		// Populate enriched projects map
+		for _, proj := range msg.projects {
+			cleanPath := filepath.Clean(proj.Path)
+			m.enrichedProjects[cleanPath] = proj
+		}
+		return m, nil
+
+	case allProjectsMsg:
+		m.allProjects = msg.projects
+		m.projectsLoading = false
+		return m, nil
+
 	case projectsUpdateMsg:
 		m.projects = msg.projects
 		m.projectsLoading = false
@@ -431,13 +433,12 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// Enter fuzzy search mode
-			cursor := m.table.Cursor()
-			if cursor < len(m.sessions) {
-				m.selectedKey = m.sessions[cursor].Key
+			if m.cursor < len(m.sessions) {
+				m.selectedKey = m.sessions[m.cursor].Key
 				m.searching = true
 				m.searchInput.Focus()
 
-				// Initialize project list
+				// Initialize project list using pre-fetched allProjects
 				items := make([]list.Item, 0)
 				existingPaths := make(map[string]bool)
 				for _, s := range m.sessions {
@@ -447,7 +448,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 
-				for _, p := range m.projects {
+				for _, p := range m.allProjects {
 					absPath, _ := filepath.Abs(expandPath(p.Path))
 					if existingPaths[absPath] {
 						continue
@@ -463,9 +464,8 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Open):
 			// Open/switch to the session
-			cursor := m.table.Cursor()
-			if cursor < len(m.sessions) {
-				session := m.sessions[cursor]
+			if m.cursor < len(m.sessions) {
+				session := m.sessions[m.cursor]
 				if session.Path != "" {
 					if os.Getenv("TMUX") != "" {
 						// Get project info to generate proper session name
@@ -523,16 +523,13 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Toggle):
 			// Quick toggle - unmap if mapped
-			cursor := m.table.Cursor()
-			if cursor < len(m.sessions) {
-				session := &m.sessions[cursor]
+			if m.cursor < len(m.sessions) {
+				session := &m.sessions[m.cursor]
 				if session.Path != "" {
 					// Clear the session
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
-					m.table = m.rebuildTable()
-					m.table.SetCursor(cursor)
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 				} else {
 					m.message = "Press 'e' or Enter to map this key"
@@ -541,28 +538,31 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Delete):
 			// Clear the mapping for selected session
-			cursor := m.table.Cursor()
-			if cursor < len(m.sessions) {
-				session := &m.sessions[cursor]
+			if m.cursor < len(m.sessions) {
+				session := &m.sessions[m.cursor]
 				if session.Path != "" {
 					// Clear the session
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
 
-					// Rebuild table with updated data
-					m.table = m.rebuildTable()
-					m.table.SetCursor(cursor)
-
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 				}
 			}
 
+		case key.Matches(msg, m.keys.Up):
+			if m.cursor > 0 {
+				m.cursor--
+			}
+
+		case key.Matches(msg, m.keys.Down):
+			if m.cursor < len(m.sessions)-1 {
+				m.cursor++
+			}
 		}
 	}
 
-	m.table, cmd = m.table.Update(msg)
-	return m, cmd
+	return m, nil
 }
 
 func (m manageModel) View() string {
@@ -597,7 +597,76 @@ func (m manageModel) View() string {
 
 	// Normal table view
 	b.WriteString(titleStyle.Render("Manage Session Keys") + "\n\n")
-	b.WriteString(m.table.View() + "\n\n")
+
+	// Build table data
+	headers := []string{"Key", "Ecosystem", "Worktree", "Repository", "Git", "Claude"}
+	var rows [][]string
+
+	for _, s := range m.sessions {
+		ecosystem := ""
+		worktree := ""
+		repo := ""
+		gitStatus := ""
+		claudeStatus := ""
+
+		if s.Path != "" {
+			// Look up enriched data to get proper ecosystem, worktree, and repo names
+			cleanPath := filepath.Clean(s.Path)
+			if projInfo, found := m.enrichedProjects[cleanPath]; found {
+				// Determine ecosystem, worktree, and repository names
+				if projInfo.ParentEcosystemPath != "" {
+					// This is a project within an ecosystem worktree
+					ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
+					worktree = projInfo.WorktreeName
+					repo = projInfo.Name
+				} else if projInfo.IsWorktree {
+					// This is an ecosystem worktree itself
+					if projInfo.ParentPath != "" {
+						ecosystem = filepath.Base(projInfo.ParentPath)
+					}
+					worktree = projInfo.WorktreeName
+					if worktree == "" {
+						worktree = projInfo.Name
+					}
+				} else if projInfo.IsEcosystem {
+					// This is a main ecosystem
+					ecosystem = projInfo.Name
+				} else {
+					// Regular standalone project
+					repo = projInfo.Name
+				}
+
+				// Format Git status (with colors)
+				if projInfo.GitStatus != nil {
+					if extStatus, ok := projInfo.GitStatus.(*workspace.ExtendedGitStatus); ok {
+						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
+					}
+				}
+
+				// Format Claude status (with colors)
+				claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
+			} else {
+				// Fallback if no enriched data
+				repo = filepath.Base(s.Path)
+			}
+		}
+
+		rows = append(rows, []string{
+			s.Key,
+			ecosystem,
+			worktree,
+			repo,
+			gitStatus,
+			claudeStatus,
+		})
+	}
+
+	// Render table with selection and Repository column highlighted (column index 3)
+	tableStr := table.SelectableTableWithOptions(headers, rows, m.cursor, table.SelectableTableOptions{
+		HighlightColumn: 3, // Repository column
+	})
+	b.WriteString(tableStr)
+	b.WriteString("\n\n")
 
 	if m.message != "" {
 		b.WriteString(dimStyle.Render(m.message) + "\n\n")
@@ -613,6 +682,116 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// formatClaudeStatus formats the Claude session status into a styled string
+func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
+	if session == nil {
+		return ""
+	}
+
+	statusSymbol := ""
+	var statusColor lipgloss.Color
+	switch session.Status {
+	case "running":
+		statusSymbol = "▶"
+		statusColor = core_theme.DefaultColors.Green
+	case "idle":
+		statusSymbol = "⏸"
+		statusColor = core_theme.DefaultColors.Yellow
+	case "completed":
+		statusSymbol = "✓"
+		statusColor = core_theme.DefaultColors.Cyan
+	case "failed", "error":
+		statusSymbol = "✗"
+		statusColor = core_theme.DefaultColors.Red
+	default:
+		return ""
+	}
+
+	statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+
+	if session.Duration != "" {
+		return statusStyled + " " + session.Duration
+	}
+	return statusStyled
+}
+
+// formatGitStatusPlain formats Git status without ANSI codes for table display
+func formatGitStatusPlain(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatus) string {
+	if status == nil {
+		return ""
+	}
+
+	var changes []string
+
+	if status.HasUpstream {
+		if status.AheadCount > 0 {
+			changes = append(changes, fmt.Sprintf("↑%d", status.AheadCount))
+		}
+		if status.BehindCount > 0 {
+			changes = append(changes, fmt.Sprintf("↓%d", status.BehindCount))
+		}
+	}
+
+	if status.ModifiedCount > 0 {
+		changes = append(changes, fmt.Sprintf("M:%d", status.ModifiedCount))
+	}
+	if status.StagedCount > 0 {
+		changes = append(changes, fmt.Sprintf("S:%d", status.StagedCount))
+	}
+	if status.UntrackedCount > 0 {
+		changes = append(changes, fmt.Sprintf("?:%d", status.UntrackedCount))
+	}
+
+	// Add lines added/deleted if available
+	if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
+		if extStatus.LinesAdded > 0 {
+			changes = append(changes, fmt.Sprintf("+%d", extStatus.LinesAdded))
+		}
+		if extStatus.LinesDeleted > 0 {
+			changes = append(changes, fmt.Sprintf("-%d", extStatus.LinesDeleted))
+		}
+	}
+
+	changesStr := strings.Join(changes, " ")
+
+	// If repo is clean (no changes)
+	if !status.IsDirty && changesStr == "" {
+		if status.HasUpstream {
+			return "✓"
+		} else {
+			return "○"
+		}
+	}
+
+	return changesStr
+}
+
+// formatClaudeStatusPlain formats Claude status without ANSI codes for table display
+func formatClaudeStatusPlain(session *workspace.ClaudeSessionInfo) string {
+	if session == nil {
+		return ""
+	}
+
+	statusSymbol := ""
+	switch session.Status {
+	case "running":
+		statusSymbol = "▶"
+	case "idle":
+		statusSymbol = "⏸"
+	case "completed":
+		statusSymbol = "✓"
+	case "failed", "error":
+		statusSymbol = "✗"
+	default:
+		return ""
+	}
+
+	if session.Duration != "" {
+		return statusSymbol + " " + session.Duration
+	}
+	return statusSymbol
 }
 
 // reloadTmuxConfig reloads the tmux configuration
