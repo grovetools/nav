@@ -77,8 +77,16 @@ func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatu
 	}
 
 	changesStr := strings.Join(changes, " ")
-	if !status.IsDirty && changesStr == "" && status.HasUpstream {
-		return core_theme.DefaultTheme.Success.Render("✓")
+
+	// If repo is clean (no changes)
+	if !status.IsDirty && changesStr == "" {
+		if status.HasUpstream {
+			// Clean with upstream: show green checkmark
+			return core_theme.DefaultTheme.Success.Render("✓")
+		} else {
+			// Clean without upstream: show green empty circle
+			return core_theme.DefaultTheme.Success.Render("○")
+		}
 	}
 
 	return changesStr
