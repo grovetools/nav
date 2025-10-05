@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	core_config "github.com/mattsolo1/grove-core/config"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -155,9 +156,33 @@ func sessionizeProject(projectPath string) error {
 		return fmt.Errorf("directory does not exist: %s", absPath)
 	}
 
-	// Create session name from path
-	sessionName := filepath.Base(absPath)
-	sessionName = strings.ReplaceAll(sessionName, ".", "_")
+	// Find parent ecosystem using the exported function
+	ecoPath := core_config.FindEcosystemConfig(absPath)
+
+	// Check if it's a worktree
+	var isWorktree bool
+	var parentPath string
+	gitDirFile := filepath.Join(absPath, ".git")
+	if stat, err := os.Stat(gitDirFile); err == nil && !stat.IsDir() {
+		isWorktree = true
+		// Determine parent path if it's in a .grove-worktrees dir
+		if strings.Contains(absPath, ".grove-worktrees") {
+			parts := strings.Split(absPath, ".grove-worktrees")
+			if len(parts) > 0 {
+				parentPath = strings.TrimSuffix(parts[0], string(filepath.Separator))
+			}
+		}
+	}
+
+	// Construct a temporary ProjectInfo to call the identifier method
+	projInfo := &workspace.ProjectInfo{
+		Name:                filepath.Base(absPath),
+		Path:                absPath,
+		ParentEcosystemPath: ecoPath,
+		IsWorktree:          isWorktree,
+		ParentPath:          parentPath,
+	}
+	sessionName := projInfo.SessionIdentifier()
 
 	// Check if we're in tmux
 	if os.Getenv("TMUX") == "" {

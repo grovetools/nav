@@ -558,8 +558,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Close session (moved from ctrl+d)
 				if m.cursor < len(m.filtered) {
 					project := m.filtered[m.cursor]
-					sessionName := filepath.Base(project.Path)
-					sessionName = strings.ReplaceAll(sessionName, ".", "_")
+					sessionName := project.SessionIdentifier()
 
 					// Check if session exists before trying to close it
 					client, err := tmuxclient.NewClient()
@@ -580,8 +579,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 									// First, try to find the most recently accessed session from our list
 									for _, p := range m.filtered {
-										candidateName := filepath.Base(p.Path)
-										candidateName = strings.ReplaceAll(candidateName, ".", "_")
+										candidateName := p.SessionIdentifier()
 
 										// Skip the current session
 										if candidateName == sessionName {
@@ -914,8 +912,7 @@ func (m *sessionizeModel) updateFiltered() {
 			continue
 		}
 
-		sessionName := filepath.Base(p.Path)
-		sessionName = strings.ReplaceAll(sessionName, ".", "_")
+		sessionName := p.SessionIdentifier()
 		if m.runningSessions[sessionName] {
 			activeGroups[groupKey] = true
 		}
@@ -999,8 +996,7 @@ func (m *sessionizeModel) updateFiltered() {
 					m.filtered = append(m.filtered, p)
 				} else {
 					// Only include worktrees with active sessions
-					sessionName := filepath.Base(p.Path)
-					sessionName = strings.ReplaceAll(sessionName, ".", "_")
+					sessionName := p.SessionIdentifier()
 					if m.runningSessions[sessionName] {
 						m.filtered = append(m.filtered, p)
 					}
@@ -1222,8 +1218,7 @@ func (m sessionizeModel) View() string {
 		}
 
 		// Check if session exists for this project
-		sessionName := filepath.Base(project.Path)
-		sessionName = strings.ReplaceAll(sessionName, ".", "_")
+		sessionName := project.SessionIdentifier()
 		sessionExists := m.runningSessions[sessionName]
 
 		// Get Claude session status
@@ -1382,9 +1377,6 @@ func (m sessionizeModel) View() string {
 			sessionIndicator := " "
 			if sessionExists {
 				// Check if this is the current session
-				sessionName := filepath.Base(project.Path)
-				sessionName = strings.ReplaceAll(sessionName, ".", "_")
-
 				if sessionName == m.currentSession {
 					// Current session - use blue indicator
 					sessionIndicator = lipgloss.NewStyle().
@@ -1451,9 +1443,6 @@ func (m sessionizeModel) View() string {
 			sessionIndicator := " "
 			if sessionExists {
 				// Check if this is the current session
-				sessionName := filepath.Base(project.Path)
-				sessionName = strings.ReplaceAll(sessionName, ".", "_")
-
 				if sessionName == m.currentSession {
 					// Current session - use blue indicator
 					sessionIndicator = lipgloss.NewStyle().
