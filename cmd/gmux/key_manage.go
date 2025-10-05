@@ -15,11 +15,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -458,9 +459,13 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				session := m.sessions[cursor]
 				if session.Path != "" {
 					if os.Getenv("TMUX") != "" {
-						// Create session name from path
-						sessionName := filepath.Base(session.Path)
-						sessionName = strings.ReplaceAll(sessionName, ".", "_")
+						// Get project info to generate proper session name
+						projInfo, err := workspace.GetProjectByPath(session.Path)
+						if err != nil {
+							m.message = fmt.Sprintf("Failed to get project info: %v", err)
+							return m, nil
+						}
+						sessionName := projInfo.Identifier()
 
 						// Create tmux client
 						client, err := tmuxclient.NewClient()

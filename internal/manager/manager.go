@@ -526,9 +526,13 @@ func (m *Manager) Sessionize(path string) error {
 	}
 
 	expandedPath := expandPath(path)
-	sessionName := filepath.Base(expandedPath)
-	// Replace dots with underscores for valid tmux session names
-	sessionName = strings.ReplaceAll(sessionName, ".", "_")
+
+	// Get project info to generate proper session name
+	projInfo, err := workspace.GetProjectByPath(expandedPath)
+	if err != nil {
+		return fmt.Errorf("failed to get project info: %w", err)
+	}
+	sessionName := projInfo.Identifier()
 
 	ctx := context.Background()
 
