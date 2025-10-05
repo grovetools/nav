@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mattsolo1/grove-core/pkg/models"
 	core_config "github.com/mattsolo1/grove-core/config"
+	"github.com/mattsolo1/grove-core/pkg/models"
 	"github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/sirupsen/logrus"
@@ -148,7 +148,7 @@ func (m *Manager) Save() error {
 // saveStaticConfig saves the static tmux configuration to grove.yml
 func (m *Manager) saveStaticConfig() error {
 	// Ensure the config directory exists
-	if err := os.MkdirAll(filepath.Dir(m.configPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(m.configPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -176,14 +176,14 @@ func (m *Manager) saveStaticConfig() error {
 		return fmt.Errorf("failed to marshal updated config: %w", err)
 	}
 
-	return os.WriteFile(m.configPath, newData, 0644)
+	return os.WriteFile(m.configPath, newData, 0o644)
 }
 
 // saveSessions saves the session mappings to gmux/sessions.yml
 func (m *Manager) saveSessions() error {
 	// Ensure the gmux directory exists
 	gmuxDir := filepath.Dir(m.sessionsPath)
-	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+	if err := os.MkdirAll(gmuxDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create gmux directory: %w", err)
 	}
 
@@ -198,7 +198,7 @@ func (m *Manager) saveSessions() error {
 		return fmt.Errorf("failed to marshal sessions: %w", err)
 	}
 
-	return os.WriteFile(m.sessionsPath, data, 0644)
+	return os.WriteFile(m.sessionsPath, data, 0o644)
 }
 
 func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
@@ -641,8 +641,8 @@ func (m *Manager) RegenerateBindingsGo() error {
 			session.Key, sessionizerPath, session.Path))
 	}
 
-	bindingsFile := filepath.Join(m.configDir, "generated-bindings.conf")
-	return os.WriteFile(bindingsFile, []byte(bindings.String()), 0644)
+	bindingsFile := filepath.Join(m.configDir, "gmux", "generated-bindings.conf")
+	return os.WriteFile(bindingsFile, []byte(bindings.String()), 0o644)
 }
 
 // DetectTmuxKeyForPath detects the tmux session key for a given working directory
