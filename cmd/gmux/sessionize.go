@@ -174,15 +174,26 @@ func sessionizeProject(projectPath string) error {
 		}
 	}
 
-	// Extract worktree name if this project is inside .grove-worktrees
-	worktreeName := ""
-	if ecoPath != "" && strings.Contains(absPath, ".grove-worktrees") {
+	// Determine parent ecosystem path and worktree name
+	var parentEcosystemPath string
+	var worktreeName string
+
+	if ecoPath != "" {
 		ecoDir := filepath.Dir(ecoPath) // Get directory containing grove.yml
-		relPath, err := filepath.Rel(ecoDir, absPath)
-		if err == nil {
-			parts := strings.Split(relPath, string(filepath.Separator))
-			if len(parts) >= 2 && parts[0] == ".grove-worktrees" {
-				worktreeName = parts[1]
+
+		// Only set ParentEcosystemPath if this project is NOT the ecosystem itself
+		if absPath != ecoDir {
+			parentEcosystemPath = ecoDir
+
+			// Extract worktree name if this project is inside .grove-worktrees
+			if strings.Contains(absPath, ".grove-worktrees") {
+				relPath, err := filepath.Rel(ecoDir, absPath)
+				if err == nil {
+					parts := strings.Split(relPath, string(filepath.Separator))
+					if len(parts) >= 2 && parts[0] == ".grove-worktrees" {
+						worktreeName = parts[1]
+					}
+				}
 			}
 		}
 	}
@@ -191,7 +202,7 @@ func sessionizeProject(projectPath string) error {
 	projInfo := &workspace.ProjectInfo{
 		Name:                filepath.Base(absPath),
 		Path:                absPath,
-		ParentEcosystemPath: filepath.Dir(ecoPath), // Directory containing grove.yml
+		ParentEcosystemPath: parentEcosystemPath,
 		IsWorktree:          isWorktree,
 		WorktreeName:        worktreeName,
 		ParentPath:          parentPath,
