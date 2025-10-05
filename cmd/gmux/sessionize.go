@@ -27,31 +27,13 @@ func buildInitialEnrichmentOptions() *workspace.EnrichmentOptions {
 	}
 }
 
-// buildEnrichmentOptions creates options that only fetch Git status for active tmux sessions
+// buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
 func buildEnrichmentOptions(fetchGit, fetchClaude bool) *workspace.EnrichmentOptions {
-	gitStatusPaths := make(map[string]bool)
-
-	if fetchGit && os.Getenv("TMUX") != "" {
-		client, err := tmuxclient.NewClient()
-		if err == nil {
-			ctx := context.Background()
-			sessionNames, _ := client.ListSessions(ctx)
-			for _, sessionName := range sessionNames {
-				// Get working directory for each session
-				cwd, err := client.GetSessionPath(ctx, sessionName)
-				if err == nil && cwd != "" {
-					cleanPath := filepath.Clean(cwd)
-					gitStatusPaths[cleanPath] = true
-				}
-			}
-		}
-	}
-
 	return &workspace.EnrichmentOptions{
 		FetchClaudeSessions: fetchClaude,
 		FetchGitStatus:      fetchGit,
-		GitStatusPaths:      gitStatusPaths, // Only fetch for active sessions
+		GitStatusPaths:      nil, // nil means fetch for all projects
 	}
 }
 
