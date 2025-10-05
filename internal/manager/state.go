@@ -13,7 +13,7 @@ type SessionizerState struct {
 	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
 	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
 	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
-	ShowFullPaths        *bool  `yaml:"show_full_paths,omitempty"`
+	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
 }
 
 // LoadState loads the sessionizer state from ~/.grove/gmux/state.yml

@@ -367,7 +367,7 @@ type sessionizeModel struct {
 	// View toggles
 	showGitStatus      bool // Whether to fetch and show Git status
 	showClaudeSessions bool // Whether to fetch and show Claude sessions
-	showFullPaths      bool // Whether to show full paths or abbreviated ones
+	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 }
 
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
@@ -444,7 +444,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	// Set sensible defaults for toggles
 	showGitStatus := true
 	showClaudeSessions := true
-	showFullPaths := false
+	pathDisplayMode := 1 // Default to compact paths (~)
 	if state, err := manager.LoadState(configDir); err == nil {
 		if state.FocusedEcosystemPath != "" {
 			// Find the project with this path
@@ -463,8 +463,8 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		if state.ShowClaudeSessions != nil {
 			showClaudeSessions = *state.ShowClaudeSessions
 		}
-		if state.ShowFullPaths != nil {
-			showFullPaths = *state.ShowFullPaths
+		if state.PathDisplayMode != nil {
+			pathDisplayMode = *state.PathDisplayMode
 		}
 	}
 
@@ -493,7 +493,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		worktreesFolded:          worktreesFolded,
 		showGitStatus:            showGitStatus,
 		showClaudeSessions:       showClaudeSessions,
-		showFullPaths:            showFullPaths,
+		pathDisplayMode:          pathDisplayMode,
 	}
 }
 
@@ -504,7 +504,7 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		WorktreesFolded:      m.worktreesFolded,
 		ShowGitStatus:        boolPtr(m.showGitStatus),
 		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
-		ShowFullPaths:        boolPtr(m.showFullPaths),
+		PathDisplayMode:      intPtr(m.pathDisplayMode),
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
@@ -515,6 +515,11 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 // boolPtr returns a pointer to a bool value
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// intPtr returns a pointer to an int value
+func intPtr(i int) *int {
+	return &i
 }
 
 // fetchGitStatusForPath gets the git status for a specific path
@@ -1001,7 +1006,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions)
 
 		case key.Matches(msg, sessionizeKeys.TogglePaths):
-			m.showFullPaths = !m.showFullPaths
+			// Cycle through: compact (~) -> full -> no paths -> compact
+			m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
 			// Save the toggle state (no need to refresh projects for path display)
 			_ = m.buildState().Save(m.configDir)
 			return m, nil
@@ -2135,12 +2141,15 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 
-			// Add path (conditionally show full or abbreviated)
-			displayPath := project.Path
-			if !m.showFullPaths {
-				displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+			// Add path based on display mode (0=none, 1=compact, 2=full)
+			if m.pathDisplayMode > 0 {
+				displayPath := project.Path
+				if m.pathDisplayMode == 1 {
+					// Compact: replace home with ~
+					displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+				}
+				line += "  " + pathStyle.Render(displayPath)
 			}
-			line += "  " + pathStyle.Render(displayPath)
 
 			// Add git status if enabled
 			if m.showGitStatus && sessionExists && changesStr != "" {
@@ -2201,12 +2210,15 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 
-			// Add path (conditionally show full or abbreviated)
-			displayPath := project.Path
-			if !m.showFullPaths {
-				displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+			// Add path based on display mode (0=none, 1=compact, 2=full)
+			if m.pathDisplayMode > 0 {
+				displayPath := project.Path
+				if m.pathDisplayMode == 1 {
+					// Compact: replace home with ~
+					displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+				}
+				line += "  " + pathStyle.Render(displayPath)
 			}
-			line += "  " + pathStyle.Render(displayPath)
 
 			// Add git status if enabled
 			if m.showGitStatus && sessionExists && changesStr != "" {
@@ -2258,10 +2270,13 @@ func (m sessionizeModel) View() string {
 	}
 
 	pathsToggle := " p:paths "
-	if m.showFullPaths {
-		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
-	} else {
-		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	switch m.pathDisplayMode {
+	case 0:
+		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("off")
+	case 1:
+		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("~")
+	case 2:
+		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("full")
 	}
 
 	togglesDisplay := fmt.Sprintf("[%s%s%s]", gitToggle, claudeToggle, pathsToggle)
