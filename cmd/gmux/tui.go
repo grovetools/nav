@@ -243,9 +243,8 @@ func intPtr(i int) *int {
 }
 func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
-		fetchGitStatusCmd(),
-		fetchClaudeSessionsCmd(),
-		fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions),
+		fetchGitStatusCmd(),      // Fetch status for active sessions
+		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle

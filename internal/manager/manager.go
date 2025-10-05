@@ -270,7 +270,9 @@ func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts *workspace.Enrichme
 	// Step 1: Run the discovery
 	result, err := discoverySvc.DiscoverAll()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run discovery service: %w", err)
+		// Return an empty list if discovery fails - sessionize will handle the empty case
+		// This allows first-run setup to trigger
+		return []DiscoveredProject{}, fmt.Errorf("failed to run discovery service: %w", err)
 	}
 
 	// Step 2: Transform to ProjectInfo

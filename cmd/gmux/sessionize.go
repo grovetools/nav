@@ -17,7 +17,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// buildInitialEnrichmentOptions creates options for enriching project data.
+// For initial load, we disable enrichment to show the UI faster.
+func buildInitialEnrichmentOptions() *workspace.EnrichmentOptions {
+	return &workspace.EnrichmentOptions{
+		FetchClaudeSessions: false, // Fetched async in TUI
+		FetchGitStatus:      false, // Fetched async in TUI
+		GitStatusPaths:      nil,   // Not needed for initial load
+	}
+}
+
 // buildEnrichmentOptions creates options that only fetch Git status for active tmux sessions
+// This is used for periodic refreshes in the TUI
 func buildEnrichmentOptions(fetchGit, fetchClaude bool) *workspace.EnrichmentOptions {
 	gitStatusPaths := make(map[string]bool)
 
@@ -66,21 +77,21 @@ var sessionizeCmd = &cobra.Command{
 		if err != nil {
 			// Check if the error is related to config loading, but not a simple "not found"
 			if !os.IsNotExist(err) {
-				return fmt.Errorf("failed to initialize manager: %w", err)
+				return fmt.Errorf("failed to initialize manager (config dir: %s): %w", configDir, err)
 			}
 			// If config is not found, we'll proceed to first run setup.
 		}
 
 		// Use selective enrichment to only fetch Git status for active sessions
-		enrichOpts := buildEnrichmentOptions(true, true)
+		enrichOpts := buildInitialEnrichmentOptions()
 		projects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
 		if err != nil {
-			// Check if the error is due to missing config file
-			if os.IsNotExist(err) {
+			// Check if the error is due to missing config file or no enabled search paths
+			if os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found") {
 				// Interactive first-run setup
 				return handleFirstRunSetup(configDir, mgr)
 			}
-			return fmt.Errorf("failed to get available projects: %w", err)
+			return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
 		}
 
 		// Sort by access history
@@ -90,7 +101,17 @@ var sessionizeCmd = &cobra.Command{
 
 		if len(projects) == 0 {
 			fmt.Println("No projects found in search paths!")
-			fmt.Println("\nMake sure your search paths are configured in your grove.yml file under the 'tmux' section.")
+			fmt.Println("\nYour grove.yml file needs to have 'groves' configured for project discovery.")
+			fmt.Println("Run the setup wizard to configure your project directories interactively.")
+			fmt.Print("\nRun setup now? [Y/n]: ")
+
+			reader := bufio.NewReader(os.Stdin)
+			response, _ := reader.ReadString('\n')
+			response = strings.TrimSpace(strings.ToLower(response))
+
+			if response == "" || response == "y" || response == "yes" {
+				return handleFirstRunSetup(configDir, mgr)
+			}
 			return nil
 		}
 
