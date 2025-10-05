@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 )
 
@@ -39,7 +40,7 @@ func highlightMatch(text, filter string) string {
 }
 
 // formatChanges formats the git status into a styled string.
-func formatChanges(status *git.StatusInfo, extStatus *extendedGitStatus) string {
+func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatus) string {
 	if status == nil {
 		return ""
 	}

@@ -14,7 +14,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/tui/components/help"
@@ -22,36 +21,6 @@ import (
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 )
-
-// gitStatusEqual compares two git status objects for equality
-func gitStatusEqual(a, b *git.StatusInfo) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return a.HasUpstream == b.HasUpstream &&
-		a.AheadCount == b.AheadCount &&
-		a.BehindCount == b.BehindCount &&
-		a.ModifiedCount == b.ModifiedCount &&
-		a.StagedCount == b.StagedCount &&
-		a.UntrackedCount == b.UntrackedCount &&
-		a.IsDirty == b.IsDirty
-}
-
-// extendedGitStatusEqual compares two extended git status objects for equality
-func extendedGitStatusEqual(a, b *extendedGitStatus) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return gitStatusEqual(a.StatusInfo, b.StatusInfo) &&
-		a.LinesAdded == b.LinesAdded &&
-		a.LinesDeleted == b.LinesDeleted
-}
 
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
@@ -64,12 +33,11 @@ type sessionizeModel struct {
 	manager                  *tmux.Manager
 	configDir                string                        // configuration directory
 	keyMap                   map[string]string             // path -> key mapping
-	runningSessions          map[string]bool               // map[sessionName] -> true
-	claudeStatusMap          map[string]string             // path -> claude session status mapping
-	claudeDurationMap        map[string]string             // path -> claude session state duration mapping
-	claudeDurationSecondsMap map[string]int                // path -> claude session state duration in seconds
-	gitStatusMap             map[string]*extendedGitStatus // path -> extended git status
-	hasGroveHooks            bool                          // whether grove-hooks is available
+	runningSessions          map[string]bool   // map[sessionName] -> true
+	claudeStatusMap          map[string]string // path -> claude session status mapping
+	claudeDurationMap        map[string]string // path -> claude session state duration mapping
+	claudeDurationSecondsMap map[string]int    // path -> claude session state duration in seconds
+	hasGroveHooks            bool              // whether grove-hooks is available
 	currentSession           string                        // name of the current tmux session
 	width                    int
 	height                   int
@@ -150,9 +118,6 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		}
 	}
 
-	// Initialize empty git status map - will be populated asynchronously
-	gitStatusMap := make(map[string]*extendedGitStatus)
-
 	helpModel := help.NewBuilder().
 		WithKeys(sessionizeKeys).
 		WithTitle("Project Sessionizer - Help").
@@ -200,7 +165,6 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		claudeStatusMap:          claudeStatusMap,
 		claudeDurationMap:        claudeDurationMap,
 		claudeDurationSecondsMap: claudeDurationSecondsMap,
-		gitStatusMap:             gitStatusMap,
 		hasGroveHooks:            hasGroveHooks,
 		currentSession:           currentSession,
 		cursor:                   0,
@@ -243,7 +207,6 @@ func intPtr(i int) *int {
 }
 func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
-		fetchGitStatusCmd(),      // Fetch extended status (line counts) for active sessions
 		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
 		fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions), // Fetch git status for all projects
 		fetchRunningSessionsCmd(),
@@ -259,56 +222,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetSize(msg.Width, msg.Height)
-		return m, nil
-
-	case gitStatusUpdateMsg:
-		// Only update if there are actual changes to prevent flashing
-		hasChanges := false
-		
-		// Check if any status has changed
-		for path, newStatus := range msg.statuses {
-			oldStatus, exists := m.gitStatusMap[path]
-			if !exists || !extendedGitStatusEqual(oldStatus, newStatus) {
-				hasChanges = true
-				break
-			}
-		}
-		
-		// Also check if any status was removed
-		if !hasChanges {
-			for path := range m.gitStatusMap {
-				if _, exists := msg.statuses[path]; !exists {
-					hasChanges = true
-					break
-				}
-			}
-		}
-		
-		// Only update if there are changes
-		if hasChanges {
-			// Update git status map
-			m.gitStatusMap = msg.statuses
-			// Update projects with new git status
-			for i := range m.projects {
-				cleanPath := filepath.Clean(m.projects[i].Path)
-				if extStatus, found := m.gitStatusMap[cleanPath]; found {
-					m.projects[i].GitStatus = extStatus.StatusInfo
-				} else {
-					// Clear git status if no longer found
-					m.projects[i].GitStatus = nil
-				}
-			}
-			// Also update filtered projects
-			for i := range m.filtered {
-				cleanPath := filepath.Clean(m.filtered[i].Path)
-				if extStatus, found := m.gitStatusMap[cleanPath]; found {
-					m.filtered[i].GitStatus = extStatus.StatusInfo
-				} else {
-					// Clear git status if no longer found
-					m.filtered[i].GitStatus = nil
-				}
-			}
-		}
 		return m, nil
 
 	case claudeSessionUpdateMsg:
@@ -404,7 +317,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Refresh all data sources periodically
 		return m, tea.Batch(
-			fetchGitStatusCmd(),
 			fetchClaudeSessionsCmd(),
 			fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions),
 			fetchRunningSessionsCmd(),
@@ -1391,18 +1303,7 @@ func (m sessionizeModel) View() string {
 		}
 
 		// Get Git status string
-		var extStatus *extendedGitStatus
-		if es, found := m.gitStatusMap[cleanPath]; found {
-			extStatus = es
-		} else if project.GetExtendedGitStatus() != nil {
-			// Use the enriched git status from the project
-			coreExtStatus := project.GetExtendedGitStatus()
-			extStatus = &extendedGitStatus{
-				StatusInfo:   coreExtStatus.StatusInfo,
-				LinesAdded:   coreExtStatus.LinesAdded,
-				LinesDeleted: coreExtStatus.LinesDeleted,
-			}
-		}
+		extStatus := project.GetExtendedGitStatus()
 		changesStr := formatChanges(project.GetGitStatus(), extStatus)
 
 		// Prepare display elements
@@ -1519,7 +1420,7 @@ func (m sessionizeModel) View() string {
 			}
 
 			// Add git status if enabled
-			if m.showGitStatus && sessionExists && changesStr != "" {
+			if m.showGitStatus && changesStr != "" {
 				line += "  " + changesStr
 			}
 
@@ -1588,7 +1489,7 @@ func (m sessionizeModel) View() string {
 			}
 
 			// Add git status if enabled
-			if m.showGitStatus && sessionExists && changesStr != "" {
+			if m.showGitStatus && changesStr != "" {
 				line += "  " + changesStr
 			}
 

@@ -3,17 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
@@ -30,18 +26,6 @@ type claudeSession struct {
 	WorkingDirectory     string `json:"working_directory"`
 	StateDuration        string `json:"state_duration"`
 	StateDurationSeconds int    `json:"state_duration_seconds"`
-}
-
-// extendedGitStatus holds git status info plus additional stats
-type extendedGitStatus struct {
-	*git.StatusInfo
-	LinesAdded   int
-	LinesDeleted int
-}
-
-// gitStatusUpdateMsg is sent when git status data is fetched
-type gitStatusUpdateMsg struct {
-	statuses map[string]*extendedGitStatus
 }
 
 // claudeSessionUpdateMsg is sent when claude session data is fetched
@@ -78,149 +62,6 @@ func getWorktreeParent(path string) string {
 		}
 	}
 	return ""
-}
-
-// fetchGitStatusForPath gets the git status for a specific path
-func fetchGitStatusForPath(path string) (*extendedGitStatus, error) {
-	cleanPath := filepath.Clean(path)
-
-	// Check if it's a git repo before getting status
-	if !git.IsGitRepo(cleanPath) {
-		return nil, fmt.Errorf("not a git repository")
-	}
-
-	status, err := git.GetStatus(cleanPath)
-	if err != nil {
-		return nil, err
-	}
-
-	extStatus := &extendedGitStatus{
-		StatusInfo: status,
-	}
-
-	// Get line stats using git diff --numstat
-	cmd := exec.Command("git", "diff", "--numstat")
-	cmd.Dir = cleanPath
-	output, err := cmd.Output()
-	if err == nil {
-		extStatus.LinesAdded, extStatus.LinesDeleted = parseNumstat(string(output))
-	}
-
-	// Also get staged changes
-	cmd = exec.Command("git", "diff", "--cached", "--numstat")
-	cmd.Dir = cleanPath
-	output, err = cmd.Output()
-	if err == nil {
-		stagedAdded, stagedDeleted := parseNumstat(string(output))
-		extStatus.LinesAdded += stagedAdded
-		extStatus.LinesDeleted += stagedDeleted
-	}
-
-	return extStatus, nil
-}
-
-// fetchGitStatusForOpenSessions gets the git status for all active tmux sessions.
-func fetchGitStatusForOpenSessions() (map[string]*extendedGitStatus, error) {
-	client, err := tmuxclient.NewClient()
-	if err != nil {
-		return nil, err
-	}
-
-	ctx := context.Background()
-	sessionNames, err := client.ListSessions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	statusMap := make(map[string]*extendedGitStatus)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	for _, sessionName := range sessionNames {
-		wg.Add(1)
-		go func(name string) {
-			defer wg.Done()
-			path, err := client.GetSessionPath(ctx, name)
-			if err != nil {
-				return
-			}
-
-			cleanPath := filepath.Clean(path)
-
-			// Check if it's a git repo before getting status
-			if !git.IsGitRepo(cleanPath) {
-				return
-			}
-
-			status, err := git.GetStatus(cleanPath)
-			if err == nil {
-				extStatus := &extendedGitStatus{
-					StatusInfo: status,
-				}
-
-				// Get line stats using git diff --numstat
-				cmd := exec.Command("git", "diff", "--numstat")
-				cmd.Dir = cleanPath
-				output, err := cmd.Output()
-				if err == nil {
-					extStatus.LinesAdded, extStatus.LinesDeleted = parseNumstat(string(output))
-				}
-
-				// Also get staged changes
-				cmd = exec.Command("git", "diff", "--cached", "--numstat")
-				cmd.Dir = cleanPath
-				output, err = cmd.Output()
-				if err == nil {
-					stagedAdded, stagedDeleted := parseNumstat(string(output))
-					extStatus.LinesAdded += stagedAdded
-					extStatus.LinesDeleted += stagedDeleted
-				}
-
-				mu.Lock()
-				statusMap[cleanPath] = extStatus
-				mu.Unlock()
-			}
-		}(sessionName)
-	}
-
-	wg.Wait()
-	return statusMap, nil
-}
-
-// parseNumstat parses git diff --numstat output and returns total lines added/deleted
-func parseNumstat(output string) (added, deleted int) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			// Skip binary files (shown as "-")
-			if fields[0] != "-" {
-				if a, err := strconv.Atoi(fields[0]); err == nil {
-					added += a
-				}
-			}
-			if fields[1] != "-" {
-				if d, err := strconv.Atoi(fields[1]); err == nil {
-					deleted += d
-				}
-			}
-		}
-	}
-	return added, deleted
-}
-
-// fetchGitStatusCmd returns a command that fetches git status in the background
-func fetchGitStatusCmd() tea.Cmd {
-	return func() tea.Msg {
-		if os.Getenv("TMUX") == "" {
-			return nil
-		}
-		statuses, _ := fetchGitStatusForOpenSessions()
-		return gitStatusUpdateMsg{statuses: statuses}
-	}
 }
 
 // tickCmd returns a command that sends a tick message after a delay
@@ -278,11 +119,6 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 						if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
 							sessionProject.ParentPath = parentPath
 							sessionProject.IsWorktree = true
-						}
-
-						// Try to fetch git status for this path
-						if extStatus, err := fetchGitStatusForPath(cleanPath); err == nil {
-							sessionProject.GitStatus = extStatus.StatusInfo
 						}
 
 						claudeSessionProjects = append(claudeSessionProjects, sessionProject)
