@@ -11,6 +11,9 @@ import (
 type SessionizerState struct {
 	FocusedEcosystemPath string `yaml:"focused_ecosystem_path,omitempty"`
 	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
+	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
+	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
+	ShowFullPaths        *bool  `yaml:"show_full_paths,omitempty"`
 }
 
 // LoadState loads the sessionizer state from ~/.grove/gmux/state.yml

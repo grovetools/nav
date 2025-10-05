@@ -32,10 +32,10 @@ import (
 )
 
 // buildEnrichmentOptions creates options that only fetch Git status for active tmux sessions
-func buildEnrichmentOptions() *workspace.EnrichmentOptions {
+func buildEnrichmentOptions(fetchGit, fetchClaude bool) *workspace.EnrichmentOptions {
 	gitStatusPaths := make(map[string]bool)
 
-	if os.Getenv("TMUX") != "" {
+	if fetchGit && os.Getenv("TMUX") != "" {
 		client, err := tmuxclient.NewClient()
 		if err == nil {
 			ctx := context.Background()
@@ -52,8 +52,8 @@ func buildEnrichmentOptions() *workspace.EnrichmentOptions {
 	}
 
 	return &workspace.EnrichmentOptions{
-		FetchClaudeSessions: true,
-		FetchGitStatus:      true,
+		FetchClaudeSessions: fetchClaude,
+		FetchGitStatus:      fetchGit,
 		GitStatusPaths:      gitStatusPaths, // Only fetch for active sessions
 	}
 }
@@ -99,7 +99,7 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		// Use selective enrichment to only fetch Git status for active sessions
-		enrichOpts := buildEnrichmentOptions()
+		enrichOpts := buildEnrichmentOptions(true, true)
 		projects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
 		if err != nil {
 			// Check if the error is due to missing config file
@@ -245,6 +245,9 @@ type sessionizeKeyMap struct {
 	FocusEcosystem  key.Binding
 	ClearFocus      key.Binding
 	ToggleWorktrees key.Binding
+	ToggleGitStatus key.Binding
+	ToggleClaude    key.Binding
+	TogglePaths     key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -274,10 +277,13 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.Quit,
 		},
 		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Focus")),
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Focus & View")),
 			k.FocusEcosystem,
 			k.ClearFocus,
 			k.ToggleWorktrees,
+			k.ToggleGitStatus,
+			k.ToggleClaude,
+			k.TogglePaths,
 		},
 	}
 }
@@ -312,6 +318,18 @@ var sessionizeKeys = sessionizeKeyMap{
 		key.WithKeys("tab"),
 		key.WithHelp("tab", "toggle worktrees"),
 	),
+	ToggleGitStatus: key.NewBinding(
+		key.WithKeys("g"),
+		key.WithHelp("g", "toggle git status"),
+	),
+	ToggleClaude: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle claude sessions"),
+	),
+	TogglePaths: key.NewBinding(
+		key.WithKeys("p"),
+		key.WithHelp("p", "toggle full paths"),
+	),
 }
 
 // sessionizeModel is the model for the interactive project picker
@@ -345,6 +363,11 @@ type sessionizeModel struct {
 	ecosystemPickerMode bool                       // True when showing only ecosystems for selection
 	focusedProject      *manager.DiscoveredProject
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
+
+	// View toggles
+	showGitStatus      bool // Whether to fetch and show Git status
+	showClaudeSessions bool // Whether to fetch and show Claude sessions
+	showFullPaths      bool // Whether to show full paths or abbreviated ones
 }
 
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
@@ -418,6 +441,10 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	// Load previously focused ecosystem and fold state
 	var focusedProject *manager.DiscoveredProject
 	var worktreesFolded bool
+	// Set sensible defaults for toggles
+	showGitStatus := true
+	showClaudeSessions := true
+	showFullPaths := false
 	if state, err := manager.LoadState(configDir); err == nil {
 		if state.FocusedEcosystemPath != "" {
 			// Find the project with this path
@@ -429,6 +456,16 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 			}
 		}
 		worktreesFolded = state.WorktreesFolded
+		// Override defaults with saved state if present
+		if state.ShowGitStatus != nil {
+			showGitStatus = *state.ShowGitStatus
+		}
+		if state.ShowClaudeSessions != nil {
+			showClaudeSessions = *state.ShowClaudeSessions
+		}
+		if state.ShowFullPaths != nil {
+			showFullPaths = *state.ShowFullPaths
+		}
 	}
 
 	return sessionizeModel{
@@ -454,7 +491,30 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		help:                     helpModel,
 		focusedProject:           focusedProject,
 		worktreesFolded:          worktreesFolded,
+		showGitStatus:            showGitStatus,
+		showClaudeSessions:       showClaudeSessions,
+		showFullPaths:            showFullPaths,
 	}
+}
+
+// buildState creates a SessionizerState from the current model
+func (m sessionizeModel) buildState() *manager.SessionizerState {
+	state := &manager.SessionizerState{
+		FocusedEcosystemPath: "",
+		WorktreesFolded:      m.worktreesFolded,
+		ShowGitStatus:        boolPtr(m.showGitStatus),
+		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
+		ShowFullPaths:        boolPtr(m.showFullPaths),
+	}
+	if m.focusedProject != nil {
+		state.FocusedEcosystemPath = m.focusedProject.Path
+	}
+	return state
+}
+
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 // fetchGitStatusForPath gets the git status for a specific path
@@ -593,7 +653,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
 		fetchGitStatusCmd(),
 		fetchClaudeSessionsCmd(),
-		fetchProjectsCmd(m.manager),
+		fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions),
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
@@ -685,10 +745,10 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 
 // fetchProjectsCmd returns a command that re-scans the configured search paths
 // It uses selective enrichment to only fetch Git status for active tmux sessions
-func fetchProjectsCmd(mgr *tmux.Manager) tea.Cmd {
+func fetchProjectsCmd(mgr *tmux.Manager, fetchGit, fetchClaude bool) tea.Cmd {
 	return func() tea.Msg {
 		// Use selective enrichment to only fetch Git status for active sessions
-		enrichOpts := buildEnrichmentOptions()
+		enrichOpts := buildEnrichmentOptions(fetchGit, fetchClaude)
 		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
 
 		// Sort by access history
@@ -896,10 +956,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			fetchGitStatusCmd(),
 			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager),       // Add this
-			fetchRunningSessionsCmd(),         // Add this
-			fetchKeyMapCmd(m.manager),         // Add this
-			tickCmd(),                         // This reschedules the tick
+			fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions),
+			fetchRunningSessionsCmd(),
+			fetchKeyMapCmd(m.manager),
+			tickCmd(), // This reschedules the tick
 		)
 
 	case tea.KeyMsg:
@@ -923,14 +983,27 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateFiltered()
 
 			// Save the fold state
-			state := &manager.SessionizerState{
-				FocusedEcosystemPath: "",
-				WorktreesFolded:      m.worktreesFolded,
-			}
-			if m.focusedProject != nil {
-				state.FocusedEcosystemPath = m.focusedProject.Path
-			}
-			_ = state.Save(m.configDir)
+			_ = m.buildState().Save(m.configDir)
+			return m, nil
+
+		case key.Matches(msg, sessionizeKeys.ToggleGitStatus):
+			m.showGitStatus = !m.showGitStatus
+			// Save the toggle state
+			_ = m.buildState().Save(m.configDir)
+			// Refresh projects with new toggle state
+			return m, fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions)
+
+		case key.Matches(msg, sessionizeKeys.ToggleClaude):
+			m.showClaudeSessions = !m.showClaudeSessions
+			// Save the toggle state
+			_ = m.buildState().Save(m.configDir)
+			// Refresh projects with new toggle state
+			return m, fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions)
+
+		case key.Matches(msg, sessionizeKeys.TogglePaths):
+			m.showFullPaths = !m.showFullPaths
+			// Save the toggle state (no need to refresh projects for path display)
+			_ = m.buildState().Save(m.configDir)
 			return m, nil
 
 		case key.Matches(msg, sessionizeKeys.ClearFocus):
@@ -940,11 +1013,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 
 				// Clear the focused ecosystem from state
-				state := &manager.SessionizerState{
-					FocusedEcosystemPath: "",
-					WorktreesFolded:      m.worktreesFolded,
-				}
-				_ = state.Save(m.configDir)
+				_ = m.buildState().Save(m.configDir)
 			}
 			return m, nil
 		}
@@ -1027,12 +1096,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.cursor = 0
 
 						// Save state
-						state := &manager.SessionizerState{
-							FocusedEcosystemPath: m.focusedProject.Path,
-							WorktreesFolded:      m.worktreesFolded,
-						}
 						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
-						if err := state.Save(m.configDir); err != nil {
+						if err := m.buildState().Save(m.configDir); err != nil {
 							// Log error but don't fail the operation
 							fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
 						} else {
@@ -1263,12 +1328,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = 0
 
 					// Save state
-					state := &manager.SessionizerState{
-						FocusedEcosystemPath: m.focusedProject.Path,
-						WorktreesFolded:      m.worktreesFolded,
-					}
 					fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
-					if err := state.Save(m.configDir); err != nil {
+					if err := m.buildState().Save(m.configDir); err != nil {
 						fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
 					} else {
 						fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
@@ -2072,7 +2133,7 @@ func (m sessionizeModel) View() string {
 
 			// Build the line
 			line := fmt.Sprintf("%s%s%s", indicator, keyIndicator, sessionIndicator)
-			if m.hasGroveHooks {
+			if m.hasGroveHooks && m.showClaudeSessions {
 				line += fmt.Sprintf(" %s", claudeStatusStyled)
 			}
 			line += " "
@@ -2080,15 +2141,21 @@ func (m sessionizeModel) View() string {
 				line += prefix
 			}
 			line += nameStyle.Render(displayName)
-			line += "  " + pathStyle.Render(project.Path)
 
-			// Add git status if session exists
-			if sessionExists && changesStr != "" {
+			// Add path (conditionally show full or abbreviated)
+			displayPath := project.Path
+			if !m.showFullPaths {
+				displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+			}
+			line += "  " + pathStyle.Render(displayPath)
+
+			// Add git status if enabled
+			if m.showGitStatus && sessionExists && changesStr != "" {
 				line += "  " + changesStr
 			}
 
 			// Add Claude duration at the very end
-			if m.hasGroveHooks && claudeDuration != "" {
+			if m.hasGroveHooks && m.showClaudeSessions && claudeDuration != "" {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
 			}
 
@@ -2132,7 +2199,7 @@ func (m sessionizeModel) View() string {
 
 			// Build the line
 			line := fmt.Sprintf("  %s%s", keyIndicator, sessionIndicator)
-			if m.hasGroveHooks {
+			if m.hasGroveHooks && m.showClaudeSessions {
 				line += fmt.Sprintf(" %s", claudeStatusStyled)
 			}
 			line += " "
@@ -2140,15 +2207,21 @@ func (m sessionizeModel) View() string {
 				line += prefix
 			}
 			line += nameStyle.Render(displayName)
-			line += "  " + pathStyle.Render(project.Path)
 
-			// Add git status if session exists
-			if sessionExists && changesStr != "" {
+			// Add path (conditionally show full or abbreviated)
+			displayPath := project.Path
+			if !m.showFullPaths {
+				displayPath = strings.Replace(displayPath, os.Getenv("HOME"), "~", 1)
+			}
+			line += "  " + pathStyle.Render(displayPath)
+
+			// Add git status if enabled
+			if m.showGitStatus && sessionExists && changesStr != "" {
 				line += "  " + changesStr
 			}
 
 			// Add Claude duration at the very end
-			if m.hasGroveHooks && claudeDuration != "" {
+			if m.hasGroveHooks && m.showClaudeSessions && claudeDuration != "" {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
 			}
 
@@ -2175,12 +2248,37 @@ func (m sessionizeModel) View() string {
 	// Help text
 	helpStyle := core_theme.DefaultTheme.Muted
 	b.WriteString("\n")
+
+	// Build toggle indicators
+	gitToggle := "g:git "
+	if m.showGitStatus {
+		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
+	claudeToggle := " c:claude "
+	if m.showClaudeSessions {
+		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
+	pathsToggle := " p:paths "
+	if m.showFullPaths {
+		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
+	togglesDisplay := fmt.Sprintf("[%s%s%s]", gitToggle, claudeToggle, pathsToggle)
+
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
 	} else if m.focusedProject != nil {
-		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear focus"))
+		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear focus • ") + togglesDisplay)
 	} else {
-		b.WriteString(helpStyle.Render("Press ? for help"))
+		b.WriteString(helpStyle.Render("Press ? for help • ") + togglesDisplay)
 	}
 
 	// Display search paths at the very bottom
