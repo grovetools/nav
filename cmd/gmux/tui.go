@@ -885,10 +885,20 @@ func (m *sessionizeModel) updateFiltered() {
 		// 1. The focused ecosystem itself
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
 
-		// 2. All children of the focused ecosystem (using ParentEcosystemPath)
-		for _, p := range m.projects {
-			if p.ParentEcosystemPath == m.focusedProject.Path {
-				projectsToFilter = append(projectsToFilter, p)
+		// 2. Determine the filtering logic based on whether this is a worktree or main ecosystem
+		if m.focusedProject.IsWorktree && m.focusedProject.WorktreeName != "" {
+			// This is an ecosystem worktree - include projects with matching WorktreeName
+			for _, p := range m.projects {
+				if p.WorktreeName == m.focusedProject.WorktreeName && p.Path != m.focusedProject.Path {
+					projectsToFilter = append(projectsToFilter, p)
+				}
+			}
+		} else {
+			// This is a main ecosystem (not a worktree) - include only children that are NOT in worktrees
+			for _, p := range m.projects {
+				if p.ParentEcosystemPath == m.focusedProject.Path && p.WorktreeName == "" {
+					projectsToFilter = append(projectsToFilter, p)
+				}
 			}
 		}
 	} else if m.focusedProject != nil {

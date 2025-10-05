@@ -174,12 +174,26 @@ func sessionizeProject(projectPath string) error {
 		}
 	}
 
+	// Extract worktree name if this project is inside .grove-worktrees
+	worktreeName := ""
+	if ecoPath != "" && strings.Contains(absPath, ".grove-worktrees") {
+		ecoDir := filepath.Dir(ecoPath) // Get directory containing grove.yml
+		relPath, err := filepath.Rel(ecoDir, absPath)
+		if err == nil {
+			parts := strings.Split(relPath, string(filepath.Separator))
+			if len(parts) >= 2 && parts[0] == ".grove-worktrees" {
+				worktreeName = parts[1]
+			}
+		}
+	}
+
 	// Construct a temporary ProjectInfo to call the identifier method
 	projInfo := &workspace.ProjectInfo{
 		Name:                filepath.Base(absPath),
 		Path:                absPath,
-		ParentEcosystemPath: ecoPath,
+		ParentEcosystemPath: filepath.Dir(ecoPath), // Directory containing grove.yml
 		IsWorktree:          isWorktree,
+		WorktreeName:        worktreeName,
 		ParentPath:          parentPath,
 	}
 	sessionName := projInfo.SessionIdentifier()
