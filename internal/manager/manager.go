@@ -254,7 +254,7 @@ func isGitRepository(path string) bool {
 	return err == nil
 }
 
-// GetAvailableProjects now uses the DiscoveryService from grove-core.
+// GetAvailableProjects now uses the DiscoveryService, transform, and enrichment from grove-core.
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	// Initialize the DiscoveryService
 	logger := logrus.New()
@@ -262,74 +262,28 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	logger.SetLevel(logrus.WarnLevel)
 	discoverySvc := workspace.NewDiscoveryService(logger)
 
-	// Run the discovery
+	// Step 1: Run the discovery
 	result, err := discoverySvc.DiscoverAll()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run discovery service: %w", err)
 	}
 
-	// Transform the core data model into the one expected by the TUI.
-	// This provides a layer of abstraction.
-	var projects []DiscoveredProject
+	// Step 2: Transform to ProjectInfo
+	projectInfos := workspace.TransformToProjectInfo(result)
 
-	// First, add ecosystems themselves as discoverable projects
-	for _, eco := range result.Ecosystems {
-		projects = append(projects, DiscoveredProject{
-			Name:        eco.Name,
-			Path:        eco.Path,
-			IsWorktree:  false,
-			IsEcosystem: true,
-		})
+	// Step 3: Enrich with Git and Claude session data
+	ctx := context.Background()
+	if err := workspace.EnrichProjects(ctx, projectInfos); err != nil {
+		// Log but don't fail - enrichment is optional
+		fmt.Fprintf(os.Stderr, "Warning: failed to enrich projects: %v\n", err)
 	}
 
-	for _, proj := range result.Projects {
-		// Check if this is an ecosystem worktree (has ParentEcosystemPath and is in .grove-worktrees)
-		isEcosystemWorktree := proj.ParentEcosystemPath != "" &&
-			strings.Contains(proj.Path, filepath.Join(proj.ParentEcosystemPath, ".grove-worktrees"))
-
-		if isEcosystemWorktree {
-			// Ecosystem worktrees should be treated as worktrees of the ecosystem
-			// Use the directory name as the display name
-			wtName := filepath.Base(proj.Path)
-			projects = append(projects, DiscoveredProject{
-				Name:                wtName,
-				Path:                proj.Path,
-				ParentPath:          proj.ParentEcosystemPath,
-				IsWorktree:          true,
-				ParentEcosystemPath: proj.ParentEcosystemPath,
-				IsEcosystem:         true, // Ecosystem worktrees are also ecosystems
-			})
-		} else {
-			// Regular projects (including those within ecosystems)
-			projects = append(projects, DiscoveredProject{
-				Name:                proj.Name,
-				Path:                proj.Path,
-				IsWorktree:          false,
-				ParentEcosystemPath: proj.ParentEcosystemPath,
-			})
-
-			// Add all associated Worktree Workspaces
-			for _, ws := range proj.Workspaces {
-				if ws.Type == workspace.WorkspaceTypeWorktree {
-					projects = append(projects, DiscoveredProject{
-						Name:                ws.Name,
-						Path:                ws.Path,
-						ParentPath:          ws.ParentProjectPath,
-						IsWorktree:          true,
-						ParentEcosystemPath: proj.ParentEcosystemPath,
-					})
-				}
-			}
+	// Step 4: Convert to SessionizeProject (which embeds ProjectInfo)
+	projects := make([]DiscoveredProject, len(projectInfos))
+	for i, info := range projectInfos {
+		projects[i] = SessionizeProject{
+			ProjectInfo: *info,
 		}
-	}
-
-	// Also include Non-Grove Directories
-	for _, path := range result.NonGroveDirectories {
-		projects = append(projects, DiscoveredProject{
-			Name:       filepath.Base(path),
-			Path:       path,
-			IsWorktree: false,
-		})
 	}
 
 	return projects, nil

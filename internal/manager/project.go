@@ -1,20 +1,36 @@
 package manager
 
-import "github.com/mattsolo1/grove-core/git"
+import (
+	"github.com/mattsolo1/grove-core/git"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
+)
 
-// DiscoveredProject holds structured information about a project found by the sessionizer.
-type DiscoveredProject struct {
-	Name                string // The base name of the directory (e.g., "grove-core" or "feat-new-feature")
-	Path                string // The full, absolute path to the project
-	ParentPath          string // For worktrees, the path to the parent repository. Empty otherwise.
-	IsWorktree          bool   // True if the project is a Git worktree
-	ParentEcosystemPath string // For sub-projects, the path to the parent ecosystem. Empty otherwise.
-	IsEcosystem         bool   // True if the project is an ecosystem (contains submodules/repos)
-	GitStatus           *git.StatusInfo
+// SessionizeProject is an enriched ProjectInfo for the sessionize TUI.
+// It embeds the core ProjectInfo type and adds application-specific fields.
+type SessionizeProject struct {
+	workspace.ProjectInfo
 
-	// Claude session information (if this entry represents a Claude session)
-	ClaudeSessionID       string // The Claude session ID (empty if not a Claude session)
-	ClaudeSessionPID      int    // The Claude session PID
-	ClaudeSessionStatus   string // The Claude session status
-	ClaudeSessionDuration string // The Claude session duration
+	// Application-specific enrichment
+	// Note: GitStatus and ClaudeSession are already in ProjectInfo
+	// We only need to expose them through helper methods if needed
 }
+
+// GetGitStatus returns the git status as *git.StatusInfo for backward compatibility
+func (p *SessionizeProject) GetGitStatus() *git.StatusInfo {
+	if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok && extStatus != nil {
+		return extStatus.StatusInfo
+	}
+	return nil
+}
+
+// GetExtendedGitStatus returns the extended git status with line changes
+func (p *SessionizeProject) GetExtendedGitStatus() *workspace.ExtendedGitStatus {
+	if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
+		return extStatus
+	}
+	return nil
+}
+
+// Legacy type alias for backward compatibility
+// Deprecated: Use SessionizeProject instead
+type DiscoveredProject = SessionizeProject

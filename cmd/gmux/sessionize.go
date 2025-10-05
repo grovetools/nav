@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
@@ -616,12 +617,16 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 						cleanPath := filepath.Clean(absPath)
 
 						sessionProject := manager.DiscoveredProject{
-							Name:                  filepath.Base(cleanPath),
-							Path:                  cleanPath,
-							ClaudeSessionID:       session.ID,
-							ClaudeSessionPID:      session.PID,
-							ClaudeSessionStatus:   session.Status,
-							ClaudeSessionDuration: session.StateDuration,
+							ProjectInfo: workspace.ProjectInfo{
+								Name: filepath.Base(cleanPath),
+								Path: cleanPath,
+								ClaudeSession: &workspace.ClaudeSessionInfo{
+									ID:       session.ID,
+									PID:      session.PID,
+									Status:   session.Status,
+									Duration: session.StateDuration,
+								},
+							},
 						}
 
 						if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
@@ -761,9 +766,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		for _, session := range msg.sessions {
 			cleanPath := filepath.Clean(session.Path)
-			newStatusMap[cleanPath] = session.ClaudeSessionStatus
-			newDurationMap[cleanPath] = session.ClaudeSessionDuration
-			newDurationSecondsMap[cleanPath] = session.ClaudeSessionPID // Using PID field temporarily
+			if session.ClaudeSession != nil {
+				newStatusMap[cleanPath] = session.ClaudeSession.Status
+				newDurationMap[cleanPath] = session.ClaudeSession.Duration
+				newDurationSecondsMap[cleanPath] = session.ClaudeSession.PID
+			}
 		}
 
 		// Check if there are any changes
@@ -1842,11 +1849,11 @@ func (m sessionizeModel) View() string {
 		var claudeDuration string
 
 		// Check if this is a Claude session project
-		if project.ClaudeSessionID != "" {
+		if project.ClaudeSession != nil {
 			// This is a Claude session entry - use its own status
 			statusSymbol := ""
 			var statusColor lipgloss.Color
-			switch project.ClaudeSessionStatus {
+			switch project.ClaudeSession.Status {
 			case "running":
 				statusSymbol = "▶"
 				statusColor = core_theme.DefaultColors.Green
@@ -1864,7 +1871,7 @@ func (m sessionizeModel) View() string {
 			}
 
 			claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
-			claudeDuration = project.ClaudeSessionDuration
+			claudeDuration = project.ClaudeSession.Duration
 		} else if m.hasGroveHooks {
 			// Regular project - check if it has any Claude sessions
 			claudeStatus := ""
@@ -1917,8 +1924,16 @@ func (m sessionizeModel) View() string {
 		var extStatus *extendedGitStatus
 		if es, found := m.gitStatusMap[cleanPath]; found {
 			extStatus = es
+		} else if project.GetExtendedGitStatus() != nil {
+			// Use the enriched git status from the project
+			coreExtStatus := project.GetExtendedGitStatus()
+			extStatus = &extendedGitStatus{
+				StatusInfo:   coreExtStatus.StatusInfo,
+				LinesAdded:   coreExtStatus.LinesAdded,
+				LinesDeleted: coreExtStatus.LinesDeleted,
+			}
 		}
-		changesStr := formatChanges(project.GitStatus, extStatus)
+		changesStr := formatChanges(project.GetGitStatus(), extStatus)
 
 		// Prepare display elements
 		prefix := "  "
@@ -1971,8 +1986,8 @@ func (m sessionizeModel) View() string {
 		}
 
 		// If this is a Claude session, add PID to the name
-		if project.ClaudeSessionID != "" {
-			displayName = fmt.Sprintf("%s [PID:%d]", project.Name, project.ClaudeSessionPID)
+		if project.ClaudeSession != nil {
+			displayName = fmt.Sprintf("%s [PID:%d]", project.Name, project.ClaudeSession.PID)
 		}
 
 		// Highlight matching search terms
