@@ -89,8 +89,8 @@ var sessionizeKeys = sessionizeKeyMap{
 		key.WithHelp("tab", "toggle worktrees"),
 	),
 	ToggleGitStatus: key.NewBinding(
-		key.WithKeys("g"),
-		key.WithHelp("g", "toggle git status"),
+		key.WithKeys("s"),
+		key.WithHelp("s", "toggle git status"),
 	),
 	ToggleClaude: key.NewBinding(
 		key.WithKeys("c"),

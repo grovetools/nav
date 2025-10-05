@@ -1512,7 +1512,7 @@ func (m sessionizeModel) View() string {
 	b.WriteString("\n")
 
 	// Build toggle indicators
-	gitToggle := "g:git "
+	gitToggle := "s:git status "
 	if m.showGitStatus {
 		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
 	} else {
