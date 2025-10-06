@@ -599,41 +599,61 @@ func (m manageModel) View() string {
 	b.WriteString(titleStyle.Render("Manage Session Keys") + "\n\n")
 
 	// Build table data
-	headers := []string{"Key", "Ecosystem", "Worktree", "Repository", "Git", "Claude"}
+	headers := []string{"Key", "Ecosystem", "Repository", "Worktree", "Git", "Claude"}
 	var rows [][]string
 
 	for _, s := range m.sessions {
-		ecosystem := ""
-		worktree := ""
-		repo := ""
+		var ecosystem, repository, worktree string
 		gitStatus := ""
 		claudeStatus := ""
 
 		if s.Path != "" {
-			// Look up enriched data to get proper ecosystem, worktree, and repo names
 			cleanPath := filepath.Clean(s.Path)
 			if projInfo, found := m.enrichedProjects[cleanPath]; found {
-				// Determine ecosystem, worktree, and repository names
+
+				// RULE 1: Determine Repository and Worktree.
+				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
+				if projInfo.IsWorktree && projInfo.ParentPath != "" {
+					repository = filepath.Base(projInfo.ParentPath)
+					worktree = projInfo.Name
+				} else {
+					repository = projInfo.Name
+				}
+
+				// RULE 2: Determine Ecosystem display.
 				if projInfo.ParentEcosystemPath != "" {
-					// This is a project within an ecosystem worktree
-					ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
-					worktree = projInfo.WorktreeName
-					repo = projInfo.Name
-				} else if projInfo.IsWorktree {
-					// This is an ecosystem worktree itself
-					if projInfo.ParentPath != "" {
-						ecosystem = filepath.Base(projInfo.ParentPath)
-					}
-					worktree = projInfo.WorktreeName
-					if worktree == "" {
-						worktree = projInfo.Name
+					// Project is within an ecosystem.
+					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
+					ecoWorktreeName := projInfo.WorktreeName // The eco-worktree the project is in.
+
+					// Set ecosystem name
+					ecosystem = baseEcosystem
+
+					// If this project is inside an ecosystem worktree, show the eco-worktree in Worktree column with indicator
+					if ecoWorktreeName != "" {
+						// Repository should be the actual project name (not the ecosystem)
+						repository = projInfo.Name
+
+						// If this is also a worktree of that repo, keep the worktree name
+						// Otherwise, show the ecosystem worktree name with indicator
+						if projInfo.IsWorktree && projInfo.ParentPath != "" {
+							// This is a worktree of a repo inside an eco-worktree
+							repository = filepath.Base(projInfo.ParentPath)
+							worktree = projInfo.Name
+						} else {
+							// This is a repo inside an eco-worktree (not a worktree itself)
+							worktree = ecoWorktreeName + " *"
+						}
 					}
 				} else if projInfo.IsEcosystem {
-					// This is a main ecosystem
+					// It's a root ecosystem.
 					ecosystem = projInfo.Name
-				} else {
-					// Regular standalone project
-					repo = projInfo.Name
+				}
+
+				// RULE 3: Clean up redundancies for clarity.
+				if projInfo.IsEcosystem && !projInfo.IsWorktree {
+					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
+					repository = ""
 				}
 
 				// Format Git status (with colors)
@@ -647,23 +667,23 @@ func (m manageModel) View() string {
 				claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
 			} else {
 				// Fallback if no enriched data
-				repo = filepath.Base(s.Path)
+				repository = filepath.Base(s.Path)
 			}
 		}
 
 		rows = append(rows, []string{
 			s.Key,
 			ecosystem,
+			repository,
 			worktree,
-			repo,
 			gitStatus,
 			claudeStatus,
 		})
 	}
 
-	// Render table with selection and Repository column highlighted (column index 3)
+	// Render table with selection and Repository column highlighted (column index 2)
 	tableStr := table.SelectableTableWithOptions(headers, rows, m.cursor, table.SelectableTableOptions{
-		HighlightColumn: 3, // Repository column
+		HighlightColumn: 2, // Repository column
 	})
 	b.WriteString(tableStr)
 	b.WriteString("\n\n")
@@ -672,7 +692,7 @@ func (m manageModel) View() string {
 		b.WriteString(dimStyle.Render(m.message) + "\n\n")
 	}
 
-	b.WriteString(helpStyle.Render("Press ? for help"))
+	b.WriteString(helpStyle.Render("Press ? for help  •  * = part of ecosystem worktree"))
 
 	return b.String()
 }
