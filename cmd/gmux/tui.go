@@ -57,6 +57,7 @@ type sessionizeModel struct {
 	showGitStatus      bool // Whether to fetch and show Git status
 	showBranch         bool // Whether to show branch names
 	showClaudeSessions bool // Whether to fetch and show Claude sessions
+	showNoteCounts     bool // Whether to fetch and show note counts
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 }
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
@@ -131,6 +132,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	showGitStatus := true
 	showBranch := true
 	showClaudeSessions := true
+	showNoteCounts := true
 	pathDisplayMode := 1 // Default to compact paths (~)
 	if state, err := manager.LoadState(configDir); err == nil {
 		if state.FocusedEcosystemPath != "" {
@@ -152,6 +154,9 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		}
 		if state.ShowClaudeSessions != nil {
 			showClaudeSessions = *state.ShowClaudeSessions
+		}
+		if state.ShowNoteCounts != nil {
+			showNoteCounts = *state.ShowNoteCounts
 		}
 		if state.PathDisplayMode != nil {
 			pathDisplayMode = *state.PathDisplayMode
@@ -183,6 +188,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		showGitStatus:            showGitStatus,
 		showBranch:               showBranch,
 		showClaudeSessions:       showClaudeSessions,
+		showNoteCounts:           showNoteCounts,
 		pathDisplayMode:          pathDisplayMode,
 	}
 }
@@ -195,6 +201,7 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		ShowGitStatus:        boolPtr(m.showGitStatus),
 		ShowBranch:           boolPtr(m.showBranch),
 		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
+		ShowNoteCounts:       boolPtr(m.showNoteCounts),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
 	}
 	if m.focusedProject != nil {
@@ -215,7 +222,7 @@ func intPtr(i int) *int {
 func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
 		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
-		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions), // Fetch git status for all projects
+		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts), // Fetch git status for all projects
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
@@ -325,7 +332,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh all data sources periodically
 		return m, tea.Batch(
 			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions),
+			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
@@ -613,17 +620,22 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle git status
 				m.showGitStatus = !m.showGitStatus
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
 			case "b":
 				// Toggle branch names
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
 			case "c":
 				// Toggle claude sessions
 				m.showClaudeSessions = !m.showClaudeSessions
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
+			case "n":
+				// Toggle note counts
+				m.showNoteCounts = !m.showNoteCounts
+				_ = m.buildState().Save(m.configDir)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
 			case "p":
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
@@ -1438,6 +1450,20 @@ func (m sessionizeModel) View() string {
 				line += "  " + changesStr
 			}
 
+			// Add note counts if enabled
+			if m.showNoteCounts && project.NoteCounts != nil {
+				var counts []string
+				if project.NoteCounts.Current > 0 {
+					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet).Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
+				}
+				if project.NoteCounts.Issues > 0 {
+					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Pink).Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
+				}
+				if len(counts) > 0 {
+					line += "  " + strings.Join(counts, " ")
+				}
+			}
+
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && m.showClaudeSessions && claudeDuration != "" {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
@@ -1508,6 +1534,20 @@ func (m sessionizeModel) View() string {
 				line += "  " + changesStr
 			}
 
+			// Add note counts if enabled
+			if m.showNoteCounts && project.NoteCounts != nil {
+				var counts []string
+				if project.NoteCounts.Current > 0 {
+					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet).Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
+				}
+				if project.NoteCounts.Issues > 0 {
+					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Pink).Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
+				}
+				if len(counts) > 0 {
+					line += "  " + strings.Join(counts, " ")
+				}
+			}
+
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && m.showClaudeSessions && claudeDuration != "" {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
@@ -1559,6 +1599,13 @@ func (m sessionizeModel) View() string {
 		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
 	}
 
+	noteToggle := " n:notes "
+	if m.showNoteCounts {
+		noteToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		noteToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
 	pathsToggle := " p:paths "
 	switch m.pathDisplayMode {
 	case 0:
@@ -1569,7 +1616,7 @@ func (m sessionizeModel) View() string {
 		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("full")
 	}
 
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s]", gitToggle, branchToggle, claudeToggle, pathsToggle)
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s]", gitToggle, branchToggle, claudeToggle, noteToggle, pathsToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))

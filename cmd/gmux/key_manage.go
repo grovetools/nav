@@ -264,7 +264,7 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 // fetchAllProjectsCmd fetches all discoverable projects without enrichment
 func fetchAllProjectsCmd(mgr *tmux.Manager) tea.Cmd {
 	return func() tea.Msg {
-		enrichOpts := buildEnrichmentOptions(false, false)
+		enrichOpts := buildEnrichmentOptions(false, false, false)
 		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
 
 		// Sort by access history

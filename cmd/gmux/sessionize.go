@@ -29,10 +29,11 @@ func buildInitialEnrichmentOptions() *workspace.EnrichmentOptions {
 
 // buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
-func buildEnrichmentOptions(fetchGit, fetchClaude bool) *workspace.EnrichmentOptions {
+func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes bool) *workspace.EnrichmentOptions {
 	return &workspace.EnrichmentOptions{
 		FetchClaudeSessions: fetchClaude,
 		FetchGitStatus:      fetchGit,
+		FetchNoteCounts:     fetchNotes,
 		GitStatusPaths:      nil, // nil means fetch for all projects
 	}
 }

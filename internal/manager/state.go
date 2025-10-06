@@ -14,6 +14,7 @@ type SessionizerState struct {
 	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
 	ShowBranch           *bool  `yaml:"show_branch,omitempty"`
 	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
+	ShowNoteCounts       *bool  `yaml:"show_note_counts,omitempty"`
 	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
 }
 
