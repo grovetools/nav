@@ -55,6 +55,7 @@ type sessionizeModel struct {
 
 	// View toggles
 	showGitStatus      bool // Whether to fetch and show Git status
+	showBranch         bool // Whether to show branch names
 	showClaudeSessions bool // Whether to fetch and show Claude sessions
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 }
@@ -128,6 +129,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	var worktreesFolded bool
 	// Set sensible defaults for toggles
 	showGitStatus := true
+	showBranch := true
 	showClaudeSessions := true
 	pathDisplayMode := 1 // Default to compact paths (~)
 	if state, err := manager.LoadState(configDir); err == nil {
@@ -144,6 +146,9 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		// Override defaults with saved state if present
 		if state.ShowGitStatus != nil {
 			showGitStatus = *state.ShowGitStatus
+		}
+		if state.ShowBranch != nil {
+			showBranch = *state.ShowBranch
 		}
 		if state.ShowClaudeSessions != nil {
 			showClaudeSessions = *state.ShowClaudeSessions
@@ -176,6 +181,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		focusedProject:           focusedProject,
 		worktreesFolded:          worktreesFolded,
 		showGitStatus:            showGitStatus,
+		showBranch:               showBranch,
 		showClaudeSessions:       showClaudeSessions,
 		pathDisplayMode:          pathDisplayMode,
 	}
@@ -187,6 +193,7 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		FocusedEcosystemPath: "",
 		WorktreesFolded:      m.worktreesFolded,
 		ShowGitStatus:        boolPtr(m.showGitStatus),
+		ShowBranch:           boolPtr(m.showBranch),
 		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
 	}
@@ -208,7 +215,7 @@ func intPtr(i int) *int {
 func (m sessionizeModel) Init() tea.Cmd {
 	return tea.Batch(
 		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
-		fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions), // Fetch git status for all projects
+		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions), // Fetch git status for all projects
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
@@ -318,7 +325,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh all data sources periodically
 		return m, tea.Batch(
 			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions),
+			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
@@ -331,44 +338,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle main key bindings before specific modes
+		// Handle non-letter key bindings that should work even in search mode
 		switch {
-		case key.Matches(msg, sessionizeKeys.FocusEcosystem):
-			// Enter ecosystem picker mode
-			m.ecosystemPickerMode = true
-			m.updateFiltered() // Will filter to ecosystems only
-			m.cursor = 0
-			return m, nil
-
-		case key.Matches(msg, sessionizeKeys.ToggleWorktrees):
-			m.worktreesFolded = !m.worktreesFolded
-			m.updateFiltered()
-
-			// Save the fold state
-			_ = m.buildState().Save(m.configDir)
-			return m, nil
-
-		case key.Matches(msg, sessionizeKeys.ToggleGitStatus):
-			m.showGitStatus = !m.showGitStatus
-			// Save the toggle state
-			_ = m.buildState().Save(m.configDir)
-			// Refresh projects with new toggle state
-			return m, fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions)
-
-		case key.Matches(msg, sessionizeKeys.ToggleClaude):
-			m.showClaudeSessions = !m.showClaudeSessions
-			// Save the toggle state
-			_ = m.buildState().Save(m.configDir)
-			// Refresh projects with new toggle state
-			return m, fetchProjectsCmd(m.manager, m.showGitStatus, m.showClaudeSessions)
-
-		case key.Matches(msg, sessionizeKeys.TogglePaths):
-			// Cycle through: compact (~) -> full -> no paths -> compact
-			m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
-			// Save the toggle state (no need to refresh projects for path display)
-			_ = m.buildState().Save(m.configDir)
-			return m, nil
-
 		case key.Matches(msg, sessionizeKeys.ClearFocus):
 			if m.focusedProject != nil {
 				m.focusedProject = nil
@@ -632,7 +603,39 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Focus filter input for search
 				m.filterInput.Focus()
 				return m, textinput.Blink
+			case "@":
+				// Focus ecosystem (handled by key.Matches below for consistency)
+				m.ecosystemPickerMode = true
+				m.updateFiltered()
+				m.cursor = 0
+				return m, nil
+			case "s":
+				// Toggle git status
+				m.showGitStatus = !m.showGitStatus
+				_ = m.buildState().Save(m.configDir)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+			case "b":
+				// Toggle branch names
+				m.showBranch = !m.showBranch
+				_ = m.buildState().Save(m.configDir)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+			case "c":
+				// Toggle claude sessions
+				m.showClaudeSessions = !m.showClaudeSessions
+				_ = m.buildState().Save(m.configDir)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions)
+			case "p":
+				// Toggle paths display mode
+				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
+				_ = m.buildState().Save(m.configDir)
+				return m, nil
 			}
+		case tea.KeyTab:
+			// Toggle worktrees
+			m.worktreesFolded = !m.worktreesFolded
+			m.updateFiltered()
+			_ = m.buildState().Save(m.configDir)
+			return m, nil
 		case tea.KeyCtrlE:
 			// Enter key editing mode
 			if m.cursor < len(m.filtered) {
@@ -1310,6 +1313,10 @@ func (m sessionizeModel) View() string {
 		// Get Git status string
 		extStatus := project.GetExtendedGitStatus()
 		changesStr := formatChanges(project.GetGitStatus(), extStatus)
+		var branchName string
+		if m.showBranch && extStatus != nil && extStatus.StatusInfo != nil {
+			branchName = extStatus.StatusInfo.Branch
+		}
 
 		// Prepare display elements
 		prefix := "  "
@@ -1411,6 +1418,11 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 
+			if branchName != "" {
+				mutedSelectedStyle := core_theme.DefaultTheme.Selected.Copy().Foreground(core_theme.DefaultTheme.Muted.GetForeground())
+				line += " " + mutedSelectedStyle.Render("(" + branchName + ")")
+			}
+
 			// Add path based on display mode (0=none, 1=compact, 2=full)
 			if m.pathDisplayMode > 0 {
 				displayPath := project.Path
@@ -1477,6 +1489,10 @@ func (m sessionizeModel) View() string {
 			}
 			line += nameStyle.Render(displayName)
 
+			if branchName != "" {
+				line += " " + core_theme.DefaultTheme.Muted.Render("(" + branchName + ")")
+			}
+
 			// Add path based on display mode (0=none, 1=compact, 2=full)
 			if m.pathDisplayMode > 0 {
 				displayPath := project.Path
@@ -1529,6 +1545,13 @@ func (m sessionizeModel) View() string {
 		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
 	}
 
+	branchToggle := " b:branch "
+	if m.showBranch {
+		branchToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		branchToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
 	claudeToggle := " c:claude "
 	if m.showClaudeSessions {
 		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
@@ -1546,7 +1569,7 @@ func (m sessionizeModel) View() string {
 		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("full")
 	}
 
-	togglesDisplay := fmt.Sprintf("[%s%s%s]", gitToggle, claudeToggle, pathsToggle)
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s]", gitToggle, branchToggle, claudeToggle, pathsToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))

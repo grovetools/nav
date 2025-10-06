@@ -12,6 +12,7 @@ type SessionizerState struct {
 	FocusedEcosystemPath string `yaml:"focused_ecosystem_path,omitempty"`
 	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
 	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
+	ShowBranch           *bool  `yaml:"show_branch,omitempty"`
 	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
 	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
 }
