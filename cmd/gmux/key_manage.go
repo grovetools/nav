@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,8 +10,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
@@ -21,36 +20,31 @@ import (
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
-
-// projectItem implements list.Item
-type projectItem struct {
-	path string
-	name string
-}
-
-func (i projectItem) Title() string       { return i.name }
-func (i projectItem) Description() string { return i.path }
-func (i projectItem) FilterValue() string { return i.name + " " + i.path }
 
 // Message for enriched data of mapped projects
 type enrichedProjectsMsg struct {
 	projects []*workspace.ProjectInfo
 }
 
-// Message for all discoverable projects for the fuzzy finder
-type allProjectsMsg struct {
-	projects []manager.DiscoveredProject
+// Message for CWD project enrichment
+type cwdProjectEnrichedMsg struct {
+	project *workspace.ProjectInfo
+}
+
+// Message for Claude session status updates
+type claudeSessionsMsg struct {
+	statusMap   map[string]string // path -> status
+	durationMap map[string]string // path -> duration
 }
 
 var keyManageCmd = &cobra.Command{
 	Use:     "manage",
 	Aliases: []string{"m"},
 	Short:   "Interactively manage tmux session key mappings",
-	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, e/enter to map with fuzzy search, and space to unmap. Changes are auto-saved on exit.`,
+	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, 'e' to map CWD to an empty key, and space to unmap. Changes are auto-saved on exit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
@@ -68,8 +62,14 @@ var keyManageCmd = &cobra.Command{
 			return nil
 		}
 
+		// Detect current working directory
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
+
 		// Create the interactive model
-		m := newManageModel(sessions, mgr)
+		m := newManageModel(sessions, mgr, cwd)
 
 		// Run the interactive program
 		p := tea.NewProgram(m, tea.WithAltScreen())
@@ -101,17 +101,14 @@ type manageModel struct {
 	help     help.Model
 	quitting bool
 	message  string
-	// Fuzzy search state
-	searching       bool
-	searchInput     textinput.Model
-	projectList     list.Model
-	projects        []manager.DiscoveredProject
-	filteredProj    []manager.DiscoveredProject
-	selectedKey     string
-	projectsLoading bool
+	// CWD state
+	cwdPath          string
+	cwdProject       *workspace.ProjectInfo
 	// Enriched data
 	enrichedProjects map[string]*workspace.ProjectInfo // Caches enriched data by path
-	allProjects      []manager.DiscoveredProject       // Caches all discoverable projects
+	// Claude session data
+	claudeStatusMap   map[string]string // path -> claude status
+	claudeDurationMap map[string]string // path -> claude duration
 }
 
 // Key bindings
@@ -167,7 +164,7 @@ var keys = keyMap{
 	),
 	Edit: key.NewBinding(
 		key.WithKeys("e"),
-		key.WithHelp("e", "edit/map with fuzzy search"),
+		key.WithHelp("e", "map CWD"),
 	),
 	Open: key.NewBinding(
 		key.WithKeys("o", "enter"),
@@ -183,50 +180,30 @@ var keys = keyMap{
 	),
 }
 
-func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager) manageModel {
-	// Initialize search input
-	ti := textinput.New()
-	ti.Placeholder = "Type to filter projects..."
-	ti.CharLimit = 100
-	ti.Width = 50
-
-	// Create list for projects with custom delegate
-	delegate := list.NewDefaultDelegate()
-	delegate.SetHeight(2)
-	delegate.SetSpacing(0)
-
-	items := make([]list.Item, 0)
-	l := list.New(items, delegate, 60, 15)
-	l.Title = "Select a project"
-	l.SetShowHelp(false)
-	l.SetShowStatusBar(false)
-	l.SetFilteringEnabled(false) // We'll do our own filtering
-	l.Styles.Title = titleStyle
-
+func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string) manageModel {
 	helpModel := help.NewBuilder().
 		WithKeys(keys).
 		WithTitle("Session Key Manager - Help").
 		Build()
 
 	return manageModel{
-		cursor:           0,
-		sessions:         sessions,
-		manager:          mgr,
-		keys:             keys,
-		help:             helpModel,
-		searchInput:      ti,
-		projectList:      l,
-		projects:         []manager.DiscoveredProject{},
-		projectsLoading:  true,
-		enrichedProjects: make(map[string]*workspace.ProjectInfo),
-		allProjects:      []manager.DiscoveredProject{},
+		cursor:            0,
+		sessions:          sessions,
+		manager:           mgr,
+		keys:              keys,
+		help:              helpModel,
+		cwdPath:           cwdPath,
+		enrichedProjects:  make(map[string]*workspace.ProjectInfo),
+		claudeStatusMap:   make(map[string]string),
+		claudeDurationMap: make(map[string]string),
 	}
 }
 
 func (m manageModel) Init() tea.Cmd {
 	return tea.Batch(
 		enrichMappedProjectsCmd(m.sessions),
-		fetchAllProjectsCmd(m.manager),
+		enrichCwdProjectCmd(m.cwdPath),
+		fetchClaudeSessionsForKeyManageCmd(),
 	)
 }
 
@@ -261,95 +238,81 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 	}
 }
 
-// fetchAllProjectsCmd fetches all discoverable projects without enrichment
-func fetchAllProjectsCmd(mgr *tmux.Manager) tea.Cmd {
+// enrichCwdProjectCmd fetches and enriches the CWD project
+func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 	return func() tea.Msg {
-		enrichOpts := buildEnrichmentOptions(false, false, false)
-		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
-
-		// Sort by access history
-		if history, err := mgr.GetAccessHistory(); err == nil {
-			projects = history.SortProjectsByAccess(projects)
+		// Get project info for CWD
+		projInfo, err := workspace.GetProjectByPath(cwdPath)
+		if err != nil {
+			// CWD is not a valid project
+			return cwdProjectEnrichedMsg{project: nil}
 		}
 
-		return allProjectsMsg{projects: projects}
+		// Enrich with Git status only (Claude sessions fetched separately)
+		ctx := context.Background()
+		enrichOpts := &workspace.EnrichmentOptions{
+			FetchGitStatus:      true,
+			FetchClaudeSessions: false,
+		}
+		workspace.EnrichProjects(ctx, []*workspace.ProjectInfo{projInfo}, enrichOpts)
+
+		return cwdProjectEnrichedMsg{project: projInfo}
+	}
+}
+
+// claudeSessionInfo matches the structure from grove-hooks
+type claudeSessionInfo struct {
+	WorkingDirectory      string `json:"working_directory"`
+	Status                string `json:"status"`
+	StateDuration         string `json:"state_duration"`
+	StateDurationSeconds  int    `json:"state_duration_seconds"`
+}
+
+// fetchClaudeSessionsForKeyManageCmd fetches Claude session data from grove-hooks
+func fetchClaudeSessionsForKeyManageCmd() tea.Cmd {
+	return func() tea.Msg {
+		statusMap := make(map[string]string)
+		durationMap := make(map[string]string)
+
+		// Try to find grove-hooks
+		groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
+		var cmd *exec.Cmd
+		if _, err := os.Stat(groveHooksPath); err == nil {
+			cmd = exec.Command(groveHooksPath, "sessions", "list", "--active", "--json")
+		} else {
+			cmd = exec.Command("grove-hooks", "sessions", "list", "--active", "--json")
+		}
+
+		output, err := cmd.Output()
+		if err != nil {
+			// grove-hooks not available or no sessions
+			return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
+		}
+
+		var sessions []claudeSessionInfo
+		if err := json.Unmarshal(output, &sessions); err != nil {
+			return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
+		}
+
+		// Build maps by clean path (case-insensitive on macOS)
+		for _, session := range sessions {
+			cleanPath := filepath.Clean(session.WorkingDirectory)
+			// Use lowercase for case-insensitive matching on macOS
+			normalizedPath := strings.ToLower(cleanPath)
+			statusMap[normalizedPath] = session.Status
+			durationMap[normalizedPath] = session.StateDuration
+		}
+
+		return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
 	}
 }
 
 func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
-	// Handle search mode
-	if m.searching {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.Type {
-			case tea.KeyEsc, tea.KeyCtrlC:
-				m.searching = false
-				m.searchInput.SetValue("")
-				return m, nil
-			case tea.KeyEnter:
-				// Select the project
-				if i, ok := m.projectList.SelectedItem().(projectItem); ok {
-					// Update the session with the selected project
-					if m.cursor < len(m.sessions) {
-						m.sessions[m.cursor].Path = i.path
-						m.sessions[m.cursor].Repository = ""
-						m.sessions[m.cursor].Description = ""
-						m.message = fmt.Sprintf("Mapped %s to %s", m.selectedKey, i.name)
-					}
-				}
-				m.searching = false
-				m.searchInput.SetValue("")
-				return m, nil
-			}
-		}
-
-		// Update search input
-		var inputCmd tea.Cmd
-		m.searchInput, inputCmd = m.searchInput.Update(msg)
-		cmds = append(cmds, inputCmd)
-
-		// Filter projects based on search
-		searchTerm := strings.ToLower(m.searchInput.Value())
-		items := make([]list.Item, 0)
-
-		// Get existing paths to exclude
-		existingPaths := make(map[string]bool)
-		for _, s := range m.sessions {
-			if s.Path != "" {
-				absPath, _ := filepath.Abs(expandPath(s.Path))
-				existingPaths[absPath] = true
-			}
-		}
-
-		for _, p := range m.allProjects {
-			absPath, _ := filepath.Abs(expandPath(p.Path))
-			if existingPaths[absPath] {
-				continue // Skip already mapped projects
-			}
-
-			if searchTerm == "" ||
-				strings.Contains(strings.ToLower(p.Name), searchTerm) ||
-				strings.Contains(strings.ToLower(p.Path), searchTerm) {
-				items = append(items, projectItem{path: p.Path, name: p.Name})
-			}
-		}
-
-		m.projectList.SetItems(items)
-
-		// Update list size and items
-		m.projectList.SetWidth(min(80, m.help.Width-4))
-		m.projectList.SetHeight(min(20, len(items)+2))
-
-		var listCmd tea.Cmd
-		m.projectList, listCmd = m.projectList.Update(msg)
-		cmds = append(cmds, listCmd)
-
-		return m, tea.Batch(cmds...)
-	}
-
 	switch msg := msg.(type) {
+	case cwdProjectEnrichedMsg:
+		m.cwdProject = msg.project
+		return m, nil
+
 	case enrichedProjectsMsg:
 		// Populate enriched projects map
 		for _, proj := range msg.projects {
@@ -358,14 +321,9 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case allProjectsMsg:
-		m.allProjects = msg.projects
-		m.projectsLoading = false
-		return m, nil
-
-	case projectsUpdateMsg:
-		m.projects = msg.projects
-		m.projectsLoading = false
+	case claudeSessionsMsg:
+		m.claudeStatusMap = msg.statusMap
+		m.claudeDurationMap = msg.durationMap
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -428,39 +386,47 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.Edit):
-			if m.projectsLoading {
-				m.message = "Projects are still loading, please wait..."
+			// Map CWD to the selected empty key slot
+			if m.cursor >= len(m.sessions) {
 				return m, nil
 			}
-			// Enter fuzzy search mode
-			if m.cursor < len(m.sessions) {
-				m.selectedKey = m.sessions[m.cursor].Key
-				m.searching = true
-				m.searchInput.Focus()
 
-				// Initialize project list using pre-fetched allProjects
-				items := make([]list.Item, 0)
-				existingPaths := make(map[string]bool)
-				for _, s := range m.sessions {
-					if s.Path != "" {
-						absPath, _ := filepath.Abs(expandPath(s.Path))
-						existingPaths[absPath] = true
-					}
-				}
+			session := &m.sessions[m.cursor]
 
-				for _, p := range m.allProjects {
-					absPath, _ := filepath.Abs(expandPath(p.Path))
-					if existingPaths[absPath] {
-						continue
-					}
-					items = append(items, projectItem{path: p.Path, name: p.Name})
-				}
-				m.projectList.SetItems(items)
-				m.projectList.SetWidth(60)
-				m.projectList.SetHeight(min(15, len(items)+2))
-
-				return m, textinput.Blink
+			// Check if the key slot is already mapped
+			if session.Path != "" {
+				m.message = fmt.Sprintf("Key '%s' is already mapped. Clear it first with 'd' or space.", session.Key)
+				return m, nil
 			}
+
+			// Check if CWD was successfully resolved
+			if m.cwdProject == nil {
+				m.message = "Current directory is not a valid workspace/project"
+				return m, nil
+			}
+
+			// Check if CWD is already mapped to another key
+			cwdCleanPath := filepath.Clean(m.cwdProject.Path)
+			for _, s := range m.sessions {
+				if s.Path != "" {
+					sCleanPath := filepath.Clean(s.Path)
+					if sCleanPath == cwdCleanPath {
+						m.message = fmt.Sprintf("CWD is already mapped to key '%s'", s.Key)
+						return m, nil
+					}
+				}
+			}
+
+			// Map the CWD to this key
+			session.Path = m.cwdProject.Path
+			session.Repository = ""
+			session.Description = ""
+
+			// Add to enriched projects map for immediate display
+			m.enrichedProjects[cwdCleanPath] = m.cwdProject
+
+			m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, m.cwdProject.Name)
+			return m, nil
 
 		case key.Matches(msg, m.keys.Open):
 			// Open/switch to the session
@@ -577,24 +543,6 @@ func (m manageModel) View() string {
 
 	var b strings.Builder
 
-	// Show fuzzy search interface if searching
-	if m.searching {
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Select Project for Key '%s'", m.selectedKey)) + "\n\n")
-		b.WriteString("Search: " + m.searchInput.View() + "\n\n")
-
-		// Show item count
-		itemCount := len(m.projectList.Items())
-		if itemCount == 0 {
-			b.WriteString(dimStyle.Render("No matching projects found") + "\n")
-		} else {
-			b.WriteString(fmt.Sprintf("Found %d projects:\n\n", itemCount))
-			b.WriteString(m.projectList.View())
-		}
-
-		b.WriteString("\n" + dimStyle.Render("↑↓ Navigate • Enter to select • Esc to cancel") + "\n")
-		return b.String()
-	}
-
 	// Normal table view
 	b.WriteString(titleStyle.Render("Manage Session Keys") + "\n\n")
 
@@ -662,12 +610,16 @@ func (m manageModel) View() string {
 						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
 					}
 				}
-
-				// Format Claude status (with colors)
-				claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
+			}
+
+			// Format Claude status (with colors) - check claudeStatusMap
+			// Use lowercase for case-insensitive matching on macOS
+			normalizedPath := strings.ToLower(cleanPath)
+			if status, found := m.claudeStatusMap[normalizedPath]; found {
+				claudeStatus = formatClaudeStatusFromMap(status, m.claudeDurationMap[normalizedPath])
 			}
 		}
 
@@ -704,15 +656,15 @@ func min(a, b int) int {
 	return b
 }
 
-// formatClaudeStatus formats the Claude session status into a styled string
-func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
-	if session == nil {
+// formatClaudeStatusFromMap formats Claude status from the status and duration maps
+func formatClaudeStatusFromMap(status, duration string) string {
+	if status == "" {
 		return ""
 	}
 
 	statusSymbol := ""
 	var statusColor lipgloss.Color
-	switch session.Status {
+	switch status {
 	case "running":
 		statusSymbol = "▶"
 		statusColor = core_theme.DefaultColors.Green
@@ -731,10 +683,19 @@ func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
 
 	statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
 
-	if session.Duration != "" {
-		return statusStyled + " " + session.Duration
+	if duration != "" {
+		return statusStyled + " " + duration
 	}
 	return statusStyled
+}
+
+// formatClaudeStatus formats the Claude session status into a styled string
+func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
+	if session == nil {
+		return ""
+	}
+
+	return formatClaudeStatusFromMap(session.Status, session.Duration)
 }
 
 // formatGitStatusPlain formats Git status without ANSI codes for table display
