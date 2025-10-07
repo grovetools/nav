@@ -59,6 +59,9 @@ type sessionizeModel struct {
 	showClaudeSessions bool // Whether to fetch and show Claude sessions
 	showNoteCounts     bool // Whether to fetch and show note counts
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
+
+	// Filter mode
+	filterDirty bool // Whether to filter to only projects with dirty Git status
 }
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
@@ -357,6 +360,15 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = m.buildState().Save(m.configDir)
 			}
 			return m, nil
+
+		case key.Matches(msg, sessionizeKeys.FilterDirty):
+			// Toggle dirty filter
+			m.filterDirty = !m.filterDirty
+			// Clear text filter to make them mutually exclusive
+			m.filterInput.SetValue("")
+			m.updateFiltered()
+			m.cursor = 0
+			return m, nil
 		}
 
 		// Handle key editing mode
@@ -608,6 +620,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "/":
 				// Focus filter input for search
+				// Clear dirty filter to make them mutually exclusive
+				if m.filterDirty {
+					m.filterDirty = false
+				}
 				m.filterInput.Focus()
 				return m, textinput.Blink
 			case "@":
@@ -712,6 +728,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case tea.KeyEsc, tea.KeyCtrlC:
+			// If dirty filter is active, clear it first
+			if m.filterDirty {
+				m.filterDirty = false
+				m.updateFiltered()
+				m.cursor = 0
+				return m, nil
+			}
 			return m, tea.Quit
 		default:
 			// Handle other keys normally
@@ -923,6 +946,36 @@ func (m *sessionizeModel) updateFiltered() {
 	} else {
 		// No focus, use all projects
 		projectsToFilter = m.projects
+	}
+
+	// Apply dirty filter if active
+	if m.filterDirty {
+		pathsToKeep := make(map[string]bool)
+
+		// Iterate over all projects to find dirty ones and their ancestors
+		for _, p := range m.projects {
+			if p.GetGitStatus() != nil && p.GetGitStatus().IsDirty {
+				// Mark this project
+				pathsToKeep[p.Path] = true
+
+				// Mark ancestors to preserve hierarchy
+				if p.ParentPath != "" {
+					pathsToKeep[p.ParentPath] = true
+				}
+				if p.ParentEcosystemPath != "" {
+					pathsToKeep[p.ParentEcosystemPath] = true
+				}
+			}
+		}
+
+		// Filter projectsToFilter to only include paths we want to keep
+		var filtered []manager.DiscoveredProject
+		for _, p := range projectsToFilter {
+			if pathsToKeep[p.Path] {
+				filtered = append(filtered, p)
+			}
+		}
+		projectsToFilter = filtered
 	}
 
 	// A group is identified by the parent repo's path.
@@ -1177,6 +1230,9 @@ func (m sessionizeModel) View() string {
 
 	// Header with filter input (always at top)
 	var header strings.Builder
+	if m.filterDirty {
+		header.WriteString(core_theme.DefaultTheme.Warning.Render("[DIRTY] "))
+	}
 	if m.ecosystemPickerMode {
 		header.WriteString(core_theme.DefaultTheme.Info.Render("[Select Ecosystem to Focus]"))
 		header.WriteString(" ")

@@ -20,6 +20,7 @@ type sessionizeKeyMap struct {
 	ToggleClaude    key.Binding
 	ToggleNoteCounts key.Binding
 	TogglePaths     key.Binding
+	FilterDirty     key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -58,6 +59,7 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.ToggleClaude,
 			k.ToggleNoteCounts,
 			k.TogglePaths,
+			k.FilterDirty,
 		},
 	}
 }
@@ -111,5 +113,9 @@ var sessionizeKeys = sessionizeKeyMap{
 	TogglePaths: key.NewBinding(
 		key.WithKeys("p"),
 		key.WithHelp("p", "toggle full paths"),
+	),
+	FilterDirty: key.NewBinding(
+		key.WithKeys("D"),
+		key.WithHelp("D", "filter dirty"),
 	),
 }
