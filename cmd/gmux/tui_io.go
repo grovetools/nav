@@ -36,6 +36,9 @@ type claudeSessionUpdateMsg struct {
 // tickMsg is sent periodically to refresh git status
 type tickMsg time.Time
 
+// spinnerTickMsg is sent frequently to animate the spinner
+type spinnerTickMsg time.Time
+
 // projectsUpdateMsg is sent when the list of discovered projects is updated
 type projectsUpdateMsg struct {
 	projects []manager.DiscoveredProject
@@ -68,6 +71,13 @@ func getWorktreeParent(path string) string {
 func tickCmd() tea.Cmd {
 	return tea.Tick(10*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
+	})
+}
+
+// spinnerTickCmd returns a command that sends a spinner tick message quickly (for animation)
+func spinnerTickCmd() tea.Cmd {
+	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg {
+		return spinnerTickMsg(t)
 	})
 }
 

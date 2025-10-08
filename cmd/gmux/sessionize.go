@@ -65,21 +65,62 @@ var sessionizeCmd = &cobra.Command{
 			// If config is not found, we'll proceed to first run setup.
 		}
 
-		// Use selective enrichment to only fetch Git status for active sessions
-		enrichOpts := buildInitialEnrichmentOptions()
-		projects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
-		if err != nil {
-			// Check if the error is due to missing config file or no enabled search paths
-			if os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found") {
-				// Interactive first-run setup
-				return handleFirstRunSetup(configDir, mgr)
+		// Try to load cached projects first for instant startup
+		var projects []manager.SessionizeProject
+		usedCache := false
+		if cache, err := manager.LoadProjectCache(configDir); err == nil && cache != nil && len(cache.Projects) > 0 {
+			// Convert CachedProject back to SessionizeProject
+			projects = make([]manager.SessionizeProject, len(cache.Projects))
+			for i, cached := range cache.Projects {
+				projects[i] = manager.SessionizeProject{
+					ProjectInfo: workspace.ProjectInfo{
+						Name:                cached.Name,
+						Path:                cached.Path,
+						ParentPath:          cached.ParentPath,
+						IsWorktree:          cached.IsWorktree,
+						WorktreeName:        cached.WorktreeName,
+						ParentEcosystemPath: cached.ParentEcosystemPath,
+						IsEcosystem:         cached.IsEcosystem,
+						GitStatus:           cached.GitStatus, // Now properly typed
+						ClaudeSession:       cached.ClaudeSession,
+						NoteCounts:          cached.NoteCounts,
+					},
+				}
 			}
-			return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
+			usedCache = true
 		}
 
-		// Sort by access history
-		if history, err := mgr.GetAccessHistory(); err == nil {
-			projects = history.SortProjectsByAccess(projects)
+		// If no cache or cache load failed, fetch projects normally
+		if len(projects) == 0 {
+			// Use selective enrichment to only fetch Git status for active sessions
+			enrichOpts := buildInitialEnrichmentOptions()
+			fetchedProjects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
+			if err != nil {
+				// Check if the error is due to missing config file or no enabled search paths
+				if os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found") {
+					// Interactive first-run setup
+					return handleFirstRunSetup(configDir, mgr)
+				}
+				return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
+			}
+
+			// Convert to SessionizeProject
+			projects = make([]manager.SessionizeProject, len(fetchedProjects))
+			for i := range fetchedProjects {
+				projects[i] = manager.SessionizeProject{ProjectInfo: fetchedProjects[i].ProjectInfo}
+			}
+
+			// Sort by access history
+			if history, err := mgr.GetAccessHistory(); err == nil {
+				discoveredProjects := make([]manager.DiscoveredProject, len(projects))
+				for i := range projects {
+					discoveredProjects[i] = manager.DiscoveredProject(projects[i])
+				}
+				sorted := history.SortProjectsByAccess(discoveredProjects)
+				for i := range sorted {
+					projects[i] = manager.SessionizeProject{ProjectInfo: sorted[i].ProjectInfo}
+				}
+			}
 		}
 
 		if len(projects) == 0 {
@@ -105,8 +146,14 @@ var sessionizeCmd = &cobra.Command{
 			searchPaths = []string{}
 		}
 
+		// Convert to DiscoveredProject for the model
+		discoveredProjects := make([]manager.DiscoveredProject, len(projects))
+		for i := range projects {
+			discoveredProjects[i] = manager.DiscoveredProject(projects[i])
+		}
+
 		// Create the interactive model
-		m := newSessionizeModel(projects, searchPaths, mgr, configDir)
+		m := newSessionizeModel(discoveredProjects, searchPaths, mgr, configDir, usedCache)
 
 		// If a focused project was loaded from state, update the filtered list
 		if m.focusedProject != nil {

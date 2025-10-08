@@ -21,6 +21,7 @@ type sessionizeKeyMap struct {
 	ToggleNoteCounts key.Binding
 	TogglePaths     key.Binding
 	FilterDirty     key.Binding
+	ToggleView      key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -54,6 +55,7 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.FocusEcosystem,
 			k.ClearFocus,
 			k.ToggleWorktrees,
+			k.ToggleView,
 			k.ToggleGitStatus,
 			k.ToggleBranch,
 			k.ToggleClaude,
@@ -117,5 +119,9 @@ var sessionizeKeys = sessionizeKeyMap{
 	FilterDirty: key.NewBinding(
 		key.WithKeys("D"),
 		key.WithHelp("D", "filter dirty"),
+	),
+	ToggleView: key.NewBinding(
+		key.WithKeys("t"),
+		key.WithHelp("t", "toggle table view"),
 	),
 }
