@@ -187,3 +187,15 @@ func fetchKeyMapCmd(mgr *tmux.Manager) tea.Cmd {
 		return keyMapUpdateMsg{keyMap: keyMap, sessions: sessions}
 	}
 }
+
+// statusMsg represents a temporary status message to show to the user
+type statusMsg struct {
+	message string
+}
+
+// clearStatusCmd returns a command that clears the status message after a delay
+func clearStatusCmd(duration time.Duration) tea.Cmd {
+	return tea.Tick(duration, func(t time.Time) tea.Msg {
+		return statusMsg{message: ""}
+	})
+}

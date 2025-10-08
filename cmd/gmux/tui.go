@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -62,6 +63,10 @@ type sessionizeModel struct {
 
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
+
+	// Status message
+	statusMessage string
+	statusTimeout time.Time
 }
 func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
@@ -340,6 +345,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
 		)
+
+	case statusMsg:
+		m.statusMessage = msg.message
+		if msg.message == "" {
+			m.statusTimeout = time.Time{}
+		}
+		return m, nil
 
 	case tea.KeyMsg:
 		// If help is visible, it consumes all key presses
@@ -692,13 +704,23 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						cmd = exec.Command("xsel", "--clipboard", "--input")
 					} else {
 						// No clipboard utility found
-						return m, nil
+						m.statusMessage = "No clipboard utility found"
+						m.statusTimeout = time.Now().Add(2 * time.Second)
+						return m, clearStatusCmd(2 * time.Second)
 					}
 				}
 
 				if cmd != nil {
 					cmd.Stdin = strings.NewReader(project.Path)
-					_ = cmd.Run()
+					if err := cmd.Run(); err == nil {
+						m.statusMessage = "Path copied to clipboard"
+						m.statusTimeout = time.Now().Add(2 * time.Second)
+						return m, clearStatusCmd(2 * time.Second)
+					} else {
+						m.statusMessage = "Failed to copy path"
+						m.statusTimeout = time.Now().Add(2 * time.Second)
+						return m, clearStatusCmd(2 * time.Second)
+					}
 				}
 			}
 		case tea.KeyEnter:
@@ -1239,6 +1261,11 @@ func (m sessionizeModel) View() string {
 	} else if m.focusedProject != nil {
 		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("[Focus: %s]", m.focusedProject.Name))
 		header.WriteString(focusIndicator)
+		header.WriteString(" ")
+	}
+	// Show status message if active
+	if m.statusMessage != "" && time.Now().Before(m.statusTimeout) {
+		header.WriteString(core_theme.DefaultTheme.Success.Render("[" + m.statusMessage + "]"))
 		header.WriteString(" ")
 	}
 	header.WriteString(m.filterInput.View())
