@@ -403,6 +403,14 @@ func fetchClaudeSessionsForKeyManageCmd() tea.Cmd {
 			normalizedPath := strings.ToLower(cleanPath)
 			statusMap[normalizedPath] = session.Status
 			durationMap[normalizedPath] = session.StateDuration
+
+			// If this is a worktree, also store by the parent path
+			// so the session shows up for the parent ecosystem/project
+			if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
+				normalizedParentPath := strings.ToLower(filepath.Clean(parentPath))
+				statusMap[normalizedParentPath] = session.Status
+				durationMap[normalizedParentPath] = session.StateDuration
+			}
 		}
 
 		return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
