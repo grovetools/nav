@@ -123,16 +123,16 @@ func formatPlanStats(stats *workspace.PlanStats) string {
 		// Show job stats for active plan
 		var jobStats []string
 		if stats.Running > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐%d", stats.Running)))
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
 		}
 		if stats.Pending > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○%d", stats.Pending)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○ %d", stats.Pending)))
 		}
 		if stats.Completed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("●%d", stats.Completed)))
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
 		}
 		if stats.Failed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗%d", stats.Failed)))
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
 		}
 
 		if len(jobStats) > 0 {
