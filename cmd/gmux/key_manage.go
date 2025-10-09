@@ -602,8 +602,19 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 					if targetPos >= 0 {
-						// Swap sessions
-						m.sessions[m.cursor], m.sessions[targetPos] = m.sessions[targetPos], m.sessions[m.cursor]
+						// Swap only path-related fields, keep keys fixed
+						currentPath := m.sessions[m.cursor].Path
+						currentRepo := m.sessions[m.cursor].Repository
+						currentDesc := m.sessions[m.cursor].Description
+
+						m.sessions[m.cursor].Path = m.sessions[targetPos].Path
+						m.sessions[m.cursor].Repository = m.sessions[targetPos].Repository
+						m.sessions[m.cursor].Description = m.sessions[targetPos].Description
+
+						m.sessions[targetPos].Path = currentPath
+						m.sessions[targetPos].Repository = currentRepo
+						m.sessions[targetPos].Description = currentDesc
+
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved up"
@@ -631,8 +642,19 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 
 					if targetPos < len(m.sessions) {
-						// Swap sessions
-						m.sessions[m.cursor], m.sessions[targetPos] = m.sessions[targetPos], m.sessions[m.cursor]
+						// Swap only path-related fields, keep keys fixed
+						currentPath := m.sessions[m.cursor].Path
+						currentRepo := m.sessions[m.cursor].Repository
+						currentDesc := m.sessions[m.cursor].Description
+
+						m.sessions[m.cursor].Path = m.sessions[targetPos].Path
+						m.sessions[m.cursor].Repository = m.sessions[targetPos].Repository
+						m.sessions[m.cursor].Description = m.sessions[targetPos].Description
+
+						m.sessions[targetPos].Path = currentPath
+						m.sessions[targetPos].Repository = currentRepo
+						m.sessions[targetPos].Description = currentDesc
+
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved down"
