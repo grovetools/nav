@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -20,6 +21,7 @@ import (
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
@@ -68,8 +70,30 @@ var keyManageCmd = &cobra.Command{
 			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
 
+		// Try to load cached enriched data for instant startup
+		enrichedProjects := make(map[string]*workspace.ProjectInfo)
+		usedCache := false
+		if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
+			// Convert cached projects to ProjectInfo
+			for path, cached := range cache.EnrichedProjects {
+				enrichedProjects[path] = &workspace.ProjectInfo{
+					Name:                cached.Name,
+					Path:                cached.Path,
+					ParentPath:          cached.ParentPath,
+					IsWorktree:          cached.IsWorktree,
+					WorktreeName:        cached.WorktreeName,
+					ParentEcosystemPath: cached.ParentEcosystemPath,
+					IsEcosystem:         cached.IsEcosystem,
+					GitStatus:           cached.GitStatus,
+					ClaudeSession:       cached.ClaudeSession,
+					NoteCounts:          cached.NoteCounts,
+				}
+			}
+			usedCache = true
+		}
+
 		// Create the interactive model
-		m := newManageModel(sessions, mgr, cwd)
+		m := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
 
 		// Run the interactive program
 		p := tea.NewProgram(m, tea.WithAltScreen())
@@ -109,6 +133,13 @@ type manageModel struct {
 	// Claude session data
 	claudeStatusMap   map[string]string // path -> claude status
 	claudeDurationMap map[string]string // path -> claude duration
+	// Navigation
+	digitBuffer string
+	setKeyMode  bool
+	// Loading state
+	isLoading    bool
+	usedCache    bool
+	spinnerFrame int
 }
 
 // Key bindings
@@ -118,6 +149,7 @@ type keyMap struct {
 	Down   key.Binding
 	Toggle key.Binding
 	Edit   key.Binding
+	SetKey key.Binding
 	Open   key.Binding
 	Delete key.Binding
 	Save   key.Binding
@@ -134,11 +166,13 @@ func (k keyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
 			k.Up,
 			k.Down,
+			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "Jump to row")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Switch to session")),
 		},
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
 			k.Edit,
+			k.SetKey,
 			k.Toggle,
 			k.Delete,
 			k.Save,
@@ -166,6 +200,10 @@ var keys = keyMap{
 		key.WithKeys("e"),
 		key.WithHelp("e", "map CWD"),
 	),
+	SetKey: key.NewBinding(
+		key.WithKeys("h"),
+		key.WithHelp("h", "set key mode"),
+	),
 	Open: key.NewBinding(
 		key.WithKeys("o", "enter"),
 		key.WithHelp("enter/o", "switch to session"),
@@ -180,11 +218,17 @@ var keys = keyMap{
 	),
 }
 
-func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string) manageModel {
+func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*workspace.ProjectInfo, usedCache bool) manageModel {
 	helpModel := help.NewBuilder().
 		WithKeys(keys).
 		WithTitle("Session Key Manager - Help").
 		Build()
+
+	// Use cached enriched projects if provided, otherwise start with empty map
+	enrichedProjects := cachedEnrichedProjects
+	if enrichedProjects == nil {
+		enrichedProjects = make(map[string]*workspace.ProjectInfo)
+	}
 
 	return manageModel{
 		cursor:            0,
@@ -193,18 +237,27 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		keys:              keys,
 		help:              helpModel,
 		cwdPath:           cwdPath,
-		enrichedProjects:  make(map[string]*workspace.ProjectInfo),
+		enrichedProjects:  enrichedProjects,
 		claudeStatusMap:   make(map[string]string),
 		claudeDurationMap: make(map[string]string),
+		usedCache:         usedCache,
+		isLoading:         usedCache, // Start as loading if we used cache
 	}
 }
 
 func (m manageModel) Init() tea.Cmd {
-	return tea.Batch(
+	cmds := []tea.Cmd{
 		enrichMappedProjectsCmd(m.sessions),
 		enrichCwdProjectCmd(m.cwdPath),
 		fetchClaudeSessionsForKeyManageCmd(),
-	)
+	}
+
+	// Start spinner animation if loading
+	if m.isLoading {
+		cmds = append(cmds, spinnerTickCmd())
+	}
+
+	return tea.Batch(cmds...)
 }
 
 // enrichMappedProjectsCmd fetches enriched data for mapped sessions
@@ -319,11 +372,26 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cleanPath := filepath.Clean(proj.Path)
 			m.enrichedProjects[cleanPath] = proj
 		}
+
+		// Mark loading as complete
+		m.isLoading = false
+
+		// Save cache for next startup
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+
 		return m, nil
 
 	case claudeSessionsMsg:
 		m.claudeStatusMap = msg.statusMap
 		m.claudeDurationMap = msg.durationMap
+		return m, nil
+
+	case spinnerTickMsg:
+		// Update spinner animation frame
+		if m.isLoading {
+			m.spinnerFrame++
+			return m, spinnerTickCmd() // Reschedule next spinner tick
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -335,6 +403,122 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.Toggle() // Any key closes help
 			return m, nil
 		}
+
+		// Handle set key mode
+		if m.setKeyMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.setKeyMode = false
+				m.message = "Set key cancelled."
+			case tea.KeyRunes:
+				input := msg.String()
+				// Check if it's a number (for indexed binding)
+				if num, err := strconv.Atoi(input); err == nil && num > 0 {
+					targetIndex := num - 1
+					if targetIndex < len(m.sessions) {
+						m.mapKeyToCwd(targetIndex)
+					} else {
+						m.message = fmt.Sprintf("Invalid number: %d", num)
+					}
+				} else { // It's a letter for direct key binding
+					targetKey := strings.ToLower(input)
+					targetIndex := -1
+					for i, s := range m.sessions {
+						if s.Key == targetKey {
+							targetIndex = i
+							break
+						}
+					}
+					if targetIndex != -1 {
+						m.mapKeyToCwd(targetIndex)
+					} else {
+						m.message = fmt.Sprintf("Invalid key: %s", targetKey)
+					}
+				}
+			}
+			return m, nil // Consume keypress
+		}
+
+		// Handle numbered navigation - opens session immediately
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			if r := msg.Runes[0]; r >= '0' && r <= '9' {
+				m.digitBuffer += string(r)
+				if len(m.digitBuffer) > 3 { // Cap buffer length
+					m.digitBuffer = m.digitBuffer[len(m.digitBuffer)-3:]
+				}
+
+				num, err := strconv.Atoi(m.digitBuffer)
+				if err == nil && num > 0 {
+					targetIndex := num - 1
+					if targetIndex < len(m.sessions) {
+						// Open the session immediately
+						session := m.sessions[targetIndex]
+						if session.Path != "" {
+							if os.Getenv("TMUX") != "" {
+								// Get project info to generate proper session name
+								projInfo, err := workspace.GetProjectByPath(session.Path)
+								if err != nil {
+									m.message = fmt.Sprintf("Failed to get project info: %v", err)
+									m.digitBuffer = ""
+									return m, nil
+								}
+								sessionName := projInfo.Identifier()
+
+								// Create tmux client
+								client, err := tmuxclient.NewClient()
+								if err != nil {
+									m.message = fmt.Sprintf("Failed to create tmux client: %v", err)
+									m.digitBuffer = ""
+									return m, nil
+								}
+
+								ctx := context.Background()
+
+								// Check if session exists
+								exists, err := client.SessionExists(ctx, sessionName)
+								if err != nil {
+									m.message = fmt.Sprintf("Failed to check session: %v", err)
+									m.digitBuffer = ""
+									return m, nil
+								}
+
+								if !exists {
+									// Session doesn't exist, create it
+									opts := tmuxclient.LaunchOptions{
+										SessionName:      sessionName,
+										WorkingDirectory: session.Path,
+									}
+									if err := client.Launch(ctx, opts); err != nil {
+										m.message = fmt.Sprintf("Failed to create session: %v", err)
+										m.digitBuffer = ""
+										return m, nil
+									}
+								}
+
+								// Switch to the session
+								if err := client.SwitchClient(ctx, sessionName); err != nil {
+									m.message = fmt.Sprintf("Failed to switch to session: %v", err)
+								} else {
+									// Exit the manager after switching
+									m.message = fmt.Sprintf("Switching to %s...", sessionName)
+									m.quitting = true
+									return m, tea.Quit
+								}
+							} else {
+								m.message = "Not in a tmux session"
+							}
+						} else {
+							m.message = "No session mapped to this key"
+						}
+					}
+				}
+				m.digitBuffer = ""
+				return m, nil // Consume digit
+			}
+		}
+
+		// Any non-digit key press resets the buffer
+		m.digitBuffer = ""
 
 		switch {
 		case key.Matches(msg, m.keys.Help):
@@ -384,6 +568,17 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Quit
 				}
 			}
+
+		case key.Matches(msg, m.keys.SetKey):
+			// Enter set key mode
+			if m.cwdProject == nil {
+				m.message = "Current directory is not a valid workspace/project"
+				return m, nil
+			}
+
+			m.setKeyMode = true
+			m.message = "Enter key or number to map CWD to. (ESC to cancel)"
+			return m, nil
 
 		case key.Matches(msg, m.keys.Edit):
 			// Map CWD to the selected empty key slot
@@ -543,14 +738,21 @@ func (m manageModel) View() string {
 
 	var b strings.Builder
 
-	// Normal table view
-	b.WriteString(titleStyle.Render("Manage Session Keys") + "\n\n")
+	// Title with loading indicator to the right (inline without margins)
+	inlineTitleStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Bold(true)
+	b.WriteString(inlineTitleStyle.Render("Session Hotkeys"))
+	if m.isLoading {
+		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+		b.WriteString(" " + core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s Updating...", spinner)))
+	}
+	b.WriteString("\n\n")
 
 	// Build table data
-	headers := []string{"Key", "Ecosystem", "Repository", "Worktree", "Git", "Claude"}
+	headers := []string{"#", "Key", "Repository", "Worktree", "Git", "Claude", "Ecosystem"}
 	var rows [][]string
 
-	for _, s := range m.sessions {
+	for i, s := range m.sessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		claudeStatus := ""
@@ -624,12 +826,13 @@ func (m manageModel) View() string {
 		}
 
 		rows = append(rows, []string{
+			fmt.Sprintf("%d", i+1),
 			s.Key,
-			ecosystem,
 			repository,
 			worktree,
 			gitStatus,
 			claudeStatus,
+			ecosystem,
 		})
 	}
 
@@ -644,9 +847,51 @@ func (m manageModel) View() string {
 		b.WriteString(dimStyle.Render(m.message) + "\n\n")
 	}
 
-	b.WriteString(helpStyle.Render("Press ? for help  •  * = part of ecosystem worktree"))
+	// Show different help text based on mode
+	if m.setKeyMode {
+		b.WriteString(helpStyle.Render("SET KEY MODE: Press key or number to map CWD. ESC to cancel."))
+	} else {
+		b.WriteString(helpStyle.Render("Press ? for help  •  * = part of ecosystem worktree"))
+	}
 
 	return b.String()
+}
+
+// mapKeyToCwd maps the CWD to the target key index
+func (m *manageModel) mapKeyToCwd(targetIndex int) {
+	if targetIndex < 0 || targetIndex >= len(m.sessions) {
+		return
+	}
+
+	targetSession := &m.sessions[targetIndex]
+	cwdCleanPath := filepath.Clean(m.cwdProject.Path)
+
+	// Find and clear any pre-existing mapping for the CWD path
+	for i := range m.sessions {
+		if m.sessions[i].Path != "" {
+			sessionCleanPath := filepath.Clean(m.sessions[i].Path)
+			if sessionCleanPath == cwdCleanPath {
+				m.sessions[i].Path = ""
+				m.sessions[i].Repository = ""
+				m.sessions[i].Description = ""
+				break
+			}
+		}
+	}
+
+	// Update the target session with CWD
+	targetSession.Path = m.cwdProject.Path
+	targetSession.Repository = ""
+	targetSession.Description = ""
+
+	// Add to enriched projects map for immediate UI refresh
+	m.enrichedProjects[cwdCleanPath] = m.cwdProject
+
+	// Exit set key mode
+	m.setKeyMode = false
+
+	// Set success message
+	m.message = fmt.Sprintf("Mapped key '%s' to '%s'", targetSession.Key, m.cwdProject.Name)
 }
 
 func min(a, b int) int {

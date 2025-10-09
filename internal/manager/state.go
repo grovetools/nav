@@ -145,3 +145,73 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 	cachePath := filepath.Join(gmuxDir, "cache.json")
 	return os.WriteFile(cachePath, data, 0644)
 }
+
+// KeyManageCache holds cached enriched project data for key manage
+type KeyManageCache struct {
+	EnrichedProjects map[string]CachedProject `json:"enriched_projects"` // path -> cached project
+	Timestamp        time.Time                `json:"timestamp"`
+}
+
+// LoadKeyManageCache loads the cached key manage data from ~/.grove/gmux/km-cache.json
+func LoadKeyManageCache(configDir string) (*KeyManageCache, error) {
+	cachePath := filepath.Join(configDir, "gmux", "km-cache.json")
+
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No cache yet
+		}
+		return nil, err
+	}
+
+	var cache KeyManageCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, err
+	}
+
+	return &cache, nil
+}
+
+// SaveKeyManageCache saves the key manage cache to ~/.grove/gmux/km-cache.json
+func SaveKeyManageCache(configDir string, enrichedProjects map[string]*workspace.ProjectInfo) error {
+	gmuxDir := filepath.Join(configDir, "gmux")
+
+	// Ensure directory exists
+	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+		return err
+	}
+
+	// Convert to CachedProject with explicit types
+	cachedProjects := make(map[string]CachedProject)
+	for path, p := range enrichedProjects {
+		cached := CachedProject{
+			Name:                p.Name,
+			Path:                p.Path,
+			ParentPath:          p.ParentPath,
+			IsWorktree:          p.IsWorktree,
+			WorktreeName:        p.WorktreeName,
+			ParentEcosystemPath: p.ParentEcosystemPath,
+			IsEcosystem:         p.IsEcosystem,
+			ClaudeSession:       p.ClaudeSession,
+			NoteCounts:          p.NoteCounts,
+		}
+		// Extract ExtendedGitStatus from interface{}
+		if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
+			cached.GitStatus = extStatus
+		}
+		cachedProjects[path] = cached
+	}
+
+	cache := KeyManageCache{
+		EnrichedProjects: cachedProjects,
+		Timestamp:        time.Now(),
+	}
+
+	data, err := json.Marshal(cache)
+	if err != nil {
+		return err
+	}
+
+	cachePath := filepath.Join(gmuxDir, "km-cache.json")
+	return os.WriteFile(cachePath, data, 0644)
+}
