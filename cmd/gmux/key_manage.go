@@ -87,6 +87,7 @@ var keyManageCmd = &cobra.Command{
 					GitStatus:           cached.GitStatus,
 					ClaudeSession:       cached.ClaudeSession,
 					NoteCounts:          cached.NoteCounts,
+					PlanStats:           cached.PlanStats,
 				}
 			}
 			usedCache = true
@@ -330,6 +331,7 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 		enrichOpts := &workspace.EnrichmentOptions{
 			FetchGitStatus:      true,
 			FetchClaudeSessions: true,
+			FetchPlanStats:      true,
 		}
 		workspace.EnrichProjects(ctx, projects, enrichOpts)
 
@@ -352,6 +354,7 @@ func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 		enrichOpts := &workspace.EnrichmentOptions{
 			FetchGitStatus:      true,
 			FetchClaudeSessions: false,
+			FetchPlanStats:      true,
 		}
 		workspace.EnrichProjects(ctx, []*workspace.ProjectInfo{projInfo}, enrichOpts)
 
@@ -963,7 +966,7 @@ func (m manageModel) View() string {
 	}
 
 	// Build table data
-	headers := []string{"#", "Key", "Repository", "Worktree", "Git", "Claude", "Ecosystem"}
+	headers := []string{"#", "Key", "Repository", "Worktree", "Git", "Claude", "Plans", "Ecosystem"}
 	var unlockedRows [][]string
 	var lockedRows [][]string
 
@@ -972,6 +975,7 @@ func (m manageModel) View() string {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		claudeStatus := ""
+		planStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1028,6 +1032,11 @@ func (m manageModel) View() string {
 						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
 					}
 				}
+
+				// Format Plan status
+				if projInfo.PlanStats != nil {
+					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1048,6 +1057,7 @@ func (m manageModel) View() string {
 			worktree,
 			gitStatus,
 			claudeStatus,
+			planStatus,
 			ecosystem,
 		}
 		unlockedRows = append(unlockedRows, row)
@@ -1058,6 +1068,7 @@ func (m manageModel) View() string {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		claudeStatus := ""
+		planStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1114,6 +1125,11 @@ func (m manageModel) View() string {
 						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
 					}
 				}
+
+				// Format Plan status
+				if projInfo.PlanStats != nil {
+					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1134,6 +1150,7 @@ func (m manageModel) View() string {
 			worktree,
 			gitStatus,
 			claudeStatus,
+			planStatus,
 			ecosystem,
 		}
 		lockedRows = append(lockedRows, row)
@@ -1311,6 +1328,33 @@ func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
 	}
 
 	return formatClaudeStatusFromMap(session.Status, session.Duration)
+}
+
+// formatPlanStatsForKeyManage formats plan stats into a styled string
+func formatPlanStatsForKeyManage(stats *workspace.PlanStats) string {
+	if stats == nil || stats.Total == 0 {
+		return ""
+	}
+
+	var parts []string
+	if stats.Running > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐%d", stats.Running)))
+	}
+	if stats.Pending > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○%d", stats.Pending)))
+	}
+	if stats.Completed > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("●%d", stats.Completed)))
+	}
+	if stats.Failed > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗%d", stats.Failed)))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // formatGitStatusPlain formats Git status without ANSI codes for table display

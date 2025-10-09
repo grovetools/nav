@@ -18,6 +18,7 @@ type SessionizerState struct {
 	ShowBranch           *bool   `yaml:"show_branch,omitempty"`
 	ShowClaudeSessions   *bool   `yaml:"show_claude_sessions,omitempty"`
 	ShowNoteCounts       *bool   `yaml:"show_note_counts,omitempty"`
+	ShowPlanStats        *bool   `yaml:"show_plan_stats,omitempty"`
 	PathDisplayMode      *int    `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
 	ViewMode             *string `yaml:"view_mode,omitempty"`         // "tree" or "table"
 }
@@ -34,6 +35,7 @@ type CachedProject struct {
 	GitStatus           *workspace.ExtendedGitStatus `json:"git_status,omitempty"`
 	ClaudeSession       *workspace.ClaudeSessionInfo `json:"claude_session,omitempty"`
 	NoteCounts          *workspace.NoteCounts        `json:"note_counts,omitempty"`
+	PlanStats           *workspace.PlanStats         `json:"plan_stats,omitempty"`
 }
 
 // ProjectCache holds cached project data for fast startup
@@ -124,6 +126,7 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 			IsEcosystem:         p.IsEcosystem,
 			ClaudeSession:       p.ClaudeSession,
 			NoteCounts:          p.NoteCounts,
+			PlanStats:           p.PlanStats,
 		}
 		// Extract ExtendedGitStatus from interface{}
 		if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
@@ -194,6 +197,7 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*workspace
 			IsEcosystem:         p.IsEcosystem,
 			ClaudeSession:       p.ClaudeSession,
 			NoteCounts:          p.NoteCounts,
+			PlanStats:           p.PlanStats,
 		}
 		// Extract ExtendedGitStatus from interface{}
 		if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {

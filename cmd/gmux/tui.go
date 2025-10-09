@@ -59,6 +59,7 @@ type sessionizeModel struct {
 	showBranch         bool   // Whether to show branch names
 	showClaudeSessions bool   // Whether to fetch and show Claude sessions
 	showNoteCounts     bool   // Whether to fetch and show note counts
+	showPlanStats      bool   // Whether to show plan stats from grove-flow
 	pathDisplayMode    int    // 0=no paths, 1=compact (~), 2=full paths
 	viewMode           string // "tree" or "table"
 
@@ -148,6 +149,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	showBranch := true
 	showClaudeSessions := true
 	showNoteCounts := true
+	showPlanStats := true
 	pathDisplayMode := 1 // Default to compact paths (~)
 	viewMode := "tree"   // Default to tree view
 	if state, err := manager.LoadState(configDir); err == nil {
@@ -173,6 +175,9 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		}
 		if state.ShowNoteCounts != nil {
 			showNoteCounts = *state.ShowNoteCounts
+		}
+		if state.ShowPlanStats != nil {
+			showPlanStats = *state.ShowPlanStats
 		}
 		if state.PathDisplayMode != nil {
 			pathDisplayMode = *state.PathDisplayMode
@@ -208,6 +213,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		showBranch:               showBranch,
 		showClaudeSessions:       showClaudeSessions,
 		showNoteCounts:           showNoteCounts,
+		showPlanStats:            showPlanStats,
 		pathDisplayMode:          pathDisplayMode,
 		viewMode:                 viewMode,
 		usedCache:                usedCache,
@@ -224,6 +230,7 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		ShowBranch:           boolPtr(m.showBranch),
 		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
 		ShowNoteCounts:       boolPtr(m.showNoteCounts),
+		ShowPlanStats:        boolPtr(m.showPlanStats),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
 		ViewMode:             stringPtr(m.viewMode),
 	}
@@ -250,7 +257,7 @@ func stringPtr(s string) *string {
 func (m sessionizeModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
-		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts), // Fetch git status for all projects
+		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats), // Fetch git status for all projects
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
@@ -383,7 +390,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh all data sources periodically
 		return m, tea.Batch(
 			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts),
+			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
@@ -691,22 +698,27 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle git status
 				m.showGitStatus = !m.showGitStatus
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "b":
 				// Toggle branch names
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "c":
 				// Toggle claude sessions
 				m.showClaudeSessions = !m.showClaudeSessions
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "n":
 				// Toggle note counts
 				m.showNoteCounts = !m.showNoteCounts
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+			case "f":
+				// Toggle plan stats
+				m.showPlanStats = !m.showPlanStats
+				_ = m.buildState().Save(m.configDir)
+				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "p":
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
@@ -1382,6 +1394,13 @@ func (m sessionizeModel) View() string {
 		noteToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
 	}
 
+	planToggle := " f:plans "
+	if m.showPlanStats {
+		planToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+	} else {
+		planToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+	}
+
 	pathsToggle := " p:paths "
 	switch m.pathDisplayMode {
 	case 0:
@@ -1392,7 +1411,7 @@ func (m sessionizeModel) View() string {
 		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("full")
 	}
 
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s]", gitToggle, branchToggle, claudeToggle, noteToggle, pathsToggle)
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s%s]", gitToggle, branchToggle, claudeToggle, noteToggle, planToggle, pathsToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))

@@ -101,3 +101,30 @@ func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatu
 
 	return changesStr
 }
+
+// formatPlanStats formats plan stats into a styled string
+func formatPlanStats(stats *workspace.PlanStats) string {
+	if stats == nil || stats.Total == 0 {
+		return ""
+	}
+
+	var parts []string
+	if stats.Running > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐%d", stats.Running)))
+	}
+	if stats.Pending > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○%d", stats.Pending)))
+	}
+	if stats.Completed > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("●%d", stats.Completed)))
+	}
+	if stats.Failed > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗%d", stats.Failed)))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " ")
+}

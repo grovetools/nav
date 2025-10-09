@@ -23,17 +23,19 @@ func buildInitialEnrichmentOptions() *workspace.EnrichmentOptions {
 	return &workspace.EnrichmentOptions{
 		FetchClaudeSessions: false, // Fetched async in TUI
 		FetchGitStatus:      false, // Fetched async in TUI
-		GitStatusPaths:      nil,   // Not needed for initial load
+		FetchPlanStats:      false,
+		GitStatusPaths:      nil, // Not needed for initial load
 	}
 }
 
 // buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
-func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes bool) *workspace.EnrichmentOptions {
+func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) *workspace.EnrichmentOptions {
 	return &workspace.EnrichmentOptions{
 		FetchClaudeSessions: fetchClaude,
 		FetchGitStatus:      fetchGit,
 		FetchNoteCounts:     fetchNotes,
+		FetchPlanStats:      fetchPlans,
 		GitStatusPaths:      nil, // nil means fetch for all projects
 	}
 }
@@ -84,6 +86,7 @@ var sessionizeCmd = &cobra.Command{
 						GitStatus:           cached.GitStatus, // Now properly typed
 						ClaudeSession:       cached.ClaudeSession,
 						NoteCounts:          cached.NoteCounts,
+						PlanStats:           cached.PlanStats,
 					},
 				}
 			}

@@ -293,6 +293,14 @@ func (m sessionizeModel) renderTree() string {
 				}
 			}
 
+			// Add plan stats if enabled
+			if m.showPlanStats && project.PlanStats != nil {
+				statsStr := formatPlanStats(project.PlanStats)
+				if statsStr != "" {
+					line += "  " + statsStr
+				}
+			}
+
 			// Add Claude duration at the very end
 			if m.hasGroveHooks && m.showClaudeSessions && claudeDuration != "" {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
@@ -374,6 +382,14 @@ func (m sessionizeModel) renderTree() string {
 				}
 				if len(counts) > 0 {
 					line += "  " + strings.Join(counts, " ")
+				}
+			}
+
+			// Add plan stats if enabled
+			if m.showPlanStats && project.PlanStats != nil {
+				statsStr := formatPlanStats(project.PlanStats)
+				if statsStr != "" {
+					line += "  " + statsStr
 				}
 			}
 

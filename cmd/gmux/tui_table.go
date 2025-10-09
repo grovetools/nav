@@ -69,6 +69,9 @@ func (m sessionizeModel) renderTable() string {
 	if m.showNoteCounts {
 		headers = append(headers, "NOTES")
 	}
+	if m.showPlanStats {
+		headers = append(headers, "PLANS")
+	}
 	if m.showClaudeSessions {
 		headers = append(headers, "CLAUDE")
 	}
@@ -294,6 +297,15 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 		}
 	}
 
+	// --- PLANS ---
+	plans := "-"
+	if m.showPlanStats && project.PlanStats != nil {
+		formattedStats := formatPlanStats(project.PlanStats)
+		if formattedStats != "" {
+			plans = formattedStats
+		}
+	}
+
 	// --- CLAUDE SESSION ---
 	claude := "-"
 	if m.showClaudeSessions {
@@ -416,6 +428,9 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 	}
 	if m.showNoteCounts {
 		row = append(row, notes)
+	}
+	if m.showPlanStats {
+		row = append(row, plans)
 	}
 	if m.showClaudeSessions {
 		row = append(row, claude)
