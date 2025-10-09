@@ -216,7 +216,18 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 			if status.IsDirty {
 				statusParts = append(statusParts, core_theme.DefaultTheme.Warning.Render("✗"))
 			}
-			if status.HasUpstream {
+
+			isMainBranch := status.Branch == "main" || status.Branch == "master"
+			hasMainDivergence := !isMainBranch && (status.AheadMainCount > 0 || status.BehindMainCount > 0)
+
+			if hasMainDivergence {
+				if status.AheadMainCount > 0 {
+					statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+				}
+				if status.BehindMainCount > 0 {
+					statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+				}
+			} else if status.HasUpstream {
 				if status.AheadCount > 0 {
 					statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 				}
@@ -224,9 +235,10 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 					statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 				}
 			}
+
 			if len(statusParts) > 0 {
 				gitStatus = strings.Join(statusParts, " ")
-			} else {
+			} else if !status.IsDirty {
 				gitStatus = core_theme.DefaultTheme.Success.Render("✓")
 			}
 		}

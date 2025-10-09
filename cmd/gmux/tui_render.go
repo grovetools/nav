@@ -47,7 +47,17 @@ func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatu
 
 	var changes []string
 
-	if status.HasUpstream {
+	isMainBranch := status.Branch == "main" || status.Branch == "master"
+	hasMainDivergence := !isMainBranch && (status.AheadMainCount > 0 || status.BehindMainCount > 0)
+
+	if hasMainDivergence {
+		if status.AheadMainCount > 0 {
+			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+		}
+		if status.BehindMainCount > 0 {
+			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+		}
+	} else if status.HasUpstream {
 		if status.AheadCount > 0 {
 			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 		}
