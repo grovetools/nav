@@ -265,6 +265,13 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		enrichedProjects = make(map[string]*workspace.ProjectInfo)
 	}
 
+	// Load locked keys from manager
+	lockedKeysSlice := mgr.GetLockedKeys()
+	lockedKeysMap := make(map[string]bool)
+	for _, key := range lockedKeysSlice {
+		lockedKeysMap[key] = true
+	}
+
 	return manageModel{
 		cursor:            0,
 		sessions:          sessions,
@@ -275,7 +282,7 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		enrichedProjects:  enrichedProjects,
 		claudeStatusMap:   make(map[string]string),
 		claudeDurationMap: make(map[string]string),
-		lockedKeys:        make(map[string]bool),
+		lockedKeys:        lockedKeysMap,
 		usedCache:         usedCache,
 		isLoading:         usedCache, // Start as loading if we used cache
 	}
@@ -666,7 +673,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case key.Matches(msg, m.keys.ConfirmMove):
 				// Save and exit move mode
-				if err := m.manager.UpdateSessions(m.sessions); err != nil {
+				if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
 					m.message = fmt.Sprintf("Error saving: %v", err)
 				} else {
 					if err := m.manager.RegenerateBindings(); err != nil {
@@ -710,7 +717,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Quit):
 			// Auto-save on quit
-			if err := m.manager.UpdateSessions(m.sessions); err != nil {
+			if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
 				m.message = fmt.Sprintf("Error saving: %v", err)
 				// Show error briefly then quit
 				m.quitting = true
@@ -734,7 +741,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Save):
 			// Save changes
-			if err := m.manager.UpdateSessions(m.sessions); err != nil {
+			if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
 				m.message = fmt.Sprintf("Error saving: %v", err)
 			} else {
 				// Regenerate bindings
@@ -1209,6 +1216,15 @@ func (m *manageModel) rebuildSessionsOrder() {
 	}
 
 	m.sessions = append(unlocked, locked...)
+}
+
+// getLockedKeysSlice converts the locked keys map to a slice
+func (m *manageModel) getLockedKeysSlice() []string {
+	lockedKeys := make([]string, 0, len(m.lockedKeys))
+	for key := range m.lockedKeys {
+		lockedKeys = append(lockedKeys, key)
+	}
+	return lockedKeys
 }
 
 // mapKeyToCwd maps the CWD to the target key index

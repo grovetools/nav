@@ -22,6 +22,7 @@ type Manager struct {
 	coreConfig   *core_config.Config
 	tmuxConfig   *TmuxConfig
 	sessions     map[string]TmuxSessionConfig
+	lockedKeys   []string
 	configPath   string
 	sessionsPath string
 	tmuxClient   *tmux.Client
@@ -73,11 +74,13 @@ func NewManager(configDir string) (*Manager, error) {
 	// Load sessions from separate file in gmux directory
 	sessionsPath := filepath.Join(configDir, "gmux", "sessions.yml")
 	sessions := make(map[string]TmuxSessionConfig)
+	var lockedKeys []string
 
 	if data, err := os.ReadFile(sessionsPath); err == nil {
 		var sessionsFile TmuxSessionsFile
 		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
 			sessions = sessionsFile.Sessions
+			lockedKeys = sessionsFile.LockedKeys
 		}
 	}
 	// If file doesn't exist or is empty, sessions will be an empty map
@@ -94,10 +97,15 @@ func NewManager(configDir string) (*Manager, error) {
 		coreConfig:   coreCfg,
 		tmuxConfig:   &tmuxCfg,
 		sessions:     sessions,
+		lockedKeys:   lockedKeys,
 		configPath:   configPath,
 		sessionsPath: sessionsPath,
 		tmuxClient:   tmuxClient,
 	}, nil
+}
+
+func (m *Manager) GetLockedKeys() []string {
+	return m.lockedKeys
 }
 
 func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
@@ -189,7 +197,8 @@ func (m *Manager) saveSessions() error {
 
 	// Create the sessions file structure
 	sessionsFile := TmuxSessionsFile{
-		Sessions: m.sessions,
+		Sessions:   m.sessions,
+		LockedKeys: m.lockedKeys,
 	}
 
 	// Marshal to YAML
@@ -202,6 +211,10 @@ func (m *Manager) saveSessions() error {
 }
 
 func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
+	return m.UpdateSessionsAndLocks(sessions, m.lockedKeys)
+}
+
+func (m *Manager) UpdateSessionsAndLocks(sessions []models.TmuxSession, lockedKeys []string) error {
 	// Convert slice back to map format, only including non-empty sessions
 	sessionsMap := make(map[string]TmuxSessionConfig)
 
@@ -217,6 +230,7 @@ func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
 	}
 
 	m.sessions = sessionsMap
+	m.lockedKeys = lockedKeys
 
 	return m.Save()
 }

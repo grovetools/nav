@@ -10,7 +10,8 @@ type TmuxConfig struct {
 // TmuxSessionsFile represents the sessions file stored in ~/.config/grove/gmux/sessions.yml
 // This is separate from grove.yml to avoid polluting version control with dynamic state
 type TmuxSessionsFile struct {
-	Sessions map[string]TmuxSessionConfig `yaml:"sessions"`
+	Sessions   map[string]TmuxSessionConfig `yaml:"sessions"`
+	LockedKeys []string                     `yaml:"locked_keys,omitempty"`
 }
 
 // TmuxSessionConfig defines the configuration for a single session mapped to a key.

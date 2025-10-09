@@ -32,6 +32,16 @@ func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {
 	return m.mgr.UpdateSessions(sessions)
 }
 
+// UpdateSessionsAndLocks updates all tmux sessions and locked keys
+func (m *Manager) UpdateSessionsAndLocks(sessions []models.TmuxSession, lockedKeys []string) error {
+	return m.mgr.UpdateSessionsAndLocks(sessions, lockedKeys)
+}
+
+// GetLockedKeys returns the list of locked keys
+func (m *Manager) GetLockedKeys() []string {
+	return m.mgr.GetLockedKeys()
+}
+
 // UpdateSingleSession updates a single tmux session
 func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) error {
 	return m.mgr.UpdateSingleSession(key, session)
