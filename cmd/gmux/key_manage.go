@@ -136,6 +136,9 @@ type manageModel struct {
 	// Navigation
 	digitBuffer string
 	setKeyMode  bool
+	// Move mode state
+	moveMode   bool
+	lockedKeys map[string]bool // Track which keys are locked
 	// Loading state
 	isLoading    bool
 	usedCache    bool
@@ -145,14 +148,19 @@ type manageModel struct {
 // Key bindings
 type keyMap struct {
 	keymap.Base
-	Up     key.Binding
-	Down   key.Binding
-	Toggle key.Binding
-	Edit   key.Binding
-	SetKey key.Binding
-	Open   key.Binding
-	Delete key.Binding
-	Save   key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Toggle    key.Binding
+	Edit      key.Binding
+	SetKey    key.Binding
+	Open      key.Binding
+	Delete    key.Binding
+	Save      key.Binding
+	MoveMode  key.Binding
+	Lock      key.Binding
+	MoveUp    key.Binding
+	MoveDown  key.Binding
+	ConfirmMove key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -178,6 +186,13 @@ func (k keyMap) FullHelp() [][]key.Binding {
 			k.Save,
 			k.Help,
 			k.Quit,
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Reorder")),
+			k.MoveMode,
+			k.Lock,
+			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
 		},
 	}
 }
@@ -216,6 +231,26 @@ var keys = keyMap{
 		key.WithKeys("s", "ctrl+s"),
 		key.WithHelp("s/ctrl+s", "save & exit"),
 	),
+	MoveMode: key.NewBinding(
+		key.WithKeys("m"),
+		key.WithHelp("m", "enter move mode"),
+	),
+	Lock: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "toggle lock"),
+	),
+	MoveUp: key.NewBinding(
+		key.WithKeys("k"),
+		key.WithHelp("k", "move up"),
+	),
+	MoveDown: key.NewBinding(
+		key.WithKeys("j"),
+		key.WithHelp("j", "move down"),
+	),
+	ConfirmMove: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "confirm move"),
+	),
 }
 
 func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*workspace.ProjectInfo, usedCache bool) manageModel {
@@ -240,12 +275,16 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		enrichedProjects:  enrichedProjects,
 		claudeStatusMap:   make(map[string]string),
 		claudeDurationMap: make(map[string]string),
+		lockedKeys:        make(map[string]bool),
 		usedCache:         usedCache,
 		isLoading:         usedCache, // Start as loading if we used cache
 	}
 }
 
 func (m manageModel) Init() tea.Cmd {
+	// Ensure sessions are ordered with locked keys at bottom
+	m.rebuildSessionsOrder()
+
 	cmds := []tea.Cmd{
 		enrichMappedProjectsCmd(m.sessions),
 		enrichCwdProjectCmd(m.cwdPath),
@@ -520,7 +559,129 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Any non-digit key press resets the buffer
 		m.digitBuffer = ""
 
+		// Handle move mode
+		if m.moveMode {
+			switch {
+			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.MoveMode), msg.Type == tea.KeyEsc:
+				// Exit move mode
+				m.moveMode = false
+				m.message = "Exited move mode"
+				return m, nil
+
+			case key.Matches(msg, m.keys.Lock):
+				// Toggle lock for current key
+				if m.cursor < len(m.sessions) {
+					currentKey := m.sessions[m.cursor].Key
+					if m.lockedKeys[currentKey] {
+						delete(m.lockedKeys, currentKey)
+						m.message = fmt.Sprintf("Unlocked key '%s'", currentKey)
+					} else {
+						m.lockedKeys[currentKey] = true
+						m.message = fmt.Sprintf("Locked key '%s'", currentKey)
+					}
+					// Rebuild order to move locked keys to bottom
+					m.rebuildSessionsOrder()
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.MoveUp):
+				// Move row up (swap with previous unlocked row)
+				if m.cursor > 0 && m.cursor < len(m.sessions) {
+					currentKey := m.sessions[m.cursor].Key
+
+					// Check if current key is locked
+					if m.lockedKeys[currentKey] {
+						m.message = "Cannot move locked key"
+						return m, nil
+					}
+
+					// Find the previous unlocked position
+					targetPos := m.cursor - 1
+					for targetPos >= 0 && m.lockedKeys[m.sessions[targetPos].Key] {
+						targetPos--
+					}
+
+					if targetPos >= 0 {
+						// Swap sessions
+						m.sessions[m.cursor], m.sessions[targetPos] = m.sessions[targetPos], m.sessions[m.cursor]
+						// Move cursor with the row
+						m.cursor = targetPos
+						m.message = "Moved up"
+					} else {
+						m.message = "Cannot move past locked keys"
+					}
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.MoveDown):
+				// Move row down (swap with next unlocked row)
+				if m.cursor >= 0 && m.cursor < len(m.sessions)-1 {
+					currentKey := m.sessions[m.cursor].Key
+
+					// Check if current key is locked
+					if m.lockedKeys[currentKey] {
+						m.message = "Cannot move locked key"
+						return m, nil
+					}
+
+					// Find the next unlocked position
+					targetPos := m.cursor + 1
+					for targetPos < len(m.sessions) && m.lockedKeys[m.sessions[targetPos].Key] {
+						targetPos++
+					}
+
+					if targetPos < len(m.sessions) {
+						// Swap sessions
+						m.sessions[m.cursor], m.sessions[targetPos] = m.sessions[targetPos], m.sessions[m.cursor]
+						// Move cursor with the row
+						m.cursor = targetPos
+						m.message = "Moved down"
+					} else {
+						m.message = "Cannot move past locked keys"
+					}
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.ConfirmMove):
+				// Save and exit move mode
+				if err := m.manager.UpdateSessions(m.sessions); err != nil {
+					m.message = fmt.Sprintf("Error saving: %v", err)
+				} else {
+					if err := m.manager.RegenerateBindings(); err != nil {
+						m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
+					} else {
+						m.message = "Order saved!"
+					}
+				}
+				m.moveMode = false
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch {
+		case key.Matches(msg, m.keys.MoveMode):
+			// Enter move mode
+			m.moveMode = true
+			m.message = "Move mode: use j/k to reorder, l to lock/unlock, enter to save, q/m to cancel"
+			return m, nil
+
+		case key.Matches(msg, m.keys.Lock):
+			// Toggle lock (works outside move mode too)
+			if m.cursor < len(m.sessions) {
+				currentKey := m.sessions[m.cursor].Key
+				if m.lockedKeys[currentKey] {
+					delete(m.lockedKeys, currentKey)
+					m.message = fmt.Sprintf("Unlocked key '%s'", currentKey)
+				} else {
+					m.lockedKeys[currentKey] = true
+					m.message = fmt.Sprintf("Locked key '%s'", currentKey)
+				}
+				// Rebuild order to move locked keys to bottom
+				m.rebuildSessionsOrder()
+			}
+			return m, nil
+
 		case key.Matches(msg, m.keys.Help):
 			m.help.Toggle()
 			return m, nil
@@ -714,11 +875,15 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
 				m.cursor--
+				// Rebuild sessions order based on locked status
+				m.rebuildSessionsOrder()
 			}
 
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
+				// Rebuild sessions order based on locked status
+				m.rebuildSessionsOrder()
 			}
 		}
 	}
@@ -738,9 +903,17 @@ func (m manageModel) View() string {
 
 	var b strings.Builder
 
-	// Title with loading indicator to the right (inline without margins)
+	// Title with mode indicators
 	inlineTitleStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Bold(true)
 	b.WriteString(inlineTitleStyle.Render("Session Hotkeys"))
+
+	// Show move mode indicator
+	if m.moveMode {
+		moveModeStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Bold(true)
+		b.WriteString(" " + moveModeStyle.Render("[MOVE MODE]"))
+	}
+
+	// Show loading indicator
 	if m.isLoading {
 		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
 		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
@@ -748,11 +921,25 @@ func (m manageModel) View() string {
 	}
 	b.WriteString("\n\n")
 
+	// Separate sessions into unlocked and locked
+	var unlockedSessions []models.TmuxSession
+	var lockedSessions []models.TmuxSession
+
+	for _, s := range m.sessions {
+		if m.lockedKeys[s.Key] {
+			lockedSessions = append(lockedSessions, s)
+		} else {
+			unlockedSessions = append(unlockedSessions, s)
+		}
+	}
+
 	// Build table data
 	headers := []string{"#", "Key", "Repository", "Worktree", "Git", "Claude", "Ecosystem"}
-	var rows [][]string
+	var unlockedRows [][]string
+	var lockedRows [][]string
 
-	for i, s := range m.sessions {
+	// Build unlocked rows
+	for i, s := range unlockedSessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		claudeStatus := ""
@@ -825,7 +1012,7 @@ func (m manageModel) View() string {
 			}
 		}
 
-		rows = append(rows, []string{
+		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
 			repository,
@@ -833,14 +1020,141 @@ func (m manageModel) View() string {
 			gitStatus,
 			claudeStatus,
 			ecosystem,
-		})
+		}
+		unlockedRows = append(unlockedRows, row)
 	}
 
-	// Render table with selection and Repository column highlighted (column index 2)
-	tableStr := table.SelectableTableWithOptions(headers, rows, m.cursor, table.SelectableTableOptions{
-		HighlightColumn: 2, // Repository column
-	})
-	b.WriteString(tableStr)
+	// Build locked rows
+	for i, s := range lockedSessions {
+		var ecosystem, repository, worktree string
+		gitStatus := ""
+		claudeStatus := ""
+
+		if s.Path != "" {
+			cleanPath := filepath.Clean(s.Path)
+			if projInfo, found := m.enrichedProjects[cleanPath]; found {
+
+				// RULE 1: Determine Repository and Worktree.
+				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
+				if projInfo.IsWorktree && projInfo.ParentPath != "" {
+					repository = filepath.Base(projInfo.ParentPath)
+					worktree = projInfo.Name
+				} else {
+					repository = projInfo.Name
+				}
+
+				// RULE 2: Determine Ecosystem display.
+				if projInfo.ParentEcosystemPath != "" {
+					// Project is within an ecosystem.
+					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
+					ecoWorktreeName := projInfo.WorktreeName // The eco-worktree the project is in.
+
+					// Set ecosystem name
+					ecosystem = baseEcosystem
+
+					// If this project is inside an ecosystem worktree, show the eco-worktree in Worktree column with indicator
+					if ecoWorktreeName != "" {
+						// Repository should be the actual project name (not the ecosystem)
+						repository = projInfo.Name
+
+						// If this is also a worktree of that repo, keep the worktree name
+						// Otherwise, show the ecosystem worktree name with indicator
+						if projInfo.IsWorktree && projInfo.ParentPath != "" {
+							// This is a worktree of a repo inside an eco-worktree
+							repository = filepath.Base(projInfo.ParentPath)
+							worktree = projInfo.Name
+						} else {
+							// This is a repo inside an eco-worktree (not a worktree itself)
+							worktree = ecoWorktreeName + " *"
+						}
+					}
+				} else if projInfo.IsEcosystem {
+					// It's a root ecosystem.
+					ecosystem = projInfo.Name
+				}
+
+				// RULE 3: Clean up redundancies for clarity.
+				if projInfo.IsEcosystem && !projInfo.IsWorktree {
+					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
+					repository = ""
+				}
+
+				// Format Git status (with colors)
+				if projInfo.GitStatus != nil {
+					if extStatus, ok := projInfo.GitStatus.(*workspace.ExtendedGitStatus); ok {
+						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
+					}
+				}
+			} else {
+				// Fallback if no enriched data
+				repository = filepath.Base(s.Path)
+			}
+
+			// Format Claude status (with colors) - check claudeStatusMap
+			// Use lowercase for case-insensitive matching on macOS
+			normalizedPath := strings.ToLower(cleanPath)
+			if status, found := m.claudeStatusMap[normalizedPath]; found {
+				claudeStatus = formatClaudeStatusFromMap(status, m.claudeDurationMap[normalizedPath])
+			}
+		}
+
+		row := []string{
+			fmt.Sprintf("%d", i+1),
+			s.Key,
+			repository,
+			worktree,
+			gitStatus,
+			claudeStatus,
+			ecosystem,
+		}
+		lockedRows = append(lockedRows, row)
+	}
+
+	// Calculate which section the cursor is in
+	cursorInUnlocked := m.cursor < len(unlockedSessions)
+	var adjustedCursor int
+	if cursorInUnlocked {
+		adjustedCursor = m.cursor
+	} else {
+		adjustedCursor = m.cursor - len(unlockedSessions)
+	}
+
+	// Render unlocked table with selection if cursor is in this section
+	if len(unlockedRows) > 0 {
+		var unlockedTableStr string
+		if cursorInUnlocked {
+			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, adjustedCursor, table.SelectableTableOptions{
+				HighlightColumn: 2, // Repository column
+			})
+		} else {
+			// No selection in this table
+			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, -1, table.SelectableTableOptions{
+				HighlightColumn: 2,
+			})
+		}
+		b.WriteString(unlockedTableStr)
+		b.WriteString("\n")
+	}
+
+	// Render locked section if there are locked keys
+	if len(lockedRows) > 0 {
+		b.WriteString("\n")
+		lockedHeaderStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Bold(true)
+		b.WriteString(lockedHeaderStyle.Render("Locked Keys") + "\n")
+
+		var lockedTableStr string
+		if !cursorInUnlocked {
+			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, adjustedCursor, table.SelectableTableOptions{
+				HighlightColumn: 2,
+			})
+		} else {
+			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, -1, table.SelectableTableOptions{
+				HighlightColumn: 2,
+			})
+		}
+		b.WriteString(lockedTableStr)
+	}
+
 	b.WriteString("\n\n")
 
 	if m.message != "" {
@@ -850,11 +1164,29 @@ func (m manageModel) View() string {
 	// Show different help text based on mode
 	if m.setKeyMode {
 		b.WriteString(helpStyle.Render("SET KEY MODE: Press key or number to map CWD. ESC to cancel."))
+	} else if m.moveMode {
+		b.WriteString(helpStyle.Render("MOVE MODE: j/k to move • l to lock/unlock • enter to save • q/m to cancel"))
 	} else {
-		b.WriteString(helpStyle.Render("Press ? for help  •  * = part of ecosystem worktree"))
+		b.WriteString(helpStyle.Render("Press ? for help • m for move mode • l to lock rows • * = part of ecosystem worktree"))
 	}
 
 	return b.String()
+}
+
+// rebuildSessionsOrder ensures locked keys are always at the bottom
+func (m *manageModel) rebuildSessionsOrder() {
+	var unlocked []models.TmuxSession
+	var locked []models.TmuxSession
+
+	for _, s := range m.sessions {
+		if m.lockedKeys[s.Key] {
+			locked = append(locked, s)
+		} else {
+			unlocked = append(unlocked, s)
+		}
+	}
+
+	m.sessions = append(unlocked, locked...)
 }
 
 // mapKeyToCwd maps the CWD to the target key index
