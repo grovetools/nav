@@ -107,8 +107,9 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 		var claudeSessions []claudeSession
 		if json.Unmarshal(output, &claudeSessions) == nil {
 			for _, session := range claudeSessions {
-				// Only include sessions with type "claude_session"
-				if session.Type == "claude_session" && session.WorkingDirectory != "" {
+				// Only include Claude sessions (type is empty string or "claude_session")
+				isClaudeSession := session.Type == "" || session.Type == "claude_session" || session.Type == "claude_code"
+				if isClaudeSession && session.WorkingDirectory != "" {
 					absPath, err := filepath.Abs(expandPath(session.WorkingDirectory))
 					if err == nil {
 						cleanPath := filepath.Clean(absPath)

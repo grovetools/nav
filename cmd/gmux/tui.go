@@ -289,9 +289,19 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for _, session := range msg.sessions {
 			cleanPath := filepath.Clean(session.Path)
 			if session.ClaudeSession != nil {
+				// Store by the session's working directory path
 				newStatusMap[cleanPath] = session.ClaudeSession.Status
 				newDurationMap[cleanPath] = session.ClaudeSession.Duration
 				newDurationSecondsMap[cleanPath] = session.ClaudeSession.PID
+
+				// If this is a worktree, also store by the parent path
+				// so the session shows up for the parent ecosystem/project
+				if session.ParentPath != "" {
+					parentPath := filepath.Clean(session.ParentPath)
+					newStatusMap[parentPath] = session.ClaudeSession.Status
+					newDurationMap[parentPath] = session.ClaudeSession.Duration
+					newDurationSecondsMap[parentPath] = session.ClaudeSession.PID
+				}
 			}
 		}
 
