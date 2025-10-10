@@ -257,7 +257,7 @@ func stringPtr(s string) *string {
 func (m sessionizeModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
-		fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats), // Fetch git status for all projects
+		fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats), // Fetch git status for all projects
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
@@ -390,7 +390,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Refresh all data sources periodically
 		return m, tea.Batch(
 			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats),
+			fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
@@ -698,27 +698,27 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle git status
 				m.showGitStatus = !m.showGitStatus
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "b":
 				// Toggle branch names
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "c":
 				// Toggle claude sessions
 				m.showClaudeSessions = !m.showClaudeSessions
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "n":
 				// Toggle note counts
 				m.showNoteCounts = !m.showNoteCounts
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "f":
 				// Toggle plan stats
 				m.showPlanStats = !m.showPlanStats
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
 			case "p":
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3

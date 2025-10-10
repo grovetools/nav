@@ -143,7 +143,7 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 
 // fetchProjectsCmd returns a command that re-scans the configured search paths
 // and fetches Git status for all discovered projects
-func fetchProjectsCmd(mgr *tmux.Manager, fetchGit, fetchClaude, fetchNotes, fetchPlans bool) tea.Cmd {
+func fetchProjectsCmd(mgr *tmux.Manager, configDir string, fetchGit, fetchClaude, fetchNotes, fetchPlans bool) tea.Cmd {
 	return func() tea.Msg {
 		// Fetch enrichment data for all projects
 		enrichOpts := buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans)
@@ -153,6 +153,13 @@ func fetchProjectsCmd(mgr *tmux.Manager, fetchGit, fetchClaude, fetchNotes, fetc
 		if history, err := mgr.GetAccessHistory(); err == nil {
 			projects = history.SortProjectsByAccess(projects)
 		}
+
+		// Save to cache for next startup
+		sessionizeProjects := make([]manager.SessionizeProject, len(projects))
+		for i := range projects {
+			sessionizeProjects[i] = manager.SessionizeProject{ProjectInfo: projects[i].ProjectInfo}
+		}
+		_ = manager.SaveProjectCache(configDir, sessionizeProjects)
 
 		return projectsUpdateMsg{projects: projects}
 	}

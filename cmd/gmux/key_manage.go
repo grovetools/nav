@@ -1331,44 +1331,27 @@ func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
 }
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string
-// Shows: total plans (active plan name) [job stats]
+// Shows only job status icons and counts (e.g., "◐ 1 ○ 2 ● 5")
 func formatPlanStatsForKeyManage(stats *workspace.PlanStats) string {
 	if stats == nil || stats.TotalPlans == 0 {
 		return ""
 	}
 
-	var parts []string
-
-	// Show total plans count
-	totalPlansStr := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(fmt.Sprintf("(%d)", stats.TotalPlans))
-	parts = append(parts, totalPlansStr)
-
-	// Show active plan name if available
-	if stats.ActivePlan != "" {
-		activePlanStr := core_theme.DefaultTheme.Muted.Render(stats.ActivePlan)
-		parts = append(parts, activePlanStr)
-
-		// Show job stats for active plan
-		var jobStats []string
-		if stats.Running > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
-		}
-		if stats.Pending > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○ %d", stats.Pending)))
-		}
-		if stats.Completed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
-		}
-		if stats.Failed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
-		}
-
-		if len(jobStats) > 0 {
-			parts = append(parts, strings.Join(jobStats, " "))
-		}
+	var jobStats []string
+	if stats.Running > 0 {
+		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
+	}
+	if stats.Pending > 0 {
+		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("○ %d", stats.Pending)))
+	}
+	if stats.Completed > 0 {
+		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
+	}
+	if stats.Failed > 0 {
+		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
 	}
 
-	return strings.Join(parts, " ")
+	return strings.Join(jobStats, " ")
 }
 
 // formatGitStatusPlain formats Git status without ANSI codes for table display

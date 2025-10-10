@@ -126,7 +126,7 @@ func formatPlanStats(stats *workspace.PlanStats) string {
 			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
 		}
 		if stats.Pending > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○ %d", stats.Pending)))
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("○ %d", stats.Pending)))
 		}
 		if stats.Completed > 0 {
 			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
