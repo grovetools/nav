@@ -153,7 +153,7 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		// Check if a project was selected
-		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected.Path != "" {
+		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
 			// Record the access before switching
 			_ = mgr.RecordProjectAccess(sm.selected.Path)
 			// If it's a worktree, also record access for the parent
