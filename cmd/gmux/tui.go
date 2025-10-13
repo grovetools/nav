@@ -304,10 +304,21 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case claudeSessionMapMsg:
-		// Clear old statuses first
-		for _, proj := range m.projects {
-			proj.ClaudeSession = nil
+		// Update Claude sessions - preserve existing data, only update what changed
+		// First, clear sessions that no longer exist
+		activePaths := make(map[string]bool)
+		for path := range msg.sessions {
+			activePaths[path] = true
+			if parentPath := getWorktreeParent(path); parentPath != "" {
+				activePaths[parentPath] = true
+			}
 		}
+		for _, proj := range m.projects {
+			if proj.ClaudeSession != nil && !activePaths[proj.Path] {
+				proj.ClaudeSession = nil
+			}
+		}
+		// Now update with new session data
 		for path, session := range msg.sessions {
 			if proj, ok := m.projectMap[path]; ok {
 				proj.ClaudeSession = session
@@ -322,8 +333,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case noteCountsMapMsg:
+		// Update note counts - only update projects that have counts
 		for _, proj := range m.projects {
-			proj.NoteCounts = nil // Clear old counts
 			if counts, ok := msg.counts[proj.Name]; ok {
 				proj.NoteCounts = counts
 			}
@@ -331,8 +342,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case planStatsMapMsg:
+		// Update plan stats - only update projects that have stats
 		for _, proj := range m.projects {
-			proj.PlanStats = nil // Clear old stats
 			if stats, ok := msg.stats[proj.Path]; ok {
 				proj.PlanStats = stats
 			}
