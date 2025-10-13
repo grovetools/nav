@@ -25,17 +25,14 @@ type SessionizerState struct {
 
 // CachedProject holds project data with explicit types for proper JSON serialization
 type CachedProject struct {
-	Name                string                       `json:"name"`
-	Path                string                       `json:"path"`
-	ParentPath          string                       `json:"parent_path,omitempty"`
-	IsWorktree          bool                         `json:"is_worktree"`
-	WorktreeName        string                       `json:"worktree_name,omitempty"`
-	ParentEcosystemPath string                       `json:"parent_ecosystem_path,omitempty"`
-	IsEcosystem         bool                         `json:"is_ecosystem"`
-	GitStatus           *workspace.ExtendedGitStatus `json:"git_status,omitempty"`
-	ClaudeSession       *workspace.ClaudeSessionInfo `json:"claude_session,omitempty"`
-	NoteCounts          *workspace.NoteCounts        `json:"note_counts,omitempty"`
-	PlanStats           *workspace.PlanStats         `json:"plan_stats,omitempty"`
+	// Embed WorkspaceNode for core properties
+	*workspace.WorkspaceNode
+
+	// Enrichment data
+	GitStatus     *ExtendedGitStatus `json:"git_status,omitempty"`
+	ClaudeSession *ClaudeSessionInfo `json:"claude_session,omitempty"`
+	NoteCounts    *NoteCounts        `json:"note_counts,omitempty"`
+	PlanStats     *PlanStats         `json:"plan_stats,omitempty"`
 }
 
 // ProjectCache holds cached project data for fast startup
@@ -116,23 +113,13 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 	// Convert to CachedProject with explicit types
 	cachedProjects := make([]CachedProject, len(projects))
 	for i, p := range projects {
-		cached := CachedProject{
-			Name:                p.Name,
-			Path:                p.Path,
-			ParentPath:          p.ParentPath,
-			IsWorktree:          p.IsWorktree,
-			WorktreeName:        p.WorktreeName,
-			ParentEcosystemPath: p.ParentEcosystemPath,
-			IsEcosystem:         p.IsEcosystem,
-			ClaudeSession:       p.ClaudeSession,
-			NoteCounts:          p.NoteCounts,
-			PlanStats:           p.PlanStats,
+		cachedProjects[i] = CachedProject{
+			WorkspaceNode: p.WorkspaceNode,
+			GitStatus:     p.GetExtendedGitStatus(),
+			ClaudeSession: p.ClaudeSession,
+			NoteCounts:    p.NoteCounts,
+			PlanStats:     p.PlanStats,
 		}
-		// Extract ExtendedGitStatus from interface{}
-		if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
-			cached.GitStatus = extStatus
-		}
-		cachedProjects[i] = cached
 	}
 
 	cache := ProjectCache{
@@ -176,7 +163,7 @@ func LoadKeyManageCache(configDir string) (*KeyManageCache, error) {
 }
 
 // SaveKeyManageCache saves the key manage cache to ~/.grove/gmux/km-cache.json
-func SaveKeyManageCache(configDir string, enrichedProjects map[string]*workspace.ProjectInfo) error {
+func SaveKeyManageCache(configDir string, enrichedProjects map[string]*SessionizeProject) error {
 	gmuxDir := filepath.Join(configDir, "gmux")
 
 	// Ensure directory exists
@@ -187,23 +174,13 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*workspace
 	// Convert to CachedProject with explicit types
 	cachedProjects := make(map[string]CachedProject)
 	for path, p := range enrichedProjects {
-		cached := CachedProject{
-			Name:                p.Name,
-			Path:                p.Path,
-			ParentPath:          p.ParentPath,
-			IsWorktree:          p.IsWorktree,
-			WorktreeName:        p.WorktreeName,
-			ParentEcosystemPath: p.ParentEcosystemPath,
-			IsEcosystem:         p.IsEcosystem,
-			ClaudeSession:       p.ClaudeSession,
-			NoteCounts:          p.NoteCounts,
-			PlanStats:           p.PlanStats,
+		cachedProjects[path] = CachedProject{
+			WorkspaceNode: p.WorkspaceNode,
+			GitStatus:     p.GetExtendedGitStatus(),
+			ClaudeSession: p.ClaudeSession,
+			NoteCounts:    p.NoteCounts,
+			PlanStats:     p.PlanStats,
 		}
-		// Extract ExtendedGitStatus from interface{}
-		if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
-			cached.GitStatus = extStatus
-		}
-		cachedProjects[path] = cached
 	}
 
 	cache := KeyManageCache{

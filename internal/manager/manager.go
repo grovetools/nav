@@ -268,46 +268,39 @@ func isGitRepository(path string) bool {
 	return err == nil
 }
 
-// GetAvailableProjects now uses the DiscoveryService, transform, and enrichment from grove-core.
+// GetAvailableProjects now uses the DiscoveryService from grove-core to find all projects.
+// Enrichment is no longer handled here; it is done asynchronously in the TUI.
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
-	return m.GetAvailableProjectsWithOptions(nil)
-}
-
-// GetAvailableProjectsWithOptions allows controlling enrichment behavior
-func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts *workspace.EnrichmentOptions) ([]DiscoveredProject, error) {
 	// Initialize the DiscoveryService
 	logger := logrus.New()
 	logger.SetOutput(os.Stderr)
 	logger.SetLevel(logrus.WarnLevel)
-	discoverySvc := workspace.NewDiscoveryService(logger)
 
-	// Step 1: Run the discovery
-	result, err := discoverySvc.DiscoverAll()
+	// Step 1: Run discovery and transform to WorkspaceNodes
+	// GetProjects is the new, consolidated function in grove-core.
+	workspaceNodes, err := workspace.GetProjects(logger)
 	if err != nil {
 		// Return an empty list if discovery fails - sessionize will handle the empty case
 		// This allows first-run setup to trigger
 		return []DiscoveredProject{}, fmt.Errorf("failed to run discovery service: %w", err)
 	}
 
-	// Step 2: Transform to ProjectInfo
-	projectInfos := workspace.TransformToProjectInfo(result)
-
-	// Step 3: Enrich with Git and Claude session data
-	ctx := context.Background()
-	if err := workspace.EnrichProjects(ctx, projectInfos, enrichOpts); err != nil {
-		// Log but don't fail - enrichment is optional
-		fmt.Fprintf(os.Stderr, "Warning: failed to enrich projects: %v\n", err)
-	}
-
-	// Step 4: Convert to SessionizeProject (which embeds ProjectInfo)
-	projects := make([]DiscoveredProject, len(projectInfos))
-	for i, info := range projectInfos {
+	// Step 2: Transform []*workspace.WorkspaceNode into []DiscoveredProject (SessionizeProject)
+	projects := make([]DiscoveredProject, len(workspaceNodes))
+	for i, node := range workspaceNodes {
 		projects[i] = SessionizeProject{
-			ProjectInfo: *info,
+			WorkspaceNode: node,
+			// Enrichment fields are initialized to nil and populated later.
 		}
 	}
 
 	return projects, nil
+}
+
+// GetAvailableProjectsWithOptions is now a convenience wrapper around GetAvailableProjects.
+// The enrichment options are no longer used here as enrichment is handled by the caller (TUI).
+func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts interface{}) ([]DiscoveredProject, error) {
+	return m.GetAvailableProjects()
 }
 
 func (m *Manager) GetAvailableProjectsSorted() ([]DiscoveredProject, error) {

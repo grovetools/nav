@@ -166,11 +166,11 @@ func (m sessionizeModel) renderTree() string {
 		// Determine prefix based on mode
 		if m.ecosystemPickerMode {
 			// In ecosystem picker mode - show tree structure
-			if project.IsWorktree {
+			if project.IsWorktree() {
 				// Check if this is the last worktree of its parent
 				isLast := true
 				for j := i + 1; j < len(m.filtered); j++ {
-					if m.filtered[j].IsWorktree && m.filtered[j].ParentPath == project.ParentPath {
+					if m.filtered[j].IsWorktree() && m.filtered[j].ParentProjectPath == project.ParentProjectPath {
 						isLast = false
 						break
 					}
@@ -189,9 +189,9 @@ func (m sessionizeModel) renderTree() string {
 			if project.Path == m.focusedProject.Path {
 				// This is the focused ecosystem/worktree - show as parent
 				prefix = "  "
-			} else if project.IsWorktree {
+			} else if project.IsWorktree() {
 				// This is a worktree - check if it's a direct child or nested
-				if project.ParentPath == m.focusedProject.Path {
+				if project.ParentProjectPath == m.focusedProject.Path {
 					// Direct worktree of the focused ecosystem
 					prefix = "  └─ "
 				} else {
@@ -204,7 +204,7 @@ func (m sessionizeModel) renderTree() string {
 			}
 		} else {
 			// Normal mode - show worktree indicator
-			if project.IsWorktree {
+			if project.IsWorktree() {
 				prefix = "  └─ "
 			}
 		}
@@ -310,7 +310,7 @@ func (m sessionizeModel) renderTree() string {
 		} else {
 			// Normal line with colored name - style based on project type
 			var nameStyle lipgloss.Style
-			if project.IsWorktree {
+			if project.IsWorktree() {
 				// Worktrees: Blue
 				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
 			} else {

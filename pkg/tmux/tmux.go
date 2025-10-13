@@ -2,7 +2,6 @@ package tmux
 
 import (
 	"github.com/mattsolo1/grove-core/pkg/models"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 )
 
@@ -53,7 +52,7 @@ func (m *Manager) GetAvailableProjects() ([]manager.DiscoveredProject, error) {
 }
 
 // GetAvailableProjectsWithOptions returns available projects with custom enrichment options
-func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts *workspace.EnrichmentOptions) ([]manager.DiscoveredProject, error) {
+func (m *Manager) GetAvailableProjectsWithOptions(enrichOpts interface{}) ([]manager.DiscoveredProject, error) {
 	return m.mgr.GetAvailableProjectsWithOptions(enrichOpts)
 }
 

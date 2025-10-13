@@ -296,8 +296,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				// If this is a worktree, also store by the parent path
 				// so the session shows up for the parent ecosystem/project
-				if session.ParentPath != "" {
-					parentPath := filepath.Clean(session.ParentPath)
+				if session.ParentProjectPath != "" {
+					parentPath := filepath.Clean(session.ParentProjectPath)
 					newStatusMap[parentPath] = session.ClaudeSession.Status
 					newDurationMap[parentPath] = session.ClaudeSession.Duration
 					newDurationSecondsMap[parentPath] = session.ClaudeSession.PID
@@ -345,12 +345,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projects = msg.projects
 		m.isLoading = false // Mark loading as complete
 
-		// Save cache for next startup
-		sessionizeProjects := make([]manager.SessionizeProject, len(msg.projects))
-		for i := range msg.projects {
-			sessionizeProjects[i] = manager.SessionizeProject{ProjectInfo: msg.projects[i].ProjectInfo}
-		}
-		_ = manager.SaveProjectCache(m.configDir, sessionizeProjects)
+		// Save cache for next startup (msg.projects are already SessionizeProject)
+		_ = manager.SaveProjectCache(m.configDir, msg.projects)
 
 		// Update the filtered list
 		m.updateFiltered()
@@ -966,7 +962,7 @@ func (m *sessionizeModel) updateFiltered() {
 		worktreesByParent := make(map[string][]manager.DiscoveredProject)
 
 		for _, p := range m.projects {
-			if !p.IsEcosystem {
+			if !p.IsEcosystem() {
 				continue
 			}
 
@@ -979,9 +975,9 @@ func (m *sessionizeModel) updateFiltered() {
 				continue
 			}
 
-			if p.IsWorktree && p.ParentPath != "" {
+			if p.IsWorktree() && p.ParentProjectPath != "" {
 				// This is a worktree - group by parent
-				worktreesByParent[p.ParentPath] = append(worktreesByParent[p.ParentPath], p)
+				worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
 			} else {
 				// This is a main ecosystem
 				mainEcosystemsMap[p.Path] = p
@@ -1014,23 +1010,24 @@ func (m *sessionizeModel) updateFiltered() {
 
 	// Create a working list of projects, either all projects or just the focused ecosystem
 	var projectsToFilter []manager.DiscoveredProject
-	if m.focusedProject != nil && m.focusedProject.IsEcosystem {
+	if m.focusedProject != nil && m.focusedProject.IsEcosystem() {
 		// Focus is active on an ecosystem - show it and all its children
 		// 1. The focused ecosystem itself
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
 
 		// 2. Determine the filtering logic based on whether this is a worktree or main ecosystem
-		if m.focusedProject.IsWorktree && m.focusedProject.WorktreeName != "" {
-			// This is an ecosystem worktree - include projects with matching WorktreeName
+		if m.focusedProject.IsWorktree() {
+			// This is an ecosystem worktree - include projects that have this ecosystem as their parent
 			for _, p := range m.projects {
-				if p.WorktreeName == m.focusedProject.WorktreeName && p.Path != m.focusedProject.Path {
+				if p.ParentEcosystemPath == m.focusedProject.Path && p.Path != m.focusedProject.Path {
 					projectsToFilter = append(projectsToFilter, p)
 				}
 			}
 		} else {
-			// This is a main ecosystem (not a worktree) - include only children that are NOT in worktrees
+			// This is a main ecosystem (not a worktree) - include only children that have this as their root
+			// and are NOT inside ecosystem worktrees (i.e., ParentEcosystemPath == RootEcosystemPath)
 			for _, p := range m.projects {
-				if p.ParentEcosystemPath == m.focusedProject.Path && p.WorktreeName == "" {
+				if p.RootEcosystemPath == m.focusedProject.Path && p.ParentEcosystemPath == m.focusedProject.Path {
 					projectsToFilter = append(projectsToFilter, p)
 				}
 			}
@@ -1055,8 +1052,8 @@ func (m *sessionizeModel) updateFiltered() {
 				pathsToKeep[p.Path] = true
 
 				// Mark ancestors to preserve hierarchy
-				if p.ParentPath != "" {
-					pathsToKeep[p.ParentPath] = true
+				if p.ParentProjectPath != "" {
+					pathsToKeep[p.ParentProjectPath] = true
 				}
 				if p.ParentEcosystemPath != "" {
 					pathsToKeep[p.ParentEcosystemPath] = true
@@ -1079,8 +1076,8 @@ func (m *sessionizeModel) updateFiltered() {
 	activeGroups := make(map[string]bool)
 	for _, p := range projectsToFilter {
 		groupKey := p.Path
-		if p.IsWorktree {
-			groupKey = p.ParentPath
+		if p.IsWorktree() {
+			groupKey = p.ParentProjectPath
 		}
 		if groupKey == "" { // Should not happen, but as a safeguard
 			continue
@@ -1110,8 +1107,8 @@ func (m *sessionizeModel) updateFiltered() {
 				if p.Path == m.focusedProject.Path {
 					continue // Skip focused project, already added
 				}
-				if p.IsWorktree {
-					parentWorktrees[p.ParentPath] = append(parentWorktrees[p.ParentPath], p)
+				if p.IsWorktree() {
+					parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
 				} else {
 					nonWorktrees = append(nonWorktrees, p)
 				}
@@ -1142,14 +1139,14 @@ func (m *sessionizeModel) updateFiltered() {
 
 			sort.SliceStable(sortedProjects, func(i, j int) bool {
 				groupI := sortedProjects[i].Path
-				if sortedProjects[i].IsWorktree {
-					groupI = sortedProjects[i].ParentPath
+				if sortedProjects[i].IsWorktree() {
+					groupI = sortedProjects[i].ParentProjectPath
 				}
 				isGroupIActive := activeGroups[groupI]
 
 				groupJ := sortedProjects[j].Path
-				if sortedProjects[j].IsWorktree {
-					groupJ = sortedProjects[j].ParentPath
+				if sortedProjects[j].IsWorktree() {
+					groupJ = sortedProjects[j].ParentProjectPath
 				}
 				isGroupJActive := activeGroups[groupJ]
 
@@ -1165,7 +1162,7 @@ func (m *sessionizeModel) updateFiltered() {
 			// Filter inactive worktrees: only include worktrees with running sessions
 			m.filtered = []manager.DiscoveredProject{}
 			for _, p := range sortedProjects {
-				if !p.IsWorktree {
+				if !p.IsWorktree() {
 					// Always include parent repositories
 					m.filtered = append(m.filtered, p)
 				} else {
@@ -1187,8 +1184,8 @@ func (m *sessionizeModel) updateFiltered() {
 			parents := []manager.DiscoveredProject{}
 
 			for _, p := range projects {
-				if p.IsWorktree {
-					parentWorktrees[p.ParentPath] = append(parentWorktrees[p.ParentPath], p)
+				if p.IsWorktree() {
+					parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
 				} else {
 					parents = append(parents, p)
 				}
@@ -1239,7 +1236,7 @@ func (m *sessionizeModel) updateFiltered() {
 
 		// First pass: find matching parent projects (search name only)
 		for _, p := range projectsToFilter {
-			if p.IsWorktree {
+			if p.IsWorktree() {
 				continue // Skip worktrees in first pass
 			}
 
@@ -1255,7 +1252,7 @@ func (m *sessionizeModel) updateFiltered() {
 		// Second pass: find worktrees that match and mark their parents for inclusion (only if worktrees not folded)
 		if !m.worktreesFolded {
 			for _, p := range projectsToFilter {
-				if !p.IsWorktree {
+				if !p.IsWorktree() {
 					continue
 				}
 
@@ -1265,7 +1262,7 @@ func (m *sessionizeModel) updateFiltered() {
 				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
 				   strings.Contains(lowerName, filter) {
 					// Mark parent for inclusion even if parent didn't match directly
-					parentsWithMatchingWorktrees[p.ParentPath] = true
+					parentsWithMatchingWorktrees[p.ParentProjectPath] = true
 				}
 			}
 		}
@@ -1275,14 +1272,14 @@ func (m *sessionizeModel) updateFiltered() {
 			shouldInclude := false
 			parentPath := p.Path
 
-			if p.IsWorktree {
-				parentPath = p.ParentPath
+			if p.IsWorktree() {
+				parentPath = p.ParentProjectPath
 				// Include worktree only if not folded AND (it matches itself OR its parent matched)
 				if !m.worktreesFolded {
 					lowerName := strings.ToLower(p.Name)
 					worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
 						strings.Contains(lowerName, filter)
-					parentMatched := matchedParents[p.ParentPath]
+					parentMatched := matchedParents[p.ParentProjectPath]
 
 					shouldInclude = worktreeMatches || parentMatched
 				}

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -110,12 +109,12 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 	prefix := ""
 	if m.ecosystemPickerMode {
 		// In ecosystem picker mode - show tree structure for worktrees
-		if project.IsWorktree {
+		if project.IsWorktree() {
 			// Check if this is the last worktree of its parent
 			isLast := true
 			for j := range m.filtered {
-				if m.filtered[j].IsWorktree &&
-					m.filtered[j].ParentPath == project.ParentPath &&
+				if m.filtered[j].IsWorktree() &&
+					m.filtered[j].ParentProjectPath == project.ParentProjectPath &&
 					m.filtered[j].Path != project.Path {
 					// Found another worktree after this one
 					if m.filtered[j].Name > project.Name {
@@ -136,9 +135,9 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 		if project.Path == m.focusedProject.Path {
 			// This is the focused ecosystem - no prefix
 			prefix = ""
-		} else if project.IsWorktree {
+		} else if project.IsWorktree() {
 			// Worktree
-			if project.ParentPath == m.focusedProject.Path {
+			if project.ParentProjectPath == m.focusedProject.Path {
 				// Direct worktree of focused ecosystem
 				prefix = "└─ "
 			} else {
@@ -151,7 +150,7 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 		}
 	} else {
 		// Normal mode - only show worktree indicator
-		if project.IsWorktree {
+		if project.IsWorktree() {
 			prefix = "└─ "
 		}
 	}
@@ -159,7 +158,7 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 	workspaceName = prefix + project.Name
 
 	// Apply color styling
-	if project.IsWorktree {
+	if project.IsWorktree() {
 		// Apply blue styling for worktrees
 		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(workspaceName)
 	} else if m.focusedProject == nil || project.Path != m.focusedProject.Path {
@@ -447,7 +446,7 @@ func hasGitStatus(gitStatus interface{}) bool {
 	if gitStatus == nil {
 		return false
 	}
-	if extStatus, ok := gitStatus.(*workspace.ExtendedGitStatus); ok && extStatus != nil && extStatus.StatusInfo != nil {
+	if extStatus, ok := gitStatus.(*manager.ExtendedGitStatus); ok && extStatus != nil && extStatus.StatusInfo != nil {
 		return true
 	}
 	return false

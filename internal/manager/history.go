@@ -93,8 +93,8 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 	getGroupAccessTime := func(p DiscoveredProject) *time.Time {
 		// For worktrees, use parent's access time
 		pathToCheck := p.Path
-		if p.IsWorktree && p.ParentPath != "" {
-			pathToCheck = p.ParentPath
+		if p.IsWorktree() && p.ParentProjectPath != "" {
+			pathToCheck = p.ParentProjectPath
 		}
 
 		if access, exists := h.Projects[pathToCheck]; exists {
@@ -132,18 +132,20 @@ func (h *AccessHistory) SortProjectsByAccess(projects []DiscoveredProject) []Dis
 
 		// Same group access time - check if they're in the same group
 		groupI := projectI.Path
-		if projectI.IsWorktree && projectI.ParentPath != "" {
-			groupI = projectI.ParentPath
+		if projectI.IsWorktree() && projectI.ParentProjectPath != "" {
+			groupI = projectI.ParentProjectPath
 		}
 		groupJ := projectJ.Path
-		if projectJ.IsWorktree && projectJ.ParentPath != "" {
-			groupJ = projectJ.ParentPath
+		if projectJ.IsWorktree() && projectJ.ParentProjectPath != "" {
+			groupJ = projectJ.ParentProjectPath
 		}
 
 		if groupI == groupJ {
 			// Same group - parent repos come before worktrees
-			if projectI.IsWorktree != projectJ.IsWorktree {
-				return !projectI.IsWorktree
+			isWorktreeI := projectI.IsWorktree()
+			isWorktreeJ := projectJ.IsWorktree()
+			if isWorktreeI != isWorktreeJ {
+				return !isWorktreeI
 			}
 			// Both are worktrees or both are repos - sort alphabetically by name
 			return projectI.Name < projectJ.Name

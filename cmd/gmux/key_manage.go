@@ -28,12 +28,12 @@ import (
 
 // Message for enriched data of mapped projects
 type enrichedProjectsMsg struct {
-	projects []*workspace.ProjectInfo
+	projects []*manager.SessionizeProject
 }
 
 // Message for CWD project enrichment
 type cwdProjectEnrichedMsg struct {
-	project *workspace.ProjectInfo
+	project *manager.SessionizeProject
 }
 
 // Message for Claude session status updates
@@ -71,23 +71,17 @@ var keyManageCmd = &cobra.Command{
 		}
 
 		// Try to load cached enriched data for instant startup
-		enrichedProjects := make(map[string]*workspace.ProjectInfo)
+		enrichedProjects := make(map[string]*manager.SessionizeProject)
 		usedCache := false
 		if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
-			// Convert cached projects to ProjectInfo
+			// Convert cached projects to SessionizeProject
 			for path, cached := range cache.EnrichedProjects {
-				enrichedProjects[path] = &workspace.ProjectInfo{
-					Name:                cached.Name,
-					Path:                cached.Path,
-					ParentPath:          cached.ParentPath,
-					IsWorktree:          cached.IsWorktree,
-					WorktreeName:        cached.WorktreeName,
-					ParentEcosystemPath: cached.ParentEcosystemPath,
-					IsEcosystem:         cached.IsEcosystem,
-					GitStatus:           cached.GitStatus,
-					ClaudeSession:       cached.ClaudeSession,
-					NoteCounts:          cached.NoteCounts,
-					PlanStats:           cached.PlanStats,
+				enrichedProjects[path] = &manager.SessionizeProject{
+					WorkspaceNode: cached.WorkspaceNode,
+					GitStatus:     cached.GitStatus,
+					ClaudeSession: cached.ClaudeSession,
+					NoteCounts:    cached.NoteCounts,
+					PlanStats:     cached.PlanStats,
 				}
 			}
 			usedCache = true
@@ -128,9 +122,9 @@ type manageModel struct {
 	message  string
 	// CWD state
 	cwdPath          string
-	cwdProject       *workspace.ProjectInfo
+	cwdProject       *manager.SessionizeProject
 	// Enriched data
-	enrichedProjects map[string]*workspace.ProjectInfo // Caches enriched data by path
+	enrichedProjects map[string]*manager.SessionizeProject // Caches enriched data by path
 	// Claude session data
 	claudeStatusMap   map[string]string // path -> claude status
 	claudeDurationMap map[string]string // path -> claude duration
@@ -254,7 +248,7 @@ var keys = keyMap{
 	),
 }
 
-func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*workspace.ProjectInfo, usedCache bool) manageModel {
+func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*manager.SessionizeProject, usedCache bool) manageModel {
 	helpModel := help.NewBuilder().
 		WithKeys(keys).
 		WithTitle("Session Key Manager - Help").
@@ -263,7 +257,7 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 	// Use cached enriched projects if provided, otherwise start with empty map
 	enrichedProjects := cachedEnrichedProjects
 	if enrichedProjects == nil {
-		enrichedProjects = make(map[string]*workspace.ProjectInfo)
+		enrichedProjects = make(map[string]*manager.SessionizeProject)
 	}
 
 	// Load locked keys from manager
@@ -310,7 +304,7 @@ func (m manageModel) Init() tea.Cmd {
 // enrichMappedProjectsCmd fetches enriched data for mapped sessions
 func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 	return func() tea.Msg {
-		var projects []*workspace.ProjectInfo
+		var projects []*manager.SessionizeProject
 
 		for _, s := range sessions {
 			if s.Path == "" {
@@ -318,22 +312,16 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 			}
 
 			// Get project info
-			projInfo, err := workspace.GetProjectByPath(s.Path)
+			node, err := workspace.GetProjectByPath(s.Path)
 			if err != nil {
 				continue
 			}
 
-			projects = append(projects, projInfo)
+			// Wrap in SessionizeProject (enrichment happens async in the TUI)
+			projects = append(projects, &manager.SessionizeProject{
+				WorkspaceNode: node,
+			})
 		}
-
-		// Enrich all projects with Git and Claude status
-		ctx := context.Background()
-		enrichOpts := &workspace.EnrichmentOptions{
-			FetchGitStatus:      true,
-			FetchClaudeSessions: true,
-			FetchPlanStats:      true,
-		}
-		workspace.EnrichProjects(ctx, projects, enrichOpts)
 
 		return enrichedProjectsMsg{projects: projects}
 	}
@@ -343,22 +331,16 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 	return func() tea.Msg {
 		// Get project info for CWD
-		projInfo, err := workspace.GetProjectByPath(cwdPath)
+		node, err := workspace.GetProjectByPath(cwdPath)
 		if err != nil {
 			// CWD is not a valid project
 			return cwdProjectEnrichedMsg{project: nil}
 		}
 
-		// Enrich with Git status only (Claude sessions fetched separately)
-		ctx := context.Background()
-		enrichOpts := &workspace.EnrichmentOptions{
-			FetchGitStatus:      true,
-			FetchClaudeSessions: false,
-			FetchPlanStats:      true,
-		}
-		workspace.EnrichProjects(ctx, []*workspace.ProjectInfo{projInfo}, enrichOpts)
-
-		return cwdProjectEnrichedMsg{project: projInfo}
+		// Wrap in SessionizeProject (enrichment happens async in the TUI)
+		return cwdProjectEnrichedMsg{project: &manager.SessionizeProject{
+			WorkspaceNode: node,
+		}}
 	}
 }
 
@@ -991,8 +973,8 @@ func (m manageModel) View() string {
 
 				// RULE 1: Determine Repository and Worktree.
 				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
-				if projInfo.IsWorktree && projInfo.ParentPath != "" {
-					repository = filepath.Base(projInfo.ParentPath)
+				if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
+					repository = filepath.Base(projInfo.ParentProjectPath)
 					worktree = projInfo.Name
 				} else {
 					repository = projInfo.Name
@@ -1002,43 +984,43 @@ func (m manageModel) View() string {
 				if projInfo.ParentEcosystemPath != "" {
 					// Project is within an ecosystem.
 					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
-					ecoWorktreeName := projInfo.WorktreeName // The eco-worktree the project is in.
 
 					// Set ecosystem name
 					ecosystem = baseEcosystem
 
-					// If this project is inside an ecosystem worktree, show the eco-worktree in Worktree column with indicator
-					if ecoWorktreeName != "" {
+					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
+					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath {
+						// This project is inside an ecosystem worktree
+						ecoWorktreeName := filepath.Base(projInfo.ParentEcosystemPath)
+
 						// Repository should be the actual project name (not the ecosystem)
 						repository = projInfo.Name
 
 						// If this is also a worktree of that repo, keep the worktree name
 						// Otherwise, show the ecosystem worktree name with indicator
-						if projInfo.IsWorktree && projInfo.ParentPath != "" {
+						if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
 							// This is a worktree of a repo inside an eco-worktree
-							repository = filepath.Base(projInfo.ParentPath)
+							repository = filepath.Base(projInfo.ParentProjectPath)
 							worktree = projInfo.Name
 						} else {
 							// This is a repo inside an eco-worktree (not a worktree itself)
 							worktree = ecoWorktreeName + " *"
 						}
 					}
-				} else if projInfo.IsEcosystem {
+				} else if projInfo.IsEcosystem() {
 					// It's a root ecosystem.
 					ecosystem = projInfo.Name
 				}
 
 				// RULE 3: Clean up redundancies for clarity.
-				if projInfo.IsEcosystem && !projInfo.IsWorktree {
+				if projInfo.IsEcosystem() && !projInfo.IsWorktree() {
 					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
 					repository = ""
 				}
 
 				// Format Git status (with colors)
 				if projInfo.GitStatus != nil {
-					if extStatus, ok := projInfo.GitStatus.(*workspace.ExtendedGitStatus); ok {
-						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
-					}
+					gitStatus = formatChanges(projInfo.GitStatus.StatusInfo, projInfo.GitStatus)
 				}
 
 				// Format Plan status
@@ -1084,8 +1066,8 @@ func (m manageModel) View() string {
 
 				// RULE 1: Determine Repository and Worktree.
 				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
-				if projInfo.IsWorktree && projInfo.ParentPath != "" {
-					repository = filepath.Base(projInfo.ParentPath)
+				if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
+					repository = filepath.Base(projInfo.ParentProjectPath)
 					worktree = projInfo.Name
 				} else {
 					repository = projInfo.Name
@@ -1095,43 +1077,43 @@ func (m manageModel) View() string {
 				if projInfo.ParentEcosystemPath != "" {
 					// Project is within an ecosystem.
 					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
-					ecoWorktreeName := projInfo.WorktreeName // The eco-worktree the project is in.
 
 					// Set ecosystem name
 					ecosystem = baseEcosystem
 
-					// If this project is inside an ecosystem worktree, show the eco-worktree in Worktree column with indicator
-					if ecoWorktreeName != "" {
+					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
+					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath {
+						// This project is inside an ecosystem worktree
+						ecoWorktreeName := filepath.Base(projInfo.ParentEcosystemPath)
+
 						// Repository should be the actual project name (not the ecosystem)
 						repository = projInfo.Name
 
 						// If this is also a worktree of that repo, keep the worktree name
 						// Otherwise, show the ecosystem worktree name with indicator
-						if projInfo.IsWorktree && projInfo.ParentPath != "" {
+						if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
 							// This is a worktree of a repo inside an eco-worktree
-							repository = filepath.Base(projInfo.ParentPath)
+							repository = filepath.Base(projInfo.ParentProjectPath)
 							worktree = projInfo.Name
 						} else {
 							// This is a repo inside an eco-worktree (not a worktree itself)
 							worktree = ecoWorktreeName + " *"
 						}
 					}
-				} else if projInfo.IsEcosystem {
+				} else if projInfo.IsEcosystem() {
 					// It's a root ecosystem.
 					ecosystem = projInfo.Name
 				}
 
 				// RULE 3: Clean up redundancies for clarity.
-				if projInfo.IsEcosystem && !projInfo.IsWorktree {
+				if projInfo.IsEcosystem() && !projInfo.IsWorktree() {
 					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
 					repository = ""
 				}
 
 				// Format Git status (with colors)
 				if projInfo.GitStatus != nil {
-					if extStatus, ok := projInfo.GitStatus.(*workspace.ExtendedGitStatus); ok {
-						gitStatus = formatChanges(extStatus.StatusInfo, extStatus)
-					}
+					gitStatus = formatChanges(projInfo.GitStatus.StatusInfo, projInfo.GitStatus)
 				}
 
 				// Format Plan status
@@ -1330,7 +1312,7 @@ func formatClaudeStatusFromMap(status, duration string) string {
 }
 
 // formatClaudeStatus formats the Claude session status into a styled string
-func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
+func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
 	if session == nil {
 		return ""
 	}
@@ -1340,7 +1322,7 @@ func formatClaudeStatus(session *workspace.ClaudeSessionInfo) string {
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string
 // Shows only job status icons and counts (e.g., "◐ 1 ○ 2 ● 5")
-func formatPlanStatsForKeyManage(stats *workspace.PlanStats) string {
+func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
 	if stats == nil || stats.TotalPlans == 0 {
 		return ""
 	}
@@ -1363,7 +1345,7 @@ func formatPlanStatsForKeyManage(stats *workspace.PlanStats) string {
 }
 
 // formatGitStatusPlain formats Git status without ANSI codes for table display
-func formatGitStatusPlain(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatus) string {
+func formatGitStatusPlain(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus) string {
 	if status == nil {
 		return ""
 	}
@@ -1414,7 +1396,7 @@ func formatGitStatusPlain(status *git.StatusInfo, extStatus *workspace.ExtendedG
 }
 
 // formatClaudeStatusPlain formats Claude status without ANSI codes for table display
-func formatClaudeStatusPlain(session *workspace.ClaudeSessionInfo) string {
+func formatClaudeStatusPlain(session *manager.ClaudeSessionInfo) string {
 	if session == nil {
 		return ""
 	}

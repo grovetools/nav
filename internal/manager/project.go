@@ -5,30 +5,60 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 )
 
-// SessionizeProject is an enriched ProjectInfo for the sessionize TUI.
-// It embeds the core ProjectInfo type and adds application-specific fields.
-type SessionizeProject struct {
-	workspace.ProjectInfo
+// ExtendedGitStatus holds git status including line changes. This is now defined locally.
+type ExtendedGitStatus struct {
+	*git.StatusInfo
+	LinesAdded   int
+	LinesDeleted int
+}
 
-	// Application-specific enrichment
-	// Note: GitStatus and ClaudeSession are already in ProjectInfo
-	// We only need to expose them through helper methods if needed
+// ClaudeSessionInfo holds information about a Claude session. This is now defined locally.
+type ClaudeSessionInfo struct {
+	ID       string
+	PID      int
+	Status   string
+	Duration string
+}
+
+// NoteCounts holds counts of notes. This is now defined locally.
+type NoteCounts struct {
+	Current int
+	Issues  int
+}
+
+// PlanStats holds stats about grove-flow plans. This is now defined locally.
+type PlanStats struct {
+	TotalPlans int
+	ActivePlan string
+	Running    int
+	Pending    int
+	Completed  int
+	Failed     int
+}
+
+// SessionizeProject is an enriched WorkspaceNode for the sessionize TUI.
+// It embeds the core WorkspaceNode type and adds application-specific enrichment fields.
+type SessionizeProject struct {
+	*workspace.WorkspaceNode
+
+	// Application-specific enrichment fields
+	GitStatus     *ExtendedGitStatus
+	ClaudeSession *ClaudeSessionInfo
+	NoteCounts    *NoteCounts
+	PlanStats     *PlanStats
 }
 
 // GetGitStatus returns the git status as *git.StatusInfo for backward compatibility
 func (p *SessionizeProject) GetGitStatus() *git.StatusInfo {
-	if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok && extStatus != nil {
-		return extStatus.StatusInfo
+	if p.GitStatus != nil {
+		return p.GitStatus.StatusInfo
 	}
 	return nil
 }
 
 // GetExtendedGitStatus returns the extended git status with line changes
-func (p *SessionizeProject) GetExtendedGitStatus() *workspace.ExtendedGitStatus {
-	if extStatus, ok := p.GitStatus.(*workspace.ExtendedGitStatus); ok {
-		return extStatus
-	}
-	return nil
+func (p *SessionizeProject) GetExtendedGitStatus() *ExtendedGitStatus {
+	return p.GitStatus
 }
 
 // Legacy type alias for backward compatibility

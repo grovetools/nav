@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/git"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 )
 
 // highlightMatch highlights the matched portion of text with a yellow background
@@ -40,7 +40,7 @@ func highlightMatch(text, filter string) string {
 }
 
 // formatChanges formats the git status into a styled string.
-func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatus) string {
+func formatChanges(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus) string {
 	if status == nil {
 		return ""
 	}
@@ -104,7 +104,7 @@ func formatChanges(status *git.StatusInfo, extStatus *workspace.ExtendedGitStatu
 
 // formatPlanStats formats plan stats into a styled string
 // Shows: total plans (active plan name) [job stats]
-func formatPlanStats(stats *workspace.PlanStats) string {
+func formatPlanStats(stats *manager.PlanStats) string {
 	if stats == nil || stats.TotalPlans == 0 {
 		return ""
 	}

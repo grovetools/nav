@@ -19,25 +19,16 @@ import (
 
 // buildInitialEnrichmentOptions creates options for enriching project data.
 // For initial load, we disable enrichment to show the UI faster.
-func buildInitialEnrichmentOptions() *workspace.EnrichmentOptions {
-	return &workspace.EnrichmentOptions{
-		FetchClaudeSessions: false, // Fetched async in TUI
-		FetchGitStatus:      false, // Fetched async in TUI
-		FetchPlanStats:      false,
-		GitStatusPaths:      nil, // Not needed for initial load
-	}
+// Note: EnrichmentOptions type has been removed - enrichment now happens async in TUI
+func buildInitialEnrichmentOptions() interface{} {
+	return nil
 }
 
 // buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
-func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) *workspace.EnrichmentOptions {
-	return &workspace.EnrichmentOptions{
-		FetchClaudeSessions: fetchClaude,
-		FetchGitStatus:      fetchGit,
-		FetchNoteCounts:     fetchNotes,
-		FetchPlanStats:      fetchPlans,
-		GitStatusPaths:      nil, // nil means fetch for all projects
-	}
+// Note: EnrichmentOptions type has been removed - enrichment now happens async in TUI
+func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) interface{} {
+	return nil
 }
 
 var sessionizeCmd = &cobra.Command{
@@ -75,19 +66,11 @@ var sessionizeCmd = &cobra.Command{
 			projects = make([]manager.SessionizeProject, len(cache.Projects))
 			for i, cached := range cache.Projects {
 				projects[i] = manager.SessionizeProject{
-					ProjectInfo: workspace.ProjectInfo{
-						Name:                cached.Name,
-						Path:                cached.Path,
-						ParentPath:          cached.ParentPath,
-						IsWorktree:          cached.IsWorktree,
-						WorktreeName:        cached.WorktreeName,
-						ParentEcosystemPath: cached.ParentEcosystemPath,
-						IsEcosystem:         cached.IsEcosystem,
-						GitStatus:           cached.GitStatus, // Now properly typed
-						ClaudeSession:       cached.ClaudeSession,
-						NoteCounts:          cached.NoteCounts,
-						PlanStats:           cached.PlanStats,
-					},
+					WorkspaceNode: cached.WorkspaceNode,
+					GitStatus:     cached.GitStatus,
+					ClaudeSession: cached.ClaudeSession,
+					NoteCounts:    cached.NoteCounts,
+					PlanStats:     cached.PlanStats,
 				}
 			}
 			usedCache = true
@@ -107,22 +90,12 @@ var sessionizeCmd = &cobra.Command{
 				return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
 			}
 
-			// Convert to SessionizeProject
-			projects = make([]manager.SessionizeProject, len(fetchedProjects))
-			for i := range fetchedProjects {
-				projects[i] = manager.SessionizeProject{ProjectInfo: fetchedProjects[i].ProjectInfo}
-			}
+			// Convert to SessionizeProject (fetchedProjects are already DiscoveredProject = SessionizeProject)
+			projects = fetchedProjects
 
 			// Sort by access history
 			if history, err := mgr.GetAccessHistory(); err == nil {
-				discoveredProjects := make([]manager.DiscoveredProject, len(projects))
-				for i := range projects {
-					discoveredProjects[i] = manager.DiscoveredProject(projects[i])
-				}
-				sorted := history.SortProjectsByAccess(discoveredProjects)
-				for i := range sorted {
-					projects[i] = manager.SessionizeProject{ProjectInfo: sorted[i].ProjectInfo}
-				}
+				projects = history.SortProjectsByAccess(projects)
 			}
 		}
 
@@ -175,8 +148,8 @@ var sessionizeCmd = &cobra.Command{
 			// Record the access before switching
 			_ = mgr.RecordProjectAccess(sm.selected.Path)
 			// If it's a worktree, also record access for the parent
-			if sm.selected.IsWorktree && sm.selected.ParentPath != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.ParentPath)
+			if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
+				_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
 			}
 			return sessionizeProject(sm.selected.Path)
 		}

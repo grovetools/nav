@@ -114,22 +114,26 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 					if err == nil {
 						cleanPath := filepath.Clean(absPath)
 
-						sessionProject := manager.DiscoveredProject{
-							ProjectInfo: workspace.ProjectInfo{
-								Name: filepath.Base(cleanPath),
-								Path: cleanPath,
-								ClaudeSession: &workspace.ClaudeSessionInfo{
-									ID:       session.ID,
-									PID:      session.PID,
-									Status:   session.Status,
-									Duration: session.StateDuration,
-								},
-							},
+						// Create a basic WorkspaceNode for the Claude session path
+						node := &workspace.WorkspaceNode{
+							Name: filepath.Base(cleanPath),
+							Path: cleanPath,
+							Kind: workspace.KindStandaloneProject, // Default kind
 						}
 
 						if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
-							sessionProject.ParentPath = parentPath
-							sessionProject.IsWorktree = true
+							node.ParentProjectPath = parentPath
+							node.Kind = workspace.KindStandaloneProjectWorktree
+						}
+
+						sessionProject := manager.DiscoveredProject{
+							WorkspaceNode: node,
+							ClaudeSession: &manager.ClaudeSessionInfo{
+								ID:       session.ID,
+								PID:      session.PID,
+								Status:   session.Status,
+								Duration: session.StateDuration,
+							},
 						}
 
 						claudeSessionProjects = append(claudeSessionProjects, sessionProject)
@@ -155,12 +159,8 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string, fetchGit, fetchClaude
 			projects = history.SortProjectsByAccess(projects)
 		}
 
-		// Save to cache for next startup
-		sessionizeProjects := make([]manager.SessionizeProject, len(projects))
-		for i := range projects {
-			sessionizeProjects[i] = manager.SessionizeProject{ProjectInfo: projects[i].ProjectInfo}
-		}
-		_ = manager.SaveProjectCache(configDir, sessionizeProjects)
+		// Save to cache for next startup (projects are already SessionizeProject)
+		_ = manager.SaveProjectCache(configDir, projects)
 
 		return projectsUpdateMsg{projects: projects}
 	}
