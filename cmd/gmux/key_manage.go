@@ -317,11 +317,21 @@ func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
 				continue
 			}
 
-			// Wrap in SessionizeProject (enrichment happens async in the TUI)
+			// Wrap in SessionizeProject
 			projects = append(projects, &manager.SessionizeProject{
 				WorkspaceNode: node,
 			})
 		}
+
+		// Enrich all projects
+		ctx := context.Background()
+		enrichOpts := &manager.EnrichmentOptions{
+			FetchGitStatus:      true,
+			FetchClaudeSessions: true,
+			FetchNoteCounts:     true,
+			FetchPlanStats:      true,
+		}
+		manager.EnrichProjects(ctx, projects, enrichOpts)
 
 		return enrichedProjectsMsg{projects: projects}
 	}

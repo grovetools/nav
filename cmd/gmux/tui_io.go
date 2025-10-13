@@ -150,9 +150,18 @@ func fetchClaudeSessions() []manager.DiscoveredProject {
 // and fetches Git status for all discovered projects
 func fetchProjectsCmd(mgr *tmux.Manager, configDir string, fetchGit, fetchClaude, fetchNotes, fetchPlans bool) tea.Cmd {
 	return func() tea.Msg {
-		// Fetch enrichment data for all projects
+		// Fetch projects without enrichment first
+		projects, _ := mgr.GetAvailableProjects()
+
+		// Convert to pointers for enrichment
+		projectPtrs := make([]*manager.SessionizeProject, len(projects))
+		for i := range projects {
+			projectPtrs[i] = &projects[i]
+		}
+
+		// Enrich projects
 		enrichOpts := buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans)
-		projects, _ := mgr.GetAvailableProjectsWithOptions(enrichOpts)
+		manager.EnrichProjects(context.Background(), projectPtrs, enrichOpts)
 
 		// Sort by access history
 		if history, err := mgr.GetAccessHistory(); err == nil {

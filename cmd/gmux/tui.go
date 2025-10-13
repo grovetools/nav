@@ -1011,31 +1011,21 @@ func (m *sessionizeModel) updateFiltered() {
 	// Create a working list of projects, either all projects or just the focused ecosystem
 	var projectsToFilter []manager.DiscoveredProject
 	if m.focusedProject != nil && m.focusedProject.IsEcosystem() {
-		// Focus is active on an ecosystem - show it and all its children
-		// 1. The focused ecosystem itself
+		// This is an ecosystem (root or worktree). Include it and its direct children.
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
-
-		// 2. Determine the filtering logic based on whether this is a worktree or main ecosystem
-		if m.focusedProject.IsWorktree() {
-			// This is an ecosystem worktree - include projects that have this ecosystem as their parent
-			for _, p := range m.projects {
-				if p.ParentEcosystemPath == m.focusedProject.Path && p.Path != m.focusedProject.Path {
-					projectsToFilter = append(projectsToFilter, p)
-				}
-			}
-		} else {
-			// This is a main ecosystem (not a worktree) - include only children that have this as their root
-			// and are NOT inside ecosystem worktrees (i.e., ParentEcosystemPath == RootEcosystemPath)
-			for _, p := range m.projects {
-				if p.RootEcosystemPath == m.focusedProject.Path && p.ParentEcosystemPath == m.focusedProject.Path {
-					projectsToFilter = append(projectsToFilter, p)
-				}
+		for _, p := range m.projects {
+			if p.ParentEcosystemPath == m.focusedProject.Path && p.Path != m.focusedProject.Path {
+				projectsToFilter = append(projectsToFilter, p)
 			}
 		}
 	} else if m.focusedProject != nil {
-		// Focused on something that is not an ecosystem (a regular project)
-		// Just show that project
+		// Focused on a regular project - just show that project and its worktrees
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
+		for _, p := range m.projects {
+			if p.IsWorktree() && p.ParentProjectPath == m.focusedProject.Path {
+				projectsToFilter = append(projectsToFilter, p)
+			}
+		}
 	} else {
 		// No focus, use all projects
 		projectsToFilter = m.projects

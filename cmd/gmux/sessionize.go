@@ -19,16 +19,25 @@ import (
 
 // buildInitialEnrichmentOptions creates options for enriching project data.
 // For initial load, we disable enrichment to show the UI faster.
-// Note: EnrichmentOptions type has been removed - enrichment now happens async in TUI
-func buildInitialEnrichmentOptions() interface{} {
-	return nil
+func buildInitialEnrichmentOptions() *manager.EnrichmentOptions {
+	return &manager.EnrichmentOptions{
+		FetchClaudeSessions: false,
+		FetchGitStatus:      false,
+		FetchNoteCounts:     false,
+		FetchPlanStats:      false,
+	}
 }
 
 // buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
-// Note: EnrichmentOptions type has been removed - enrichment now happens async in TUI
-func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) interface{} {
-	return nil
+func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) *manager.EnrichmentOptions {
+	return &manager.EnrichmentOptions{
+		FetchClaudeSessions: fetchClaude,
+		FetchGitStatus:      fetchGit,
+		FetchNoteCounts:     fetchNotes,
+		FetchPlanStats:      fetchPlans,
+		GitStatusPaths:      nil, // nil means fetch for all projects
+	}
 }
 
 var sessionizeCmd = &cobra.Command{
