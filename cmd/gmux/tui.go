@@ -1010,19 +1010,13 @@ func (m *sessionizeModel) updateFiltered() {
 
 	// Create a working list of projects, either all projects or just the focused ecosystem
 	var projectsToFilter []manager.DiscoveredProject
-	if m.focusedProject != nil && m.focusedProject.IsEcosystem() {
-		// This is an ecosystem (root or worktree). Include it and its direct children.
+	if m.focusedProject != nil {
+		// Add the focused project itself
 		projectsToFilter = append(projectsToFilter, *m.focusedProject)
+
+		// Add all direct children (handles both ecosystem children and worktree children)
 		for _, p := range m.projects {
-			if p.ParentEcosystemPath == m.focusedProject.Path && p.Path != m.focusedProject.Path {
-				projectsToFilter = append(projectsToFilter, p)
-			}
-		}
-	} else if m.focusedProject != nil {
-		// Focused on a regular project - just show that project and its worktrees
-		projectsToFilter = append(projectsToFilter, *m.focusedProject)
-		for _, p := range m.projects {
-			if p.IsWorktree() && p.ParentProjectPath == m.focusedProject.Path {
+			if p.IsChildOf(m.focusedProject.Path) {
 				projectsToFilter = append(projectsToFilter, p)
 			}
 		}
@@ -1083,42 +1077,48 @@ func (m *sessionizeModel) updateFiltered() {
 		// Default View: Group-aware sorting with inactive worktree filtering
 
 		if m.focusedProject != nil {
-			// Focus mode: Group repos with their worktrees hierarchically
-			m.filtered = []manager.DiscoveredProject{}
+			// Focus mode: Different handling for ecosystems vs regular projects
+			if m.focusedProject.IsEcosystem() {
+				// For ecosystems, just show all filtered projects directly without complex grouping
+				m.filtered = projectsToFilter
+			} else {
+				// Regular project focus: Group repos with their worktrees hierarchically
+				m.filtered = []manager.DiscoveredProject{}
 
-			// First add the focused project
-			m.filtered = append(m.filtered, *m.focusedProject)
+				// First add the focused project
+				m.filtered = append(m.filtered, *m.focusedProject)
 
-			// Build a map of parents to their worktrees
-			parentWorktrees := make(map[string][]manager.DiscoveredProject)
-			nonWorktrees := []manager.DiscoveredProject{}
+				// Build a map of parents to their worktrees
+				parentWorktrees := make(map[string][]manager.DiscoveredProject)
+				nonWorktrees := []manager.DiscoveredProject{}
 
-			for _, p := range projectsToFilter {
-				if p.Path == m.focusedProject.Path {
-					continue // Skip focused project, already added
-				}
-				if p.IsWorktree() {
-					parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
-				} else {
-					nonWorktrees = append(nonWorktrees, p)
-				}
-			}
-
-			// Add non-worktree repos, each followed by their worktrees (if not folded)
-			for _, parent := range nonWorktrees {
-				m.filtered = append(m.filtered, parent)
-				if !m.worktreesFolded {
-					if worktrees, exists := parentWorktrees[parent.Path]; exists {
-						m.filtered = append(m.filtered, worktrees...)
+				for _, p := range projectsToFilter {
+					if p.Path == m.focusedProject.Path {
+						continue // Skip focused project, already added
+					}
+					if p.IsWorktree() {
+						parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
+					} else {
+						nonWorktrees = append(nonWorktrees, p)
 					}
 				}
-			}
 
-			// Add any remaining ecosystem worktrees (direct children of focused project) if not folded
-			if !m.worktreesFolded {
-				if focusedWorktrees, exists := parentWorktrees[m.focusedProject.Path]; exists {
-					// Insert these after the focused project (at position 1)
-					m.filtered = append(m.filtered[:1], append(focusedWorktrees, m.filtered[1:]...)...)
+				// Add non-worktree repos, each followed by their worktrees (if not folded)
+				for _, parent := range nonWorktrees {
+					m.filtered = append(m.filtered, parent)
+					if !m.worktreesFolded {
+						if worktrees, exists := parentWorktrees[parent.Path]; exists {
+							m.filtered = append(m.filtered, worktrees...)
+						}
+					}
+				}
+
+				// Add any remaining worktrees if not folded
+				if !m.worktreesFolded {
+					if focusedWorktrees, exists := parentWorktrees[m.focusedProject.Path]; exists {
+						// Insert these after the focused project (at position 1)
+						m.filtered = append(m.filtered[:1], append(focusedWorktrees, m.filtered[1:]...)...)
+					}
 				}
 			}
 		} else {
