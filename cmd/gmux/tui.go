@@ -25,9 +25,10 @@ import (
 
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
-	projects                 []manager.DiscoveredProject
-	filtered                 []manager.DiscoveredProject
-	selected                 manager.DiscoveredProject
+	projects                 []*manager.SessionizeProject
+	filtered                 []*manager.SessionizeProject
+	selected                 *manager.SessionizeProject
+	projectMap               map[string]*manager.SessionizeProject // For fast lookups by path
 	cursor                   int
 	filterInput              textinput.Model
 	searchPaths              []string
@@ -50,8 +51,8 @@ type sessionizeModel struct {
 	help          help.Model
 
 	// Focus mode state
-	ecosystemPickerMode bool                       // True when showing only ecosystems for selection
-	focusedProject      *manager.DiscoveredProject
+	ecosystemPickerMode bool                          // True when showing only ecosystems for selection
+	focusedProject      *manager.SessionizeProject
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
 
 	// View toggles
@@ -76,7 +77,7 @@ type sessionizeModel struct {
 	spinnerFrame  int       // Current frame of the spinner animation
 	lastSpinTime  time.Time // Last time spinner was updated
 }
-func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool) sessionizeModel {
+func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool) sessionizeModel {
 	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
 	ti.Placeholder = "Press / to filter..."
@@ -141,8 +142,15 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 		WithTitle("Project Sessionizer - Help").
 		Build()
 
+	// Build project map for fast lookups and initialize enrichment status
+	projectMap := make(map[string]*manager.SessionizeProject, len(projects))
+	for _, p := range projects {
+		p.EnrichmentStatus = make(map[string]string)
+		projectMap[p.Path] = p
+	}
+
 	// Load previously focused ecosystem and fold state
-	var focusedProject *manager.DiscoveredProject
+	var focusedProject *manager.SessionizeProject
 	var worktreesFolded bool
 	// Set sensible defaults for toggles
 	showGitStatus := true
@@ -155,11 +163,8 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	if state, err := manager.LoadState(configDir); err == nil {
 		if state.FocusedEcosystemPath != "" {
 			// Find the project with this path
-			for i := range projects {
-				if projects[i].Path == state.FocusedEcosystemPath {
-					focusedProject = &projects[i]
-					break
-				}
+			if proj, ok := projectMap[state.FocusedEcosystemPath]; ok {
+				focusedProject = proj
 			}
 		}
 		worktreesFolded = state.WorktreesFolded
@@ -190,6 +195,7 @@ func newSessionizeModel(projects []manager.DiscoveredProject, searchPaths []stri
 	return sessionizeModel{
 		projects:                 projects,
 		filtered:                 projects,
+		projectMap:               projectMap,
 		filterInput:              ti,
 		searchPaths:              searchPaths,
 		manager:                  mgr,
@@ -256,11 +262,21 @@ func stringPtr(s string) *string {
 }
 func (m sessionizeModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		fetchClaudeSessionsCmd(), // Fetch active Claude sessions
-		fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats), // Fetch git status for all projects
+		fetchProjectsCmd(m.manager, m.configDir), // Just discover projects, no enrichment
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
+	}
+
+	// Fetch bulk enrichment data once at the start
+	if m.showClaudeSessions {
+		cmds = append(cmds, fetchAllClaudeSessionsCmd())
+	}
+	if m.showNoteCounts {
+		cmds = append(cmds, fetchAllNoteCountsCmd())
+	}
+	if m.showPlanStats {
+		cmds = append(cmds, fetchAllPlanStatsCmd())
 	}
 
 	// Start spinner animation if loading
@@ -280,58 +296,47 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.SetSize(msg.Width, msg.Height)
 		return m, nil
 
-	case claudeSessionUpdateMsg:
-		// Create new maps
-		newStatusMap := make(map[string]string)
-		newDurationMap := make(map[string]string)
-		newDurationSecondsMap := make(map[string]int)
+	case gitStatusMsg:
+		if proj, ok := m.projectMap[msg.path]; ok {
+			proj.GitStatus = msg.status
+			proj.EnrichmentStatus["git"] = "done"
+		}
+		return m, nil
 
-		for _, session := range msg.sessions {
-			cleanPath := filepath.Clean(session.Path)
-			if session.ClaudeSession != nil {
-				// Store by the session's working directory path
-				newStatusMap[cleanPath] = session.ClaudeSession.Status
-				newDurationMap[cleanPath] = session.ClaudeSession.Duration
-				newDurationSecondsMap[cleanPath] = session.ClaudeSession.PID
-
-				// If this is a worktree, also store by the parent path
-				// so the session shows up for the parent ecosystem/project
-				if session.ParentProjectPath != "" {
-					parentPath := filepath.Clean(session.ParentProjectPath)
-					newStatusMap[parentPath] = session.ClaudeSession.Status
-					newDurationMap[parentPath] = session.ClaudeSession.Duration
-					newDurationSecondsMap[parentPath] = session.ClaudeSession.PID
+	case claudeSessionMapMsg:
+		// Clear old statuses first
+		for _, proj := range m.projects {
+			proj.ClaudeSession = nil
+		}
+		for path, session := range msg.sessions {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.ClaudeSession = session
+			}
+			// Also apply to parent project if it's a worktree
+			if parentPath := getWorktreeParent(path); parentPath != "" {
+				if proj, ok := m.projectMap[parentPath]; ok {
+					proj.ClaudeSession = session
 				}
 			}
 		}
+		return m, nil
 
-		// Check if there are any changes
-		hasChanges := false
-		
-		// Check if sizes differ
-		if len(newStatusMap) != len(m.claudeStatusMap) {
-			hasChanges = true
-		} else {
-			// Check each entry
-			for path, newStatus := range newStatusMap {
-				oldStatus, exists := m.claudeStatusMap[path]
-				oldDuration := m.claudeDurationMap[path]
-				newDuration := newDurationMap[path]
-				
-				if !exists || oldStatus != newStatus || oldDuration != newDuration {
-					hasChanges = true
-					break
-				}
+	case noteCountsMapMsg:
+		for _, proj := range m.projects {
+			proj.NoteCounts = nil // Clear old counts
+			if counts, ok := msg.counts[proj.Name]; ok {
+				proj.NoteCounts = counts
 			}
 		}
-		
-		// Only update if there are changes
-		if hasChanges {
-			m.claudeStatusMap = newStatusMap
-			m.claudeDurationMap = newDurationMap
-			m.claudeDurationSecondsMap = newDurationSecondsMap
-		}
+		return m, nil
 
+	case planStatsMapMsg:
+		for _, proj := range m.projects {
+			proj.PlanStats = nil // Clear old stats
+			if stats, ok := msg.stats[proj.Path]; ok {
+				proj.PlanStats = stats
+			}
+		}
 		return m, nil
 
 	case projectsUpdateMsg:
@@ -341,12 +346,15 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selectedPath = m.filtered[m.cursor].Path
 		}
 
-		// Update the main project list
+		// Update the main project list and map
 		m.projects = msg.projects
-		m.isLoading = false // Mark loading as complete
+		m.projectMap = make(map[string]*manager.SessionizeProject, len(m.projects))
+		for _, p := range m.projects {
+			p.EnrichmentStatus = make(map[string]string)
+			m.projectMap[p.Path] = p
+		}
 
-		// Save cache for next startup (msg.projects are already SessionizeProject)
-		_ = manager.SaveProjectCache(m.configDir, msg.projects)
+		m.isLoading = false // Mark loading as complete
 
 		// Update the filtered list
 		m.updateFiltered()
@@ -369,7 +377,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		}
 
-		return m, nil
+		return m, m.enrichVisibleProjects()
 
 	case runningSessionsUpdateMsg:
 		// Replace the running sessions map
@@ -394,13 +402,22 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		// Refresh all data sources periodically
-		return m, tea.Batch(
-			fetchClaudeSessionsCmd(),
-			fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats),
+		cmds := []tea.Cmd{
+			fetchProjectsCmd(m.manager, m.configDir),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
-		)
+		}
+		if m.showClaudeSessions {
+			cmds = append(cmds, fetchAllClaudeSessionsCmd())
+		}
+		if m.showNoteCounts {
+			cmds = append(cmds, fetchAllNoteCountsCmd())
+		}
+		if m.showPlanStats {
+			cmds = append(cmds, fetchAllPlanStatsCmd())
+		}
+		return m, tea.Batch(cmds...)
 
 	case statusMsg:
 		m.statusMessage = msg.message
@@ -509,9 +526,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Handle ecosystem picker mode
 				if m.ecosystemPickerMode {
 					if m.cursor < len(m.filtered) {
-						// Make a copy to avoid pointer issues
+						// Set focused project (already a pointer)
 						selected := m.filtered[m.cursor]
-						m.focusedProject = &selected
+						m.focusedProject = selected
 						m.ecosystemPickerMode = false
 						m.updateFiltered() // Now filter to focused ecosystem
 						m.cursor = 0
@@ -538,13 +555,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 				}
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			case tea.KeyDown:
 				// Navigate down while filtering
 				if m.cursor < len(m.filtered)-1 {
 					m.cursor++
 				}
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			default:
 				// Let filter input handle all other keys when focused
 				prevValue := m.filterInput.Value()
@@ -565,10 +582,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			return m, m.enrichVisibleProjects()
 		case tea.KeyDown, tea.KeyCtrlN:
 			if m.cursor < len(m.filtered)-1 {
 				m.cursor++
 			}
+			return m, m.enrichVisibleProjects()
 		case tea.KeyCtrlU:
 			// Page up (vim-style)
 			pageSize := 10
@@ -576,6 +595,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
+			return m, m.enrichVisibleProjects()
 		case tea.KeyCtrlD:
 			// Page down (vim-style)
 			pageSize := 10
@@ -586,6 +606,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
+			return m, m.enrichVisibleProjects()
 		case tea.KeyRunes:
 			switch msg.String() {
 			case "j":
@@ -593,25 +614,25 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor < len(m.filtered)-1 {
 					m.cursor++
 				}
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			case "k":
 				// Vim-style up navigation
 				if m.cursor > 0 {
 					m.cursor--
 				}
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			case "g":
 				// Handle gg (go to top) - need to check for double g
 				// For simplicity, single g goes to top (common in many TUIs)
 				m.cursor = 0
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			case "G":
 				// Go to bottom
 				m.cursor = len(m.filtered) - 1
 				if m.cursor < 0 {
 					m.cursor = 0
 				}
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			case "X":
 				// Close session (moved from ctrl+d)
 				if m.cursor < len(m.filtered) {
@@ -704,27 +725,39 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle git status
 				m.showGitStatus = !m.showGitStatus
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, m.enrichVisibleProjects()
 			case "b":
 				// Toggle branch names
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				return m, m.enrichVisibleProjects()
 			case "c":
 				// Toggle claude sessions
 				m.showClaudeSessions = !m.showClaudeSessions
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				// Refetch claude sessions if toggled on
+				if m.showClaudeSessions {
+					return m, fetchAllClaudeSessionsCmd()
+				}
+				return m, nil
 			case "n":
 				// Toggle note counts
 				m.showNoteCounts = !m.showNoteCounts
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				// Refetch note counts if toggled on
+				if m.showNoteCounts {
+					return m, fetchAllNoteCountsCmd()
+				}
+				return m, nil
 			case "f":
 				// Toggle plan stats
 				m.showPlanStats = !m.showPlanStats
 				_ = m.buildState().Save(m.configDir)
-				return m, fetchProjectsCmd(m.manager, m.configDir, m.showGitStatus || m.showBranch, m.showClaudeSessions, m.showNoteCounts, m.showPlanStats)
+				// Refetch plan stats if toggled on
+				if m.showPlanStats {
+					return m, fetchAllPlanStatsCmd()
+				}
+				return m, nil
 			case "p":
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
@@ -745,7 +778,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worktreesFolded = !m.worktreesFolded
 			m.updateFiltered()
 			_ = m.buildState().Save(m.configDir)
-			return m, nil
+			return m, m.enrichVisibleProjects()
 		case tea.KeyCtrlE:
 			// Enter key editing mode
 			if m.cursor < len(m.filtered) {
@@ -797,9 +830,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Handle ecosystem picker mode
 			if m.ecosystemPickerMode {
 				if m.cursor < len(m.filtered) {
-					// Make a copy to avoid pointer issues
+					// Set focused project (already a pointer)
 					selected := m.filtered[m.cursor]
-					m.focusedProject = &selected
+					m.focusedProject = selected
 					m.ecosystemPickerMode = false
 					m.updateFiltered() // Now filter to focused ecosystem
 					m.cursor = 0
@@ -825,7 +858,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterDirty = false
 				m.updateFiltered()
 				m.cursor = 0
-				return m, nil
+				return m, m.enrichVisibleProjects()
 			}
 			return m, tea.Quit
 		default:
@@ -955,11 +988,11 @@ func (m *sessionizeModel) updateFiltered() {
 
 	// Handle ecosystem picker mode - show ecosystems with their worktrees in a tree
 	if m.ecosystemPickerMode {
-		m.filtered = []manager.DiscoveredProject{}
+		m.filtered = []*manager.SessionizeProject{}
 
 		// Separate into main ecosystems and worktrees
-		mainEcosystemsMap := make(map[string]manager.DiscoveredProject)
-		worktreesByParent := make(map[string][]manager.DiscoveredProject)
+		mainEcosystemsMap := make(map[string]*manager.SessionizeProject)
+		worktreesByParent := make(map[string][]*manager.SessionizeProject)
 
 		for _, p := range m.projects {
 			if !p.IsEcosystem() {
@@ -985,7 +1018,7 @@ func (m *sessionizeModel) updateFiltered() {
 		}
 
 		// Convert map to slice and sort
-		var mainEcosystems []manager.DiscoveredProject
+		var mainEcosystems []*manager.SessionizeProject
 		for _, eco := range mainEcosystemsMap {
 			mainEcosystems = append(mainEcosystems, eco)
 		}
@@ -1009,10 +1042,10 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 
 	// Create a working list of projects, either all projects or just the focused ecosystem
-	var projectsToFilter []manager.DiscoveredProject
+	var projectsToFilter []*manager.SessionizeProject
 	if m.focusedProject != nil {
 		// Add the focused project itself
-		projectsToFilter = append(projectsToFilter, *m.focusedProject)
+		projectsToFilter = append(projectsToFilter, m.focusedProject)
 
 		// Add all direct children (handles both ecosystem children and worktree children)
 		for _, p := range m.projects {
@@ -1046,7 +1079,7 @@ func (m *sessionizeModel) updateFiltered() {
 		}
 
 		// Filter projectsToFilter to only include paths we want to keep
-		var filtered []manager.DiscoveredProject
+		var filtered []*manager.SessionizeProject
 		for _, p := range projectsToFilter {
 			if pathsToKeep[p.Path] {
 				filtered = append(filtered, p)
@@ -1083,14 +1116,14 @@ func (m *sessionizeModel) updateFiltered() {
 				m.filtered = projectsToFilter
 			} else {
 				// Regular project focus: Group repos with their worktrees hierarchically
-				m.filtered = []manager.DiscoveredProject{}
+				m.filtered = []*manager.SessionizeProject{}
 
 				// First add the focused project
-				m.filtered = append(m.filtered, *m.focusedProject)
+				m.filtered = append(m.filtered, m.focusedProject)
 
 				// Build a map of parents to their worktrees
-				parentWorktrees := make(map[string][]manager.DiscoveredProject)
-				nonWorktrees := []manager.DiscoveredProject{}
+				parentWorktrees := make(map[string][]*manager.SessionizeProject)
+				nonWorktrees := []*manager.SessionizeProject{}
 
 				for _, p := range projectsToFilter {
 					if p.Path == m.focusedProject.Path {
@@ -1124,7 +1157,7 @@ func (m *sessionizeModel) updateFiltered() {
 		} else {
 			// Normal mode: Original sorting logic
 			// Create a mutable copy for sorting
-			sortedProjects := make([]manager.DiscoveredProject, len(projectsToFilter))
+			sortedProjects := make([]*manager.SessionizeProject, len(projectsToFilter))
 			copy(sortedProjects, projectsToFilter)
 
 			sort.SliceStable(sortedProjects, func(i, j int) bool {
@@ -1150,7 +1183,7 @@ func (m *sessionizeModel) updateFiltered() {
 			})
 
 			// Filter inactive worktrees: only include worktrees with running sessions
-			m.filtered = []manager.DiscoveredProject{}
+			m.filtered = []*manager.SessionizeProject{}
 			for _, p := range sortedProjects {
 				if !p.IsWorktree() {
 					// Always include parent repositories
@@ -1168,10 +1201,10 @@ func (m *sessionizeModel) updateFiltered() {
 		// Filtered View: Show all matching projects, grouped by activity
 		
 		// sortByMatchQuality sorts projects by match quality while preserving parent-child grouping
-		sortByMatchQuality := func(projects []manager.DiscoveredProject, filter string) []manager.DiscoveredProject {
+		sortByMatchQuality := func(projects []*manager.SessionizeProject, filter string) []*manager.SessionizeProject {
 			// Build a map of parents to their worktrees
-			parentWorktrees := make(map[string][]manager.DiscoveredProject)
-			parents := []manager.DiscoveredProject{}
+			parentWorktrees := make(map[string][]*manager.SessionizeProject)
+			parents := []*manager.SessionizeProject{}
 
 			for _, p := range projects {
 				if p.IsWorktree() {
@@ -1182,7 +1215,7 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 
 			// Calculate match quality for sorting (name only, not path)
-			getMatchQuality := func(p manager.DiscoveredProject) int {
+			getMatchQuality := func(p *manager.SessionizeProject) int {
 				lowerName := strings.ToLower(p.Name)
 
 				if lowerName == filter {
@@ -1201,7 +1234,7 @@ func (m *sessionizeModel) updateFiltered() {
 			})
 
 			// Build result with parents followed by their worktrees (if not folded)
-			var result []manager.DiscoveredProject
+			var result []*manager.SessionizeProject
 			for _, parent := range parents {
 				result = append(result, parent)
 
@@ -1221,8 +1254,8 @@ func (m *sessionizeModel) updateFiltered() {
 		// Partition matches by group activity, keeping parent-worktree hierarchy
 		matchedParents := make(map[string]bool) // Track which parent projects matched
 		parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
-		var activeGroupMatches []manager.DiscoveredProject
-		var inactiveGroupMatches []manager.DiscoveredProject
+		var activeGroupMatches []*manager.SessionizeProject
+		var inactiveGroupMatches []*manager.SessionizeProject
 
 		// First pass: find matching parent projects (search name only)
 		for _, p := range projectsToFilter {
@@ -1293,7 +1326,7 @@ func (m *sessionizeModel) updateFiltered() {
 		inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
 
 		// Combine: active groups first, then inactive groups
-		m.filtered = []manager.DiscoveredProject{}
+		m.filtered = []*manager.SessionizeProject{}
 		m.filtered = append(m.filtered, activeGroupMatches...)
 		m.filtered = append(m.filtered, inactiveGroupMatches...)
 	}
@@ -1576,4 +1609,57 @@ func (m sessionizeModel) viewKeyEditor() string {
 	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": cancel"))
 
 	return b.String()
+}
+
+// enrichVisibleProjects creates commands to fetch git status for visible projects.
+func (m *sessionizeModel) enrichVisibleProjects() tea.Cmd {
+	if !m.showGitStatus && !m.showBranch {
+		return nil
+	}
+
+	var cmds []tea.Cmd
+	start, end := m.getVisibleRange()
+
+	for i := start; i < end; i++ {
+		if i < len(m.filtered) {
+			proj := m.filtered[i]
+			if proj.EnrichmentStatus["git"] == "" {
+				proj.EnrichmentStatus["git"] = "loading"
+				cmds = append(cmds, fetchGitStatusCmd(proj.Path))
+			}
+		}
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// getVisibleRange calculates the start and end indices of visible projects.
+func (m *sessionizeModel) getVisibleRange() (int, int) {
+	visibleHeight := m.height - 10
+	if visibleHeight < 5 {
+		visibleHeight = 5
+	}
+
+	start := 0
+	end := len(m.filtered)
+
+	if end > visibleHeight {
+		if m.cursor < visibleHeight/2 {
+			start = 0
+		} else if m.cursor >= len(m.filtered)-visibleHeight/2 {
+			start = len(m.filtered) - visibleHeight
+		} else {
+			start = m.cursor - visibleHeight/2
+		}
+
+		end = start + visibleHeight
+		if end > len(m.filtered) {
+			end = len(m.filtered)
+		}
+		if start < 0 {
+			start = 0
+		}
+	}
+
+	return start, end
 }

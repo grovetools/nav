@@ -101,7 +101,7 @@ func (m sessionizeModel) renderTable() string {
 }
 
 // formatProjectRow formats a single project into a table row
-func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []string {
+func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []string {
 	// --- WORKSPACE ---
 	workspaceName := project.Name
 
@@ -200,84 +200,93 @@ func (m sessionizeModel) formatProjectRow(project manager.DiscoveredProject) []s
 		}
 	}
 
-	// --- BRANCH ---
+	// --- BRANCH, GIT STATUS, CHANGES ---
 	branch := "-"
-	if m.showBranch {
-		extStatus := project.GetExtendedGitStatus()
-		if extStatus != nil && extStatus.StatusInfo != nil {
-			branch = extStatus.StatusInfo.Branch
-		}
-	}
-
-	// --- GIT STATUS ---
 	gitStatus := "-"
-	if m.showGitStatus {
-		status := project.GetGitStatus()
-		if status != nil {
-			var statusParts []string
-			if status.IsDirty {
-				statusParts = append(statusParts, core_theme.DefaultTheme.Warning.Render("✗"))
-			}
-
-			isMainBranch := status.Branch == "main" || status.Branch == "master"
-			hasMainDivergence := !isMainBranch && (status.AheadMainCount > 0 || status.BehindMainCount > 0)
-
-			if hasMainDivergence {
-				if status.AheadMainCount > 0 {
-					statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
-				}
-				if status.BehindMainCount > 0 {
-					statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
-				}
-			} else if status.HasUpstream {
-				if status.AheadCount > 0 {
-					statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
-				}
-				if status.BehindCount > 0 {
-					statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
-				}
-			}
-
-			if len(statusParts) > 0 {
-				gitStatus = strings.Join(statusParts, " ")
-			} else if !status.IsDirty {
-				gitStatus = core_theme.DefaultTheme.Success.Render("✓")
-			}
-		}
-	}
-
-	// --- CHANGES ---
 	changes := "-"
-	if m.showGitStatus {
-		status := project.GetGitStatus()
-		extStatus := project.GetExtendedGitStatus()
-		var changeParts []string
-
-		// Add file counts for new, modified, and staged files
-		if status != nil {
-			if status.UntrackedCount > 0 {
-				// New files (untracked)
-				changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("N:%d", status.UntrackedCount)))
+	if m.showBranch || m.showGitStatus {
+		if project.EnrichmentStatus["git"] == "loading" {
+			spinner := core_theme.DefaultTheme.Info.Render("◐")
+			if m.showBranch {
+				branch = spinner
 			}
-			if status.ModifiedCount > 0 {
-				// Modified files (includes modified and deleted in working tree)
-				changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
+			if m.showGitStatus {
+				gitStatus = spinner
+				changes = spinner
 			}
-			if status.StagedCount > 0 {
-				// Staged files (includes all staged changes: adds, modifies, deletes)
-				changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(fmt.Sprintf("S:%d", status.StagedCount)))
+		} else {
+			// Get git status data once for both branch and status/changes
+			status := project.GetGitStatus()
+			extStatus := project.GetExtendedGitStatus()
+
+			if m.showBranch {
+				if extStatus != nil && extStatus.StatusInfo != nil {
+					branch = extStatus.StatusInfo.Branch
+				}
 			}
-		}
+			if m.showGitStatus {
+				if status != nil {
+					var statusParts []string
+					if status.IsDirty {
+						statusParts = append(statusParts, core_theme.DefaultTheme.Warning.Render("✗"))
+					}
 
-		// Add line changes if available
-		if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
-			added := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("+%d", extStatus.LinesAdded))
-			deleted := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted))
-			changeParts = append(changeParts, added+" "+deleted)
-		}
+					isMainBranch := status.Branch == "main" || status.Branch == "master"
+					hasMainDivergence := !isMainBranch && (status.AheadMainCount > 0 || status.BehindMainCount > 0)
 
-		if len(changeParts) > 0 {
-			changes = strings.Join(changeParts, " ")
+					if hasMainDivergence {
+						if status.AheadMainCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+						}
+						if status.BehindMainCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+						}
+					} else if status.HasUpstream {
+						if status.AheadCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
+						}
+						if status.BehindCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
+						}
+					}
+
+					if len(statusParts) > 0 {
+						gitStatus = strings.Join(statusParts, " ")
+					} else if !status.IsDirty {
+						gitStatus = core_theme.DefaultTheme.Success.Render("✓")
+					}
+				}
+
+				// Reuse status and extStatus from above for changes calculation
+				var changeParts []string
+
+				// Add file counts for new, modified, and staged files
+				if status != nil {
+					if status.UntrackedCount > 0 {
+						// New files (untracked)
+						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("N:%d", status.UntrackedCount)))
+					}
+					if status.ModifiedCount > 0 {
+						// Modified files (includes modified and deleted in working tree)
+						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
+					}
+					if status.StagedCount > 0 {
+						// Staged files (includes all staged changes: adds, modifies, deletes)
+						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(fmt.Sprintf("S:%d", status.StagedCount)))
+					}
+				}
+
+				// Add line changes if available
+				if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
+					added := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("+%d", extStatus.LinesAdded))
+					deleted := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted))
+					changeParts = append(changeParts, added+" "+deleted)
+				}
+
+				if len(changeParts) > 0 {
+					changes = strings.Join(changeParts, " ")
+				}
+			}
 		}
 	}
 

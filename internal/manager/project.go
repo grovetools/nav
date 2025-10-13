@@ -46,6 +46,9 @@ type SessionizeProject struct {
 	ClaudeSession *ClaudeSessionInfo
 	NoteCounts    *NoteCounts
 	PlanStats     *PlanStats
+
+	// EnrichmentStatus tracks the loading state of different data types (e.g., "git:loading", "git:done")
+	EnrichmentStatus map[string]string `json:"-"` // Don't save in cache
 }
 
 // GetGitStatus returns the git status as *git.StatusInfo for backward compatibility

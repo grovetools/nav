@@ -42,17 +42,24 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 
 	var noteCountsMap map[string]*NoteCounts
 	if opts.FetchNoteCounts {
-		noteCountsMap, _ = fetchNoteCountsMap(projects)
+		noteCountsByName, _ := FetchNoteCountsMap()
+		// Map by project name to project path
+		noteCountsMap = make(map[string]*NoteCounts)
+		for _, proj := range projects {
+			if counts, ok := noteCountsByName[proj.Name]; ok {
+				noteCountsMap[proj.Path] = counts
+			}
+		}
 	}
 
 	var claudeSessionMap map[string]*ClaudeSessionInfo
 	if opts.FetchClaudeSessions {
-		claudeSessionMap, _ = fetchClaudeSessionMap()
+		claudeSessionMap, _ = FetchClaudeSessionMap()
 	}
 
 	var planStatsMap map[string]*PlanStats
 	if opts.FetchPlanStats {
-		planStatsMap, _ = fetchPlanStatsMap()
+		planStatsMap, _ = FetchPlanStatsMap()
 	}
 
 	var wg sync.WaitGroup
@@ -86,7 +93,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 					semaphore <- struct{}{}
 					defer func() { <-semaphore }()
 
-					if extStatus, err := fetchGitStatusForPath(p.Path); err == nil {
+					if extStatus, err := FetchGitStatusForPath(p.Path); err == nil {
 						p.GitStatus = extStatus
 					}
 				}(project)
@@ -96,7 +103,8 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 	wg.Wait()
 }
 
-func fetchGitStatusForPath(path string) (*ExtendedGitStatus, error) {
+// FetchGitStatusForPath fetches extended git status for a single repository path.
+func FetchGitStatusForPath(path string) (*ExtendedGitStatus, error) {
 	cleanPath := filepath.Clean(path)
 	if !git.IsGitRepo(cleanPath) {
 		return nil, nil
@@ -167,7 +175,8 @@ type claudeSessionRaw struct {
 	StateDuration    string `json:"state_duration"`
 }
 
-func fetchClaudeSessionMap() (map[string]*ClaudeSessionInfo, error) {
+// FetchClaudeSessionMap fetches all active Claude sessions.
+func FetchClaudeSessionMap() (map[string]*ClaudeSessionInfo, error) {
 	sessionMap := make(map[string]*ClaudeSessionInfo)
 	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
 	var cmd *exec.Cmd
@@ -205,14 +214,10 @@ func fetchClaudeSessionMap() (map[string]*ClaudeSessionInfo, error) {
 	return sessionMap, nil
 }
 
-func fetchNoteCountsMap(projects []*SessionizeProject) (map[string]*NoteCounts, error) {
-	resultsByPath := make(map[string]*NoteCounts)
-	nameToPath := make(map[string]string)
-	for _, p := range projects {
-		if p != nil {
-			nameToPath[p.Name] = p.Path
-		}
-	}
+// FetchNoteCountsMap fetches note counts for all known workspaces.
+// Note: This function returns counts indexed by workspace name (not path).
+// The caller should map workspace names to paths as needed.
+func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 
 	nbPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "nb")
 	var cmd *exec.Cmd
@@ -224,7 +229,7 @@ func fetchNoteCountsMap(projects []*SessionizeProject) (map[string]*NoteCounts, 
 
 	output, err := cmd.Output()
 	if err != nil {
-		return resultsByPath, nil
+		return make(map[string]*NoteCounts), nil
 	}
 
 	type nbNote struct {
@@ -234,7 +239,7 @@ func fetchNoteCountsMap(projects []*SessionizeProject) (map[string]*NoteCounts, 
 
 	var notes []nbNote
 	if err := json.Unmarshal(output, &notes); err != nil {
-		return resultsByPath, fmt.Errorf("failed to unmarshal nb output: %w", err)
+		return make(map[string]*NoteCounts), fmt.Errorf("failed to unmarshal nb output: %w", err)
 	}
 
 	countsByName := make(map[string]*NoteCounts)
@@ -250,15 +255,11 @@ func fetchNoteCountsMap(projects []*SessionizeProject) (map[string]*NoteCounts, 
 		}
 	}
 
-	for name, counts := range countsByName {
-		if path, ok := nameToPath[name]; ok {
-			resultsByPath[path] = counts
-		}
-	}
-	return resultsByPath, nil
+	return countsByName, nil
 }
 
-func fetchPlanStatsMap() (map[string]*PlanStats, error) {
+// FetchPlanStatsMap fetches plan statistics for all workspaces.
+func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 	resultsByPath := make(map[string]*PlanStats)
 	flowPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "flow")
 	if _, err := os.Stat(flowPath); os.IsNotExist(err) {

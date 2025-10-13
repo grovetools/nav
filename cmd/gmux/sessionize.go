@@ -87,9 +87,8 @@ var sessionizeCmd = &cobra.Command{
 
 		// If no cache or cache load failed, fetch projects normally
 		if len(projects) == 0 {
-			// Use selective enrichment to only fetch Git status for active sessions
-			enrichOpts := buildInitialEnrichmentOptions()
-			fetchedProjects, err := mgr.GetAvailableProjectsWithOptions(enrichOpts)
+			// Enrichment options are now handled by the TUI itself
+			fetchedProjects, err := mgr.GetAvailableProjects()
 			if err != nil {
 				// Check if the error is due to missing config file or no enabled search paths
 				if os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found") {
@@ -99,8 +98,11 @@ var sessionizeCmd = &cobra.Command{
 				return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
 			}
 
-			// Convert to SessionizeProject (fetchedProjects are already DiscoveredProject = SessionizeProject)
-			projects = fetchedProjects
+			// Convert to SessionizeProject
+			projects = make([]manager.SessionizeProject, len(fetchedProjects))
+			for i := range fetchedProjects {
+				projects[i] = fetchedProjects[i]
+			}
 
 			// Sort by access history
 			if history, err := mgr.GetAccessHistory(); err == nil {
@@ -131,14 +133,14 @@ var sessionizeCmd = &cobra.Command{
 			searchPaths = []string{}
 		}
 
-		// Convert to DiscoveredProject for the model
-		discoveredProjects := make([]manager.DiscoveredProject, len(projects))
+		// Convert to pointers for the model
+		projectPtrs := make([]*manager.SessionizeProject, len(projects))
 		for i := range projects {
-			discoveredProjects[i] = manager.DiscoveredProject(projects[i])
+			projectPtrs[i] = &projects[i]
 		}
 
 		// Create the interactive model
-		m := newSessionizeModel(discoveredProjects, searchPaths, mgr, configDir, usedCache)
+		m := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache)
 
 		// If a focused project was loaded from state, update the filtered list
 		if m.focusedProject != nil {

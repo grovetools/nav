@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,25 +10,29 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 )
 
-// claudeSession represents the structure of a Claude session from grove-hooks
-type claudeSession struct {
-	ID                   string `json:"id"`
-	Type                 string `json:"type"`
-	PID                  int    `json:"pid"`
-	Status               string `json:"status"`
-	WorkingDirectory     string `json:"working_directory"`
-	StateDuration        string `json:"state_duration"`
-	StateDurationSeconds int    `json:"state_duration_seconds"`
+// gitStatusMsg is sent when git status for a single project is fetched.
+type gitStatusMsg struct {
+	path   string
+	status *manager.ExtendedGitStatus
 }
 
-// claudeSessionUpdateMsg is sent when claude session data is fetched
-type claudeSessionUpdateMsg struct {
-	sessions []manager.DiscoveredProject
+// claudeSessionMapMsg is sent when all active Claude sessions are fetched.
+type claudeSessionMapMsg struct {
+	sessions map[string]*manager.ClaudeSessionInfo
+}
+
+// noteCountsMapMsg is sent when all note counts are fetched.
+type noteCountsMapMsg struct {
+	counts map[string]*manager.NoteCounts
+}
+
+// planStatsMapMsg is sent when all plan stats are fetched.
+type planStatsMapMsg struct {
+	stats map[string]*manager.PlanStats
 }
 
 // tickMsg is sent periodically to refresh git status
@@ -41,7 +43,7 @@ type spinnerTickMsg time.Time
 
 // projectsUpdateMsg is sent when the list of discovered projects is updated
 type projectsUpdateMsg struct {
-	projects []manager.DiscoveredProject
+	projects []*manager.SessionizeProject
 }
 
 // runningSessionsUpdateMsg is sent with the latest list of running tmux sessions
@@ -81,97 +83,59 @@ func spinnerTickCmd() tea.Cmd {
 	})
 }
 
-// fetchClaudeSessionsCmd returns a command that fetches claude sessions in the background
-func fetchClaudeSessionsCmd() tea.Cmd {
+// fetchAllClaudeSessionsCmd returns a command that fetches all active Claude sessions.
+func fetchAllClaudeSessionsCmd() tea.Cmd {
 	return func() tea.Msg {
-		sessions := fetchClaudeSessions()
-		return claudeSessionUpdateMsg{sessions: sessions}
+		sessions, _ := manager.FetchClaudeSessionMap()
+		return claudeSessionMapMsg{sessions: sessions}
 	}
 }
 
-// fetchClaudeSessions fetches active Claude sessions from grove-hooks
-func fetchClaudeSessions() []manager.DiscoveredProject {
-	var claudeSessionProjects []manager.DiscoveredProject
-
-	// Execute `grove-hooks sessions list --active --json`
-	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
-	var cmd *exec.Cmd
-	if _, err := os.Stat(groveHooksPath); err == nil {
-		cmd = exec.Command(groveHooksPath, "sessions", "list", "--active", "--json")
-	} else {
-		cmd = exec.Command("grove-hooks", "sessions", "list", "--active", "--json")
-	}
-
-	output, err := cmd.Output()
-	if err == nil {
-		var claudeSessions []claudeSession
-		if json.Unmarshal(output, &claudeSessions) == nil {
-			for _, session := range claudeSessions {
-				// Only include Claude sessions (type is empty string or "claude_session")
-				isClaudeSession := session.Type == "" || session.Type == "claude_session" || session.Type == "claude_code"
-				if isClaudeSession && session.WorkingDirectory != "" {
-					absPath, err := filepath.Abs(expandPath(session.WorkingDirectory))
-					if err == nil {
-						cleanPath := filepath.Clean(absPath)
-
-						// Create a basic WorkspaceNode for the Claude session path
-						node := &workspace.WorkspaceNode{
-							Name: filepath.Base(cleanPath),
-							Path: cleanPath,
-							Kind: workspace.KindStandaloneProject, // Default kind
-						}
-
-						if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
-							node.ParentProjectPath = parentPath
-							node.Kind = workspace.KindStandaloneProjectWorktree
-						}
-
-						sessionProject := manager.DiscoveredProject{
-							WorkspaceNode: node,
-							ClaudeSession: &manager.ClaudeSessionInfo{
-								ID:       session.ID,
-								PID:      session.PID,
-								Status:   session.Status,
-								Duration: session.StateDuration,
-							},
-						}
-
-						claudeSessionProjects = append(claudeSessionProjects, sessionProject)
-					}
-				}
-			}
-		}
-	}
-
-	return claudeSessionProjects
-}
-
-// fetchProjectsCmd returns a command that re-scans the configured search paths
-// and fetches Git status for all discovered projects
-func fetchProjectsCmd(mgr *tmux.Manager, configDir string, fetchGit, fetchClaude, fetchNotes, fetchPlans bool) tea.Cmd {
+// fetchProjectsCmd returns a command that re-scans configured search paths.
+// This command only performs discovery and does NOT fetch enrichment data.
+func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 	return func() tea.Msg {
-		// Fetch projects without enrichment first
 		projects, _ := mgr.GetAvailableProjects()
-
-		// Convert to pointers for enrichment
-		projectPtrs := make([]*manager.SessionizeProject, len(projects))
-		for i := range projects {
-			projectPtrs[i] = &projects[i]
-		}
-
-		// Enrich projects
-		enrichOpts := buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans)
-		manager.EnrichProjects(context.Background(), projectPtrs, enrichOpts)
 
 		// Sort by access history
 		if history, err := mgr.GetAccessHistory(); err == nil {
 			projects = history.SortProjectsByAccess(projects)
 		}
 
-		// Save to cache for next startup (projects are already SessionizeProject)
+		// Convert to pointers
+		projectPtrs := make([]*manager.SessionizeProject, len(projects))
+		for i := range projects {
+			projectPtrs[i] = &projects[i]
+		}
+
+		// Save to cache for next startup
 		_ = manager.SaveProjectCache(configDir, projects)
 
-		return projectsUpdateMsg{projects: projects}
+		return projectsUpdateMsg{projects: projectPtrs}
+	}
+}
+
+// fetchGitStatusCmd returns a command to fetch git status for a single path.
+func fetchGitStatusCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		status, _ := manager.FetchGitStatusForPath(path)
+		return gitStatusMsg{path: path, status: status}
+	}
+}
+
+// fetchAllNoteCountsCmd returns a command to fetch all note counts.
+func fetchAllNoteCountsCmd() tea.Cmd {
+	return func() tea.Msg {
+		counts, _ := manager.FetchNoteCountsMap()
+		return noteCountsMapMsg{counts: counts}
+	}
+}
+
+// fetchAllPlanStatsCmd returns a command to fetch all plan stats.
+func fetchAllPlanStatsCmd() tea.Cmd {
+	return func() tea.Msg {
+		stats, _ := manager.FetchPlanStatsMap()
+		return planStatsMapMsg{stats: stats}
 	}
 }
 

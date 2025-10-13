@@ -152,11 +152,17 @@ func (m sessionizeModel) renderTree() string {
 		}
 
 		// Get Git status string
-		extStatus := project.GetExtendedGitStatus()
-		changesStr := formatChanges(project.GetGitStatus(), extStatus)
-		var branchName string
-		if m.showBranch && extStatus != nil && extStatus.StatusInfo != nil {
-			branchName = extStatus.StatusInfo.Branch
+		var changesStr, branchName string
+		if m.showGitStatus || m.showBranch {
+			if project.EnrichmentStatus["git"] == "loading" {
+				changesStr = core_theme.DefaultTheme.Info.Render("◐")
+			} else {
+				extStatus := project.GetExtendedGitStatus()
+				changesStr = formatChanges(project.GetGitStatus(), extStatus)
+				if m.showBranch && extStatus != nil && extStatus.StatusInfo != nil {
+					branchName = extStatus.StatusInfo.Branch
+				}
+			}
 		}
 
 		// Prepare display elements
