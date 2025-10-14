@@ -34,6 +34,9 @@ type PlanStats struct {
 	Pending    int
 	Completed  int
 	Failed     int
+	Todo       int
+	Hold       int
+	Abandoned  int
 }
 
 // SessionizeProject is an enriched WorkspaceNode for the sessionize TUI.

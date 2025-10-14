@@ -125,6 +125,12 @@ func formatPlanStats(stats *manager.PlanStats) string {
 		if stats.Running > 0 {
 			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
 		}
+		if stats.Hold > 0 {
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("⏸ %d", stats.Hold)))
+		}
+		if stats.Todo > 0 {
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render(fmt.Sprintf("○ %d", stats.Todo)))
+		}
 		if stats.Pending > 0 {
 			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("○ %d", stats.Pending)))
 		}
@@ -133,6 +139,9 @@ func formatPlanStats(stats *manager.PlanStats) string {
 		}
 		if stats.Failed > 0 {
 			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
+		}
+		if stats.Abandoned > 0 {
+			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render(fmt.Sprintf("⊗ %d", stats.Abandoned)))
 		}
 
 		if len(jobStats) > 0 {

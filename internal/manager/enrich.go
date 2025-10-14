@@ -366,6 +366,10 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 							continue
 						}
 						status := fields[1]
+						// Handle "on hold" multi-word status
+						if status == "on" && len(fields) >= 3 && fields[2] == "hold" {
+							status = "hold"
+						}
 						switch status {
 						case "completed":
 							stats.Completed = count
@@ -375,6 +379,12 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 							stats.Pending = count
 						case "failed":
 							stats.Failed = count
+						case "todo":
+							stats.Todo = count
+						case "hold":
+							stats.Hold = count
+						case "abandoned":
+							stats.Abandoned = count
 						}
 					}
 				}
