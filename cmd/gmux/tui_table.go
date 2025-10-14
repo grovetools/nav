@@ -59,20 +59,42 @@ func (m sessionizeModel) renderTable() string {
 	// Define table headers based on what's enabled
 	headers := []string{"K", "●", "WORKSPACE"}
 
+	// Get spinner for animation
+	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+
 	if m.showBranch {
 		headers = append(headers, "BRANCH")
 	}
 	if m.showGitStatus {
-		headers = append(headers, "GIT", "CHANGES")
+		gitHeader := "GIT"
+		changesHeader := "CHANGES"
+		if m.enrichmentLoading["git"] {
+			gitHeader = "GIT " + spinner
+			changesHeader = "CHANGES " + spinner
+		}
+		headers = append(headers, gitHeader, changesHeader)
 	}
 	if m.showNoteCounts {
-		headers = append(headers, "NOTES")
+		notesHeader := "NOTES"
+		if m.enrichmentLoading["notes"] {
+			notesHeader = "NOTES " + spinner
+		}
+		headers = append(headers, notesHeader)
 	}
 	if m.showPlanStats {
-		headers = append(headers, "PLANS")
+		plansHeader := "PLANS"
+		if m.enrichmentLoading["plans"] {
+			plansHeader = "PLANS " + spinner
+		}
+		headers = append(headers, plansHeader)
 	}
 	if m.showClaudeSessions {
-		headers = append(headers, "CLAUDE")
+		claudeHeader := "CLAUDE"
+		if m.enrichmentLoading["claude"] {
+			claudeHeader = "CLAUDE " + spinner
+		}
+		headers = append(headers, claudeHeader)
 	}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "PATH")
@@ -206,14 +228,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	changes := "-"
 	if m.showBranch || m.showGitStatus {
 		if project.EnrichmentStatus["git"] == "loading" {
-			spinner := core_theme.DefaultTheme.Info.Render("◐")
-			if m.showBranch {
-				branch = spinner
-			}
-			if m.showGitStatus {
-				gitStatus = spinner
-				changes = spinner
-			}
+			// Keep default dashes while loading to reduce visual noise
 		} else {
 			// Get git status data once for both branch and status/changes
 			status := project.GetGitStatus()

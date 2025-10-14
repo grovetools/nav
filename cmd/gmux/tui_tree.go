@@ -155,7 +155,7 @@ func (m sessionizeModel) renderTree() string {
 		var changesStr, branchName string
 		if m.showGitStatus || m.showBranch {
 			if project.EnrichmentStatus["git"] == "loading" {
-				changesStr = core_theme.DefaultTheme.Info.Render("◐")
+				changesStr = core_theme.DefaultTheme.Muted.Render("-")
 			} else {
 				extStatus := project.GetExtendedGitStatus()
 				changesStr = formatChanges(project.GetGitStatus(), extStatus)

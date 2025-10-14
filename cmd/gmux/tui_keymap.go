@@ -8,21 +8,22 @@ import (
 // sessionizeKeyMap defines the key bindings for the sessionize TUI
 type sessionizeKeyMap struct {
 	keymap.Base
-	EditKey         key.Binding
-	ClearKey        key.Binding
-	CopyPath        key.Binding
-	CloseSession    key.Binding
-	FocusEcosystem  key.Binding
-	ClearFocus      key.Binding
-	ToggleWorktrees key.Binding
-	ToggleGitStatus key.Binding
-	ToggleBranch    key.Binding
-	ToggleClaude    key.Binding
+	EditKey          key.Binding
+	ClearKey         key.Binding
+	CopyPath         key.Binding
+	CloseSession     key.Binding
+	FocusEcosystem   key.Binding
+	ClearFocus       key.Binding
+	ToggleWorktrees  key.Binding
+	ToggleGitStatus  key.Binding
+	ToggleBranch     key.Binding
+	ToggleClaude     key.Binding
 	ToggleNoteCounts key.Binding
-	TogglePlanStats key.Binding
-	TogglePaths     key.Binding
-	FilterDirty     key.Binding
-	ToggleView      key.Binding
+	TogglePlanStats  key.Binding
+	TogglePaths      key.Binding
+	FilterDirty      key.Binding
+	ToggleView       key.Binding
+	RefreshProjects  key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -44,6 +45,7 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 		},
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
+			k.RefreshProjects,
 			k.EditKey,
 			k.ClearKey,
 			k.CopyPath,
@@ -129,5 +131,9 @@ var sessionizeKeys = sessionizeKeyMap{
 	ToggleView: key.NewBinding(
 		key.WithKeys("t"),
 		key.WithHelp("t", "toggle table view"),
+	),
+	RefreshProjects: key.NewBinding(
+		key.WithKeys("ctrl+r"),
+		key.WithHelp("ctrl+r", "refresh project list"),
 	),
 }

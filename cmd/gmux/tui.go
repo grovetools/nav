@@ -76,6 +76,9 @@ type sessionizeModel struct {
 	usedCache     bool      // Whether we loaded from cache on startup
 	spinnerFrame  int       // Current frame of the spinner animation
 	lastSpinTime  time.Time // Last time spinner was updated
+
+	// Enrichment loading state
+	enrichmentLoading map[string]bool // tracks which enrichments are currently loading
 }
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool) sessionizeModel {
 	// Create text input for filtering (start unfocused)
@@ -146,6 +149,10 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	projectMap := make(map[string]*manager.SessionizeProject, len(projects))
 	for _, p := range projects {
 		p.EnrichmentStatus = make(map[string]string)
+		// Mark cached enrichment data as done so it doesn't get overwritten with "loading"
+		if p.GitStatus != nil {
+			p.EnrichmentStatus["git"] = "done"
+		}
 		projectMap[p.Path] = p
 	}
 
@@ -224,6 +231,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		viewMode:                 viewMode,
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
+		enrichmentLoading:        make(map[string]bool),
 	}
 }
 
@@ -262,25 +270,46 @@ func stringPtr(s string) *string {
 }
 func (m sessionizeModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{
-		fetchProjectsCmd(m.manager, m.configDir), // Just discover projects, no enrichment
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
 	}
 
-	// Fetch bulk enrichment data once at the start
+	// Only do full project discovery if we didn't load from cache
+	// If we used cache, we already have projects with enrichment data
+	if !m.usedCache {
+		cmds = append(cmds, fetchProjectsCmd(m.manager, m.configDir))
+	}
+
+	// Fetch fresh enrichment data (will update cached data in background)
+	// Git status is fetched for visible projects only via enrichVisibleProjects()
 	if m.showClaudeSessions {
+		m.enrichmentLoading["claude"] = true
 		cmds = append(cmds, fetchAllClaudeSessionsCmd())
 	}
 	if m.showNoteCounts {
+		m.enrichmentLoading["notes"] = true
 		cmds = append(cmds, fetchAllNoteCountsCmd())
 	}
 	if m.showPlanStats {
+		m.enrichmentLoading["plans"] = true
 		cmds = append(cmds, fetchAllPlanStatsCmd())
 	}
+	if m.showGitStatus {
+		// Refresh git status for all projects in background
+		m.enrichmentLoading["git"] = true
+		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+	}
 
-	// Start spinner animation if loading
-	if m.isLoading {
+	// Start spinner animation if loading or if any enrichment is loading
+	anyEnrichmentLoading := m.isLoading
+	for _, loading := range m.enrichmentLoading {
+		if loading {
+			anyEnrichmentLoading = true
+			break
+		}
+	}
+	if anyEnrichmentLoading {
 		cmds = append(cmds, spinnerTickCmd())
 	}
 
@@ -301,6 +330,16 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			proj.GitStatus = msg.status
 			proj.EnrichmentStatus["git"] = "done"
 		}
+		return m, nil
+
+	case gitStatusMapMsg:
+		for path, status := range msg.statuses {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.GitStatus = status
+				proj.EnrichmentStatus["git"] = "done"
+			}
+		}
+		m.enrichmentLoading["git"] = false
 		return m, nil
 
 	case claudeSessionMapMsg:
@@ -330,6 +369,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		m.enrichmentLoading["claude"] = false
 		return m, nil
 
 	case noteCountsMapMsg:
@@ -339,6 +379,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				proj.NoteCounts = counts
 			}
 		}
+		m.enrichmentLoading["notes"] = false
 		return m, nil
 
 	case planStatsMapMsg:
@@ -348,6 +389,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				proj.PlanStats = stats
 			}
 		}
+		m.enrichmentLoading["plans"] = false
 		return m, nil
 
 	case projectsUpdateMsg:
@@ -405,29 +447,58 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case spinnerTickMsg:
 		// Update spinner animation frame
-		if m.isLoading {
-			m.spinnerFrame++
+		m.spinnerFrame++
+		// Keep spinner running if loading or if any enrichment is loading
+		anyEnrichmentLoading := m.isLoading
+		for _, loading := range m.enrichmentLoading {
+			if loading {
+				anyEnrichmentLoading = true
+				break
+			}
+		}
+		if anyEnrichmentLoading {
 			return m, spinnerTickCmd() // Reschedule next spinner tick
 		}
 		return m, nil
 
 	case tickMsg:
-		// Refresh all data sources periodically
+		// Periodically refresh enrichment data, but NOT the project list itself.
+		// The project list is only updated on manual refresh (ctrl+r).
 		cmds := []tea.Cmd{
-			fetchProjectsCmd(m.manager, m.configDir),
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
 		}
+
+		// Track if we're starting any enrichment
+		startedEnrichment := false
+
+		if m.showGitStatus {
+			m.enrichmentLoading["git"] = true
+			startedEnrichment = true
+			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+		}
 		if m.showClaudeSessions {
+			m.enrichmentLoading["claude"] = true
+			startedEnrichment = true
 			cmds = append(cmds, fetchAllClaudeSessionsCmd())
 		}
 		if m.showNoteCounts {
+			m.enrichmentLoading["notes"] = true
+			startedEnrichment = true
 			cmds = append(cmds, fetchAllNoteCountsCmd())
 		}
 		if m.showPlanStats {
+			m.enrichmentLoading["plans"] = true
+			startedEnrichment = true
 			cmds = append(cmds, fetchAllPlanStatsCmd())
 		}
+
+		// Start spinner if we kicked off any enrichment
+		if startedEnrichment {
+			cmds = append(cmds, spinnerTickCmd())
+		}
+
 		return m, tea.Batch(cmds...)
 
 	case statusMsg:
@@ -446,6 +517,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle non-letter key bindings that should work even in search mode
 		switch {
+		case key.Matches(msg, sessionizeKeys.RefreshProjects):
+			m.isLoading = true
+			m.statusMessage = "Refreshing project list..."
+			m.statusTimeout = time.Now().Add(5 * time.Second)
+			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.manager, m.configDir))
+
 		case key.Matches(msg, sessionizeKeys.ClearFocus):
 			if m.focusedProject != nil {
 				m.focusedProject = nil
@@ -558,6 +635,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Select current project even while filtering
 				if m.cursor < len(m.filtered) {
 					m.selected = m.filtered[m.cursor]
+					// Save cache before quitting to persist enrichment data
+					projects := make([]manager.SessionizeProject, len(m.projects))
+					for i, p := range m.projects {
+						projects[i] = *p
+					}
+					_ = manager.SaveProjectCache(m.configDir, projects)
 					return m, tea.Quit
 				}
 				return m, nil
@@ -861,6 +944,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Normal mode - select project and quit
 			if m.cursor < len(m.filtered) {
 				m.selected = m.filtered[m.cursor]
+				// Save cache before quitting to persist enrichment data
+				projects := make([]manager.SessionizeProject, len(m.projects))
+				for i, p := range m.projects {
+					projects[i] = *p
+				}
+				_ = manager.SaveProjectCache(m.configDir, projects)
 				return m, tea.Quit
 			}
 		case tea.KeyEsc, tea.KeyCtrlC:
@@ -871,6 +960,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				return m, m.enrichVisibleProjects()
 			}
+			// Save cache before quitting to persist enrichment data
+			projects := make([]manager.SessionizeProject, len(m.projects))
+			for i, p := range m.projects {
+				projects[i] = *p
+			}
+			_ = manager.SaveProjectCache(m.configDir, projects)
 			return m, tea.Quit
 		default:
 			// Handle other keys normally
@@ -1375,13 +1470,6 @@ func (m sessionizeModel) View() string {
 		header.WriteString(" ")
 	}
 	header.WriteString(m.filterInput.View())
-
-	// Show loading indicator to the right of filter
-	if m.isLoading {
-		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
-		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
-		header.WriteString(" " + core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s Updating...", spinner)))
-	}
 
 	b.WriteString(header.String())
 	b.WriteString("\n\n")

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,11 @@ import (
 type gitStatusMsg struct {
 	path   string
 	status *manager.ExtendedGitStatus
+}
+
+// gitStatusMapMsg is sent when git statuses for multiple projects are fetched.
+type gitStatusMapMsg struct {
+	statuses map[string]*manager.ExtendedGitStatus
 }
 
 // claudeSessionMapMsg is sent when all active Claude sessions are fetched.
@@ -120,6 +126,35 @@ func fetchGitStatusCmd(path string) tea.Cmd {
 	return func() tea.Msg {
 		status, _ := manager.FetchGitStatusForPath(path)
 		return gitStatusMsg{path: path, status: status}
+	}
+}
+
+// fetchAllGitStatusesCmd returns a command to fetch git status for multiple paths concurrently.
+func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		statuses := make(map[string]*manager.ExtendedGitStatus)
+		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
+
+		for _, p := range projects {
+			wg.Add(1)
+			go func(proj *manager.SessionizeProject) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				status, err := manager.FetchGitStatusForPath(proj.Path)
+				if err == nil {
+					mu.Lock()
+					statuses[proj.Path] = status
+					mu.Unlock()
+				}
+			}(p)
+		}
+
+		wg.Wait()
+		return gitStatusMapMsg{statuses: statuses}
 	}
 }
 
