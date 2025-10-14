@@ -1194,14 +1194,12 @@ func (m *sessionizeModel) updateFiltered() {
 		projectsToFilter = filtered
 	}
 
-	// A group is identified by the parent repo's path.
-	// For a parent repo, its own path is the key. For a worktree, its ParentPath is the key.
+	// Build map of active groups. A group is identified by GetGroupingKey(), which returns:
+	// - For project worktrees: the parent project path
+	// - For all other nodes: the node's own path
 	activeGroups := make(map[string]bool)
 	for _, p := range projectsToFilter {
-		groupKey := p.Path
-		if p.IsWorktree() {
-			groupKey = p.ParentProjectPath
-		}
+		groupKey := p.GetGroupingKey()
 		if groupKey == "" { // Should not happen, but as a safeguard
 			continue
 		}
@@ -1267,16 +1265,10 @@ func (m *sessionizeModel) updateFiltered() {
 			copy(sortedProjects, projectsToFilter)
 
 			sort.SliceStable(sortedProjects, func(i, j int) bool {
-				groupI := sortedProjects[i].Path
-				if sortedProjects[i].IsWorktree() {
-					groupI = sortedProjects[i].ParentProjectPath
-				}
+				groupI := sortedProjects[i].GetGroupingKey()
 				isGroupIActive := activeGroups[groupI]
 
-				groupJ := sortedProjects[j].Path
-				if sortedProjects[j].IsWorktree() {
-					groupJ = sortedProjects[j].ParentProjectPath
-				}
+				groupJ := sortedProjects[j].GetGroupingKey()
 				isGroupJActive := activeGroups[groupJ]
 
 				if isGroupIActive && !isGroupJActive {
@@ -1305,14 +1297,17 @@ func (m *sessionizeModel) updateFiltered() {
 		}
 	} else {
 		// Filtered View: Show all matching projects, grouped by activity
-		
-		// sortByMatchQuality sorts projects by match quality while preserving parent-child grouping
+
+		// sortByMatchQuality sorts projects by match quality while preserving parent-child grouping.
+		// This is used in global mode searches where we want to show parent repos alongside their worktrees
+		// for context. Note: This groups ALL worktrees (including EcosystemWorktrees) with their parents.
 		sortByMatchQuality := func(projects []*manager.SessionizeProject, filter string) []*manager.SessionizeProject {
 			// Build a map of parents to their worktrees
 			parentWorktrees := make(map[string][]*manager.SessionizeProject)
 			parents := []*manager.SessionizeProject{}
 
 			for _, p := range projects {
+				// IsWorktree() includes both project worktrees and ecosystem worktrees
 				if p.IsWorktree() {
 					parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
 				} else {
@@ -1356,83 +1351,141 @@ func (m *sessionizeModel) updateFiltered() {
 
 			return result
 		}
-		
-		// Partition matches by group activity, keeping parent-worktree hierarchy
-		matchedParents := make(map[string]bool) // Track which parent projects matched
-		parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
-		var activeGroupMatches []*manager.SessionizeProject
-		var inactiveGroupMatches []*manager.SessionizeProject
 
-		// First pass: find matching parent projects (search name only)
-		for _, p := range projectsToFilter {
-			if p.IsWorktree() {
-				continue // Skip worktrees in first pass
+		// Collect matched projects
+		var matchedProjects []*manager.SessionizeProject
+
+		if m.focusedProject != nil {
+			// Focus mode: simpler, direct search
+			// Match any project whose name or path contains the filter
+			for _, p := range projectsToFilter {
+				if strings.Contains(strings.ToLower(p.Name), filter) ||
+				   strings.Contains(strings.ToLower(p.Path), filter) {
+					matchedProjects = append(matchedProjects, p)
+				}
 			}
+		} else {
+			// Global mode: complex search with parent-child awareness
+			matchedParents := make(map[string]bool) // Track which parent projects matched
+			parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
 
-			lowerName := strings.ToLower(p.Name)
+			// First pass: find matching parent projects (search name only)
+			for _, p := range projectsToFilter {
+				if p.IsWorktree() {
+					continue // Skip worktrees in first pass
+				}
 
-			// Check if this parent project matches the filter (name only, not full path)
-			if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-			   strings.Contains(lowerName, filter) {
-				matchedParents[p.Path] = true
-			}
-		}
-
-		// Second pass: find worktrees that match and mark their parents for inclusion
-		// (Always search worktrees, even if folded - they'll be shown when filtering)
-		for _, p := range projectsToFilter {
-			if !p.IsWorktree() {
-				continue
-			}
-
-			lowerName := strings.ToLower(p.Name)
-
-			// Check if this worktree matches the filter (name only, not full path)
-			if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-			   strings.Contains(lowerName, filter) {
-				// Mark parent for inclusion even if parent didn't match directly
-				parentsWithMatchingWorktrees[p.ParentProjectPath] = true
-			}
-		}
-
-		// Third pass: add matched parents and their worktrees
-		for _, p := range projectsToFilter {
-			shouldInclude := false
-			parentPath := p.Path
-
-			if p.IsWorktree() {
-				parentPath = p.ParentProjectPath
-				// Include worktree if it matches or its parent matched
-				// (Show worktrees in search results even if they're folded in normal view)
 				lowerName := strings.ToLower(p.Name)
-				worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-					strings.Contains(lowerName, filter)
-				parentMatched := matchedParents[p.ParentProjectPath]
 
-				shouldInclude = worktreeMatches || parentMatched
-			} else {
-				// Include parent if it matched OR if any of its worktrees matched
-				shouldInclude = matchedParents[p.Path] || parentsWithMatchingWorktrees[p.Path]
+				// Check if this parent project matches the filter (name only, not full path)
+				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+				   strings.Contains(lowerName, filter) {
+					matchedParents[p.Path] = true
+				}
 			}
 
-			if shouldInclude {
+			// Second pass: find worktrees that match and mark their parents for inclusion
+			// (Always search worktrees, even if folded - they'll be shown when filtering)
+			for _, p := range projectsToFilter {
+				if !p.IsWorktree() {
+					continue
+				}
+
+				lowerName := strings.ToLower(p.Name)
+
+				// Check if this worktree matches the filter (name only, not full path)
+				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+				   strings.Contains(lowerName, filter) {
+					// Mark parent for inclusion even if parent didn't match directly
+					parentsWithMatchingWorktrees[p.ParentProjectPath] = true
+				}
+			}
+
+			// Third pass: add matched parents and their worktrees to matchedProjects
+			for _, p := range projectsToFilter {
+				shouldInclude := false
+
+				if p.IsWorktree() {
+					// Include worktree if it matches or its parent matched
+					// (Show worktrees in search results even if they're folded in normal view)
+					lowerName := strings.ToLower(p.Name)
+					worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+						strings.Contains(lowerName, filter)
+					parentMatched := matchedParents[p.ParentProjectPath]
+
+					shouldInclude = worktreeMatches || parentMatched
+				} else {
+					// Include parent if it matched OR if any of its worktrees matched
+					shouldInclude = matchedParents[p.Path] || parentsWithMatchingWorktrees[p.Path]
+				}
+
+				if shouldInclude {
+					matchedProjects = append(matchedProjects, p)
+				}
+			}
+		}
+
+		if m.focusedProject != nil {
+			// Focus mode: simpler sorting without parent/worktree complexity
+			// Just sort by match quality and show all matches
+
+			// Calculate match quality for each project
+			type scoredProject struct {
+				project *manager.SessionizeProject
+				quality int
+			}
+
+			var scored []scoredProject
+			for _, p := range matchedProjects {
+				lowerName := strings.ToLower(p.Name)
+				quality := 0
+				if lowerName == filter {
+					quality = 3 // Exact match
+				} else if strings.HasPrefix(lowerName, filter) {
+					quality = 2 // Prefix match
+				} else if strings.Contains(lowerName, filter) {
+					quality = 1 // Contains in name
+				}
+				scored = append(scored, scoredProject{project: p, quality: quality})
+			}
+
+			// Sort by quality (higher first)
+			sort.SliceStable(scored, func(i, j int) bool {
+				return scored[i].quality > scored[j].quality
+			})
+
+			// Build filtered list
+			m.filtered = []*manager.SessionizeProject{}
+			for _, s := range scored {
+				m.filtered = append(m.filtered, s.project)
+			}
+		} else {
+			// Global mode: Partition matched projects by group activity
+			var activeGroupMatches []*manager.SessionizeProject
+			var inactiveGroupMatches []*manager.SessionizeProject
+
+			for _, p := range matchedProjects {
+				// Use GetGroupingKey() which correctly returns ParentProjectPath for project worktrees
+				// but returns the node's own path for ecosystem children and other nodes
+				groupKey := p.GetGroupingKey()
+
 				// Check group activity
-				if activeGroups[parentPath] {
+				if activeGroups[groupKey] {
 					activeGroupMatches = append(activeGroupMatches, p)
 				} else {
 					inactiveGroupMatches = append(inactiveGroupMatches, p)
 				}
 			}
+
+			// Sort both groups by match quality (parents will naturally group with their worktrees)
+			activeGroupMatches = sortByMatchQuality(activeGroupMatches, filter)
+			inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
+
+			// Combine: active groups first, then inactive groups
+			m.filtered = []*manager.SessionizeProject{}
+			m.filtered = append(m.filtered, activeGroupMatches...)
+			m.filtered = append(m.filtered, inactiveGroupMatches...)
 		}
-
-		// Sort both groups by match quality (parents will naturally group with their worktrees)
-		activeGroupMatches = sortByMatchQuality(activeGroupMatches, filter)
-		inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
-
-		// Combine: active groups first, then inactive groups
-		m.filtered = []*manager.SessionizeProject{}
-		m.filtered = append(m.filtered, activeGroupMatches...)
-		m.filtered = append(m.filtered, inactiveGroupMatches...)
 	}
 }
 func (m sessionizeModel) View() string {
