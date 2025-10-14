@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,20 +26,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Message for enriched data of mapped projects
-type enrichedProjectsMsg struct {
-	projects []*manager.SessionizeProject
-}
-
 // Message for CWD project enrichment
 type cwdProjectEnrichedMsg struct {
 	project *manager.SessionizeProject
-}
-
-// Message for Claude session status updates
-type claudeSessionsMsg struct {
-	statusMap   map[string]string // path -> status
-	durationMap map[string]string // path -> duration
 }
 
 var keyManageCmd = &cobra.Command{
@@ -124,10 +113,8 @@ type manageModel struct {
 	cwdPath          string
 	cwdProject       *manager.SessionizeProject
 	// Enriched data
-	enrichedProjects map[string]*manager.SessionizeProject // Caches enriched data by path
-	// Claude session data
-	claudeStatusMap   map[string]string // path -> claude status
-	claudeDurationMap map[string]string // path -> claude duration
+	enrichedProjects  map[string]*manager.SessionizeProject // Caches enriched data by path
+	enrichmentLoading map[string]bool                       // tracks which enrichments are currently loading
 	// Navigation
 	digitBuffer string
 	setKeyMode  bool
@@ -275,11 +262,10 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		help:              helpModel,
 		cwdPath:           cwdPath,
 		enrichedProjects:  enrichedProjects,
-		claudeStatusMap:   make(map[string]string),
-		claudeDurationMap: make(map[string]string),
 		lockedKeys:        lockedKeysMap,
 		usedCache:         usedCache,
 		isLoading:         usedCache, // Start as loading if we used cache
+		enrichmentLoading: make(map[string]bool),
 	}
 }
 
@@ -287,53 +273,88 @@ func (m manageModel) Init() tea.Cmd {
 	// Ensure sessions are ordered with locked keys at bottom
 	m.rebuildSessionsOrder()
 
-	cmds := []tea.Cmd{
-		enrichMappedProjectsCmd(m.sessions),
-		enrichCwdProjectCmd(m.cwdPath),
-		fetchClaudeSessionsForKeyManageCmd(),
+	// Get mapped projects to enrich
+	var mappedProjects []*manager.SessionizeProject
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			if proj, err := workspace.GetProjectByPath(s.Path); err == nil {
+				mappedProjects = append(mappedProjects, &manager.SessionizeProject{WorkspaceNode: proj})
+			}
+		}
 	}
 
+	cmds := []tea.Cmd{
+		enrichCwdProjectCmd(m.cwdPath),
+		fetchAllGitStatusesForKeyManageCmd(mappedProjects),
+		fetchAllClaudeSessionsForKeyManageCmd(),
+		fetchAllNoteCountsForKeyManageCmd(),
+		fetchAllPlanStatsForKeyManageCmd(),
+	}
+
+	// Set loading flags
+	m.enrichmentLoading["git"] = true
+	m.enrichmentLoading["claude"] = true
+	m.enrichmentLoading["notes"] = true
+	m.enrichmentLoading["plans"] = true
+
 	// Start spinner animation if loading
-	if m.isLoading {
+	if m.isLoading || len(mappedProjects) > 0 {
 		cmds = append(cmds, spinnerTickCmd())
 	}
 
 	return tea.Batch(cmds...)
 }
 
-// enrichMappedProjectsCmd fetches enriched data for mapped sessions
-func enrichMappedProjectsCmd(sessions []models.TmuxSession) tea.Cmd {
+// fetchAllGitStatusesForKeyManageCmd returns a command to fetch git status for multiple paths concurrently.
+func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		var projects []*manager.SessionizeProject
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		statuses := make(map[string]*manager.ExtendedGitStatus)
+		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
 
-		for _, s := range sessions {
-			if s.Path == "" {
-				continue
-			}
+		for _, p := range projects {
+			wg.Add(1)
+			go func(proj *manager.SessionizeProject) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
 
-			// Get project info
-			node, err := workspace.GetProjectByPath(s.Path)
-			if err != nil {
-				continue
-			}
-
-			// Wrap in SessionizeProject
-			projects = append(projects, &manager.SessionizeProject{
-				WorkspaceNode: node,
-			})
+				status, err := manager.FetchGitStatusForPath(proj.Path)
+				if err == nil {
+					mu.Lock()
+					statuses[proj.Path] = status
+					mu.Unlock()
+				}
+			}(p)
 		}
 
-		// Enrich all projects
-		ctx := context.Background()
-		enrichOpts := &manager.EnrichmentOptions{
-			FetchGitStatus:      true,
-			FetchClaudeSessions: true,
-			FetchNoteCounts:     true,
-			FetchPlanStats:      true,
-		}
-		manager.EnrichProjects(ctx, projects, enrichOpts)
+		wg.Wait()
+		return gitStatusMapMsg{statuses: statuses}
+	}
+}
 
-		return enrichedProjectsMsg{projects: projects}
+// fetchAllClaudeSessionsForKeyManageCmd returns a command that fetches all active Claude sessions.
+func fetchAllClaudeSessionsForKeyManageCmd() tea.Cmd {
+	return func() tea.Msg {
+		sessions, _ := manager.FetchClaudeSessionMap()
+		return claudeSessionMapMsg{sessions: sessions}
+	}
+}
+
+// fetchAllNoteCountsForKeyManageCmd returns a command to fetch all note counts.
+func fetchAllNoteCountsForKeyManageCmd() tea.Cmd {
+	return func() tea.Msg {
+		counts, _ := manager.FetchNoteCountsMap()
+		return noteCountsMapMsg{counts: counts}
+	}
+}
+
+// fetchAllPlanStatsForKeyManageCmd returns a command to fetch all plan stats.
+func fetchAllPlanStatsForKeyManageCmd() tea.Cmd {
+	return func() tea.Msg {
+		stats, _ := manager.FetchPlanStatsMap()
+		return planStatsMapMsg{stats: stats}
 	}
 }
 
@@ -354,90 +375,85 @@ func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 	}
 }
 
-// claudeSessionInfo matches the structure from grove-hooks
-type claudeSessionInfo struct {
-	WorkingDirectory      string `json:"working_directory"`
-	Status                string `json:"status"`
-	StateDuration         string `json:"state_duration"`
-	StateDurationSeconds  int    `json:"state_duration_seconds"`
-}
-
-// fetchClaudeSessionsForKeyManageCmd fetches Claude session data from grove-hooks
-func fetchClaudeSessionsForKeyManageCmd() tea.Cmd {
-	return func() tea.Msg {
-		statusMap := make(map[string]string)
-		durationMap := make(map[string]string)
-
-		// Try to find grove-hooks
-		groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
-		var cmd *exec.Cmd
-		if _, err := os.Stat(groveHooksPath); err == nil {
-			cmd = exec.Command(groveHooksPath, "sessions", "list", "--active", "--json")
-		} else {
-			cmd = exec.Command("grove-hooks", "sessions", "list", "--active", "--json")
-		}
-
-		output, err := cmd.Output()
-		if err != nil {
-			// grove-hooks not available or no sessions
-			return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
-		}
-
-		var sessions []claudeSessionInfo
-		if err := json.Unmarshal(output, &sessions); err != nil {
-			return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
-		}
-
-		// Build maps by clean path (case-insensitive on macOS)
-		for _, session := range sessions {
-			cleanPath := filepath.Clean(session.WorkingDirectory)
-			// Use lowercase for case-insensitive matching on macOS
-			normalizedPath := strings.ToLower(cleanPath)
-			statusMap[normalizedPath] = session.Status
-			durationMap[normalizedPath] = session.StateDuration
-
-			// If this is a worktree, also store by the parent path
-			// so the session shows up for the parent ecosystem/project
-			if parentPath := getWorktreeParent(cleanPath); parentPath != "" {
-				normalizedParentPath := strings.ToLower(filepath.Clean(parentPath))
-				statusMap[normalizedParentPath] = session.Status
-				durationMap[normalizedParentPath] = session.StateDuration
-			}
-		}
-
-		return claudeSessionsMsg{statusMap: statusMap, durationMap: durationMap}
-	}
-}
 
 func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case cwdProjectEnrichedMsg:
 		m.cwdProject = msg.project
-		return m, nil
-
-	case enrichedProjectsMsg:
-		// Populate enriched projects map
-		for _, proj := range msg.projects {
-			cleanPath := filepath.Clean(proj.Path)
-			m.enrichedProjects[cleanPath] = proj
+		// Enrich the CWD project immediately
+		if m.cwdProject != nil {
+			go func() {
+				opts := &manager.EnrichmentOptions{
+					FetchGitStatus:      true,
+					FetchClaudeSessions: true,
+					FetchNoteCounts:     true,
+					FetchPlanStats:      true,
+				}
+				manager.EnrichProjects(context.Background(), []*manager.SessionizeProject{m.cwdProject}, opts)
+			}()
 		}
-
-		// Mark loading as complete
-		m.isLoading = false
-
-		// Save cache for next startup
-		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
-
 		return m, nil
 
-	case claudeSessionsMsg:
-		m.claudeStatusMap = msg.statusMap
-		m.claudeDurationMap = msg.durationMap
+	case gitStatusMapMsg:
+		for path, status := range msg.statuses {
+			if proj, ok := m.enrichedProjects[path]; ok {
+				proj.GitStatus = status
+			}
+		}
+		m.enrichmentLoading["git"] = false
+		m.isLoading = false // Mark initial loading as done
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+		return m, nil
+
+	case claudeSessionMapMsg:
+		// Clear old sessions first
+		for _, proj := range m.enrichedProjects {
+			proj.ClaudeSession = nil
+		}
+		for path, session := range msg.sessions {
+			if proj, ok := m.enrichedProjects[path]; ok {
+				proj.ClaudeSession = session
+			}
+			if parentPath := getWorktreeParent(path); parentPath != "" {
+				if proj, ok := m.enrichedProjects[parentPath]; ok {
+					proj.ClaudeSession = session
+				}
+			}
+		}
+		m.enrichmentLoading["claude"] = false
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+		return m, nil
+
+	case noteCountsMapMsg:
+		for _, proj := range m.enrichedProjects {
+			if counts, ok := msg.counts[proj.Name]; ok {
+				proj.NoteCounts = counts
+			}
+		}
+		m.enrichmentLoading["notes"] = false
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+		return m, nil
+
+	case planStatsMapMsg:
+		for _, proj := range m.enrichedProjects {
+			if stats, ok := msg.stats[proj.Path]; ok {
+				proj.PlanStats = stats
+			}
+		}
+		m.enrichmentLoading["plans"] = false
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
 		return m, nil
 
 	case spinnerTickMsg:
 		// Update spinner animation frame
-		if m.isLoading {
+		anyLoading := m.isLoading
+		for _, loading := range m.enrichmentLoading {
+			if loading {
+				anyLoading = true
+				break
+			}
+		}
+		if anyLoading {
 			m.spinnerFrame++
 			return m, spinnerTickCmd() // Reschedule next spinner tick
 		}
@@ -944,13 +960,6 @@ func (m manageModel) View() string {
 		moveModeStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Bold(true)
 		b.WriteString(" " + moveModeStyle.Render("[MOVE MODE]"))
 	}
-
-	// Show loading indicator
-	if m.isLoading {
-		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
-		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
-		b.WriteString(" " + core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s Updating...", spinner)))
-	}
 	b.WriteString("\n\n")
 
 	// Separate sessions into unlocked and locked
@@ -965,8 +974,26 @@ func (m manageModel) View() string {
 		}
 	}
 
-	// Build table data
-	headers := []string{"#", "Key", "Repository", "Worktree", "Git", "Claude", "Plans", "Ecosystem"}
+	// Build table data with dynamic headers
+	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+
+	gitHeader := "Git"
+	if m.enrichmentLoading["git"] {
+		gitHeader = "Git " + spinner
+	}
+
+	claudeHeader := "Claude"
+	if m.enrichmentLoading["claude"] {
+		claudeHeader = "Claude " + spinner
+	}
+
+	plansHeader := "Plans"
+	if m.enrichmentLoading["plans"] {
+		plansHeader = "Plans " + spinner
+	}
+
+	headers := []string{"#", "Key", "Repository", "Worktree", gitHeader, claudeHeader, plansHeader, "Ecosystem"}
 	var unlockedRows [][]string
 	var lockedRows [][]string
 
@@ -1037,17 +1064,16 @@ func (m manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
+
+				// Format Claude status
+				if projInfo.ClaudeSession != nil {
+					claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
 			}
 
-			// Format Claude status (with colors) - check claudeStatusMap
-			// Use lowercase for case-insensitive matching on macOS
-			normalizedPath := strings.ToLower(cleanPath)
-			if status, found := m.claudeStatusMap[normalizedPath]; found {
-				claudeStatus = formatClaudeStatusFromMap(status, m.claudeDurationMap[normalizedPath])
-			}
 		}
 
 		row := []string{
@@ -1130,17 +1156,16 @@ func (m manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
+
+				// Format Claude status
+				if projInfo.ClaudeSession != nil {
+					claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
 			}
 
-			// Format Claude status (with colors) - check claudeStatusMap
-			// Use lowercase for case-insensitive matching on macOS
-			normalizedPath := strings.ToLower(cleanPath)
-			if status, found := m.claudeStatusMap[normalizedPath]; found {
-				claudeStatus = formatClaudeStatusFromMap(status, m.claudeDurationMap[normalizedPath])
-			}
 		}
 
 		row := []string{
@@ -1288,15 +1313,15 @@ func min(a, b int) int {
 	return b
 }
 
-// formatClaudeStatusFromMap formats Claude status from the status and duration maps
-func formatClaudeStatusFromMap(status, duration string) string {
-	if status == "" {
+// formatClaudeStatus formats the Claude session status into a styled string
+func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
+	if session == nil {
 		return ""
 	}
 
 	statusSymbol := ""
 	var statusColor lipgloss.Color
-	switch status {
+	switch session.Status {
 	case "running":
 		statusSymbol = "▶"
 		statusColor = core_theme.DefaultColors.Green
@@ -1315,19 +1340,10 @@ func formatClaudeStatusFromMap(status, duration string) string {
 
 	statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
 
-	if duration != "" {
-		return statusStyled + " " + duration
+	if session.Duration != "" {
+		return statusStyled + " " + session.Duration
 	}
 	return statusStyled
-}
-
-// formatClaudeStatus formats the Claude session status into a styled string
-func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
-	if session == nil {
-		return ""
-	}
-
-	return formatClaudeStatusFromMap(session.Status, session.Duration)
 }
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string
