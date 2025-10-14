@@ -1378,21 +1378,20 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 		}
 
-		// Second pass: find worktrees that match and mark their parents for inclusion (only if worktrees not folded)
-		if !m.worktreesFolded {
-			for _, p := range projectsToFilter {
-				if !p.IsWorktree() {
-					continue
-				}
+		// Second pass: find worktrees that match and mark their parents for inclusion
+		// (Always search worktrees, even if folded - they'll be shown when filtering)
+		for _, p := range projectsToFilter {
+			if !p.IsWorktree() {
+				continue
+			}
 
-				lowerName := strings.ToLower(p.Name)
+			lowerName := strings.ToLower(p.Name)
 
-				// Check if this worktree matches the filter (name only, not full path)
-				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-				   strings.Contains(lowerName, filter) {
-					// Mark parent for inclusion even if parent didn't match directly
-					parentsWithMatchingWorktrees[p.ParentProjectPath] = true
-				}
+			// Check if this worktree matches the filter (name only, not full path)
+			if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+			   strings.Contains(lowerName, filter) {
+				// Mark parent for inclusion even if parent didn't match directly
+				parentsWithMatchingWorktrees[p.ParentProjectPath] = true
 			}
 		}
 
@@ -1403,15 +1402,14 @@ func (m *sessionizeModel) updateFiltered() {
 
 			if p.IsWorktree() {
 				parentPath = p.ParentProjectPath
-				// Include worktree only if not folded AND (it matches itself OR its parent matched)
-				if !m.worktreesFolded {
-					lowerName := strings.ToLower(p.Name)
-					worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-						strings.Contains(lowerName, filter)
-					parentMatched := matchedParents[p.ParentProjectPath]
+				// Include worktree if it matches or its parent matched
+				// (Show worktrees in search results even if they're folded in normal view)
+				lowerName := strings.ToLower(p.Name)
+				worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
+					strings.Contains(lowerName, filter)
+				parentMatched := matchedParents[p.ParentProjectPath]
 
-					shouldInclude = worktreeMatches || parentMatched
-				}
+				shouldInclude = worktreeMatches || parentMatched
 			} else {
 				// Include parent if it matched OR if any of its worktrees matched
 				shouldInclude = matchedParents[p.Path] || parentsWithMatchingWorktrees[p.Path]
