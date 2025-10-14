@@ -3,3 +3,6 @@ description: Tmux session management for Grove ecosystem
 binary:
   name: gmux
   path: ./bin/gmux
+
+context:
+  default_rules_path: .cx/dev-no-tests.rules
