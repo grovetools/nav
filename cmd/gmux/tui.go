@@ -67,6 +67,9 @@ type sessionizeModel struct {
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
 
+	// Context-only projects (shown but not selectable during filtered search in focus mode)
+	contextOnlyPaths map[string]bool
+
 	// Status message
 	statusMessage string
 	statusTimeout time.Time
@@ -229,6 +232,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showPlanStats:            showPlanStats,
 		pathDisplayMode:          pathDisplayMode,
 		viewMode:                 viewMode,
+		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
 		enrichmentLoading:        make(map[string]bool),
@@ -315,6 +319,72 @@ func (m sessionizeModel) Init() tea.Cmd {
 
 	return tea.Batch(cmds...)
 }
+// moveCursorUp moves the cursor up, skipping context-only (non-selectable) items
+func (m *sessionizeModel) moveCursorUp() {
+	if m.cursor <= 0 {
+		return
+	}
+
+	// Move up by one
+	m.cursor--
+
+	// Skip context-only items
+	for m.cursor > 0 && len(m.filtered) > m.cursor {
+		project := m.filtered[m.cursor]
+		if m.contextOnlyPaths[project.Path] {
+			m.cursor--
+		} else {
+			break
+		}
+	}
+
+	// If we landed on a context-only item at position 0, find the first selectable item
+	if m.cursor == 0 && len(m.filtered) > 0 && m.contextOnlyPaths[m.filtered[0].Path] {
+		m.moveCursorToFirstSelectable()
+	}
+}
+
+// moveCursorDown moves the cursor down, skipping context-only (non-selectable) items
+func (m *sessionizeModel) moveCursorDown() {
+	if m.cursor >= len(m.filtered)-1 {
+		return
+	}
+
+	// Move down by one
+	m.cursor++
+
+	// Skip context-only items
+	for m.cursor < len(m.filtered)-1 {
+		project := m.filtered[m.cursor]
+		if m.contextOnlyPaths[project.Path] {
+			m.cursor++
+		} else {
+			break
+		}
+	}
+
+	// If we're at the last item and it's context-only, stay where we were
+	if m.cursor == len(m.filtered)-1 && len(m.filtered) > 0 && m.contextOnlyPaths[m.filtered[m.cursor].Path] {
+		m.cursor--
+		// Move back up to find a selectable item
+		for m.cursor > 0 && m.contextOnlyPaths[m.filtered[m.cursor].Path] {
+			m.cursor--
+		}
+	}
+}
+
+// moveCursorToFirstSelectable moves the cursor to the first selectable item
+func (m *sessionizeModel) moveCursorToFirstSelectable() {
+	for i := 0; i < len(m.filtered); i++ {
+		if !m.contextOnlyPaths[m.filtered[i].Path] {
+			m.cursor = i
+			return
+		}
+	}
+	// If no selectable items, stay at 0
+	m.cursor = 0
+}
+
 func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -528,6 +598,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusedProject = nil
 				m.updateFiltered()
 				m.cursor = 0
+				m.moveCursorToFirstSelectable()
 
 				// Clear the focused ecosystem from state
 				_ = m.buildState().Save(m.configDir)
@@ -541,6 +612,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterInput.SetValue("")
 			m.updateFiltered()
 			m.cursor = 0
+			m.moveCursorToFirstSelectable()
 			return m, nil
 		}
 
@@ -665,6 +737,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.filterInput.Value() != prevValue {
 					m.updateFiltered()
 					m.cursor = 0
+					m.moveCursorToFirstSelectable()
 				}
 				return m, cmd
 			}
@@ -673,14 +746,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Normal mode (when filter is not focused)
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
-			if m.cursor > 0 {
-				m.cursor--
-			}
+			m.moveCursorUp()
 			return m, m.enrichVisibleProjects()
 		case tea.KeyDown, tea.KeyCtrlN:
-			if m.cursor < len(m.filtered)-1 {
-				m.cursor++
-			}
+			m.moveCursorDown()
 			return m, m.enrichVisibleProjects()
 		case tea.KeyCtrlU:
 			// Page up (vim-style)
@@ -705,15 +774,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "j":
 				// Vim-style down navigation
-				if m.cursor < len(m.filtered)-1 {
-					m.cursor++
-				}
+				m.moveCursorDown()
 				return m, m.enrichVisibleProjects()
 			case "k":
 				// Vim-style up navigation
-				if m.cursor > 0 {
-					m.cursor--
-				}
+				m.moveCursorUp()
 				return m, m.enrichVisibleProjects()
 			case "g":
 				// Handle gg (go to top) - need to check for double g
@@ -814,6 +879,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ecosystemPickerMode = true
 				m.updateFiltered()
 				m.cursor = 0
+				m.moveCursorToFirstSelectable()
 				return m, nil
 			case "s":
 				// Toggle git status
@@ -930,6 +996,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ecosystemPickerMode = false
 					m.updateFiltered() // Now filter to focused ecosystem
 					m.cursor = 0
+					m.moveCursorToFirstSelectable()
 
 					// Save state
 					fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
@@ -958,6 +1025,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterDirty = false
 				m.updateFiltered()
 				m.cursor = 0
+				m.moveCursorToFirstSelectable()
 				return m, m.enrichVisibleProjects()
 			}
 			// Save cache before quitting to persist enrichment data
@@ -1223,81 +1291,57 @@ func (m *sessionizeModel) updateFiltered() {
 
 	if filter == "" {
 		// Default View: Group-aware sorting with inactive worktree filtering
+		// Clear context-only paths when not filtering
+		m.contextOnlyPaths = make(map[string]bool)
 
 		if m.focusedProject != nil {
 			// Focus mode: Different handling for ecosystems vs regular projects
 			if m.focusedProject.IsEcosystem() {
-				// For ecosystems, group worktrees under their parents and respect fold state
-				// Separate projects into parents and worktrees
-				var parentRepos []*manager.SessionizeProject
-				worktreesByParent := make(map[string][]*manager.SessionizeProject)
-				var ecosystemWorktrees []*manager.SessionizeProject
-
-				for _, p := range projectsToFilter {
-					if p.IsWorktree() {
-						// Check if this is an ecosystem worktree (parent is the focused ecosystem)
-						if p.ParentProjectPath == m.focusedProject.Path {
-							ecosystemWorktrees = append(ecosystemWorktrees, p)
-						} else {
-							// This is a project worktree (worktree of a child project)
-							worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
-						}
-					} else {
-						parentRepos = append(parentRepos, p)
-					}
-				}
-
-				// Sort parents by activity (active sessions first)
-				sort.SliceStable(parentRepos, func(i, j int) bool {
-					sessionI := parentRepos[i].Identifier()
-					sessionJ := parentRepos[j].Identifier()
-					activeI := m.runningSessions[sessionI]
-					activeJ := m.runningSessions[sessionJ]
-
-					if activeI && !activeJ {
-						return true
-					}
-					if !activeI && activeJ {
-						return false
-					}
-					return false
-				})
-
-				// Build filtered list: ecosystem, its worktrees, then child projects with their worktrees
+				// For ecosystems, we show all direct children by default
+				// regardless of whether they are worktrees or sub-projects
 				m.filtered = []*manager.SessionizeProject{}
 
-				// Add the ecosystem itself first (if it's in the list)
-				for _, parent := range parentRepos {
-					if parent.Path == m.focusedProject.Path {
-						m.filtered = append(m.filtered, parent)
+				// First, add the focused ecosystem itself
+				for _, p := range projectsToFilter {
+					if p.Path == m.focusedProject.Path {
+						m.filtered = append(m.filtered, p)
 						break
 					}
 				}
 
-				// Add ecosystem worktrees if not folded
-				if !m.worktreesFolded && len(ecosystemWorktrees) > 0 {
-					sort.Slice(ecosystemWorktrees, func(i, j int) bool {
-						return strings.ToLower(ecosystemWorktrees[i].Name) < strings.ToLower(ecosystemWorktrees[j].Name)
-					})
-					m.filtered = append(m.filtered, ecosystemWorktrees...)
-				}
+				// Collect and sort all direct children (both sub-projects and worktrees)
+				var directChildren []*manager.SessionizeProject
+				var grandchildren []*manager.SessionizeProject
 
-				// Add child projects followed by their worktrees (if not folded)
-				for _, parent := range parentRepos {
-					// Skip the ecosystem itself (already added above)
-					if parent.Path == m.focusedProject.Path {
-						continue
+				for _, p := range projectsToFilter {
+					if p.Path == m.focusedProject.Path {
+						continue // Skip the focused project itself
 					}
 
-					m.filtered = append(m.filtered, parent)
+					// Check if this is a direct child
+					if p.GetHierarchicalParent() == m.focusedProject.Path {
+						directChildren = append(directChildren, p)
+					} else {
+						// This might be a grandchild (worktree of a child project)
+						grandchildren = append(grandchildren, p)
+					}
+				}
 
+				// Sort direct children alphabetically
+				sort.Slice(directChildren, func(i, j int) bool {
+					return strings.ToLower(directChildren[i].Name) < strings.ToLower(directChildren[j].Name)
+				})
+
+				// Add direct children
+				for _, child := range directChildren {
+					m.filtered = append(m.filtered, child)
+
+					// If worktrees are not folded, add this child's worktrees
 					if !m.worktreesFolded {
-						if worktrees, exists := worktreesByParent[parent.Path]; exists {
-							// Sort worktrees alphabetically for consistent order
-							sort.Slice(worktrees, func(i, j int) bool {
-								return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
-							})
-							m.filtered = append(m.filtered, worktrees...)
+						for _, gc := range grandchildren {
+							if gc.ParentProjectPath == child.Path {
+								m.filtered = append(m.filtered, gc)
+							}
 						}
 					}
 				}
@@ -1448,14 +1492,63 @@ func (m *sessionizeModel) updateFiltered() {
 		if m.focusedProject != nil {
 			// Focus mode: simpler, direct search
 			// Match any project whose name or path contains the filter
+			matchedPaths := make(map[string]bool)
+			parentsToInclude := make(map[string]bool)
+
+			// First, find all matches
 			for _, p := range projectsToFilter {
 				if strings.Contains(strings.ToLower(p.Name), filter) ||
 				   strings.Contains(strings.ToLower(p.Path), filter) {
+					matchedPaths[p.Path] = true
+
+					// Walk up hierarchy to include all ancestors for context
+					current := p
+					for current != nil {
+						parent := current.GetHierarchicalParent()
+						if parent == "" || parent == m.focusedProject.Path {
+							// Reached the focused project or root
+							break
+						}
+
+						// Find the parent project and mark it for inclusion
+						for _, ancestor := range projectsToFilter {
+							if ancestor.Path == parent {
+								parentsToInclude[parent] = true
+								current = ancestor
+								break
+							}
+						}
+
+						if current.Path == p.Path {
+							// Couldn't find parent, stop walking
+							break
+						}
+					}
+				}
+			}
+
+			// Add the focused project itself if not already there
+			parentsToInclude[m.focusedProject.Path] = true
+
+			// Build context-only paths (parents that aren't actual matches)
+			m.contextOnlyPaths = make(map[string]bool)
+			for path := range parentsToInclude {
+				if !matchedPaths[path] {
+					m.contextOnlyPaths[path] = true
+				}
+			}
+
+			// Collect all projects to display (matches + their ancestors)
+			for _, p := range projectsToFilter {
+				if matchedPaths[p.Path] || parentsToInclude[p.Path] {
 					matchedProjects = append(matchedProjects, p)
 				}
 			}
 		} else {
 			// Global mode: complex search with parent-child awareness
+			// Clear context-only paths (only used in focus mode)
+			m.contextOnlyPaths = make(map[string]bool)
+
 			matchedParents := make(map[string]bool) // Track which parent projects matched
 			parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
 
@@ -1516,38 +1609,31 @@ func (m *sessionizeModel) updateFiltered() {
 		}
 
 		if m.focusedProject != nil {
-			// Focus mode: simpler sorting without parent/worktree complexity
-			// Just sort by match quality and show all matches
-
-			// Calculate match quality for each project
-			type scoredProject struct {
-				project *manager.SessionizeProject
-				quality int
-			}
-
-			var scored []scoredProject
-			for _, p := range matchedProjects {
-				lowerName := strings.ToLower(p.Name)
-				quality := 0
-				if lowerName == filter {
-					quality = 3 // Exact match
-				} else if strings.HasPrefix(lowerName, filter) {
-					quality = 2 // Prefix match
-				} else if strings.Contains(lowerName, filter) {
-					quality = 1 // Contains in name
-				}
-				scored = append(scored, scoredProject{project: p, quality: quality})
-			}
-
-			// Sort by quality (higher first)
-			sort.SliceStable(scored, func(i, j int) bool {
-				return scored[i].quality > scored[j].quality
-			})
-
-			// Build filtered list
+			// Focus mode: maintain hierarchical order with focused project first
 			m.filtered = []*manager.SessionizeProject{}
-			for _, s := range scored {
-				m.filtered = append(m.filtered, s.project)
+
+			// First, add the focused project if it's in the matched set
+			var focusedIncluded bool
+			for _, p := range matchedProjects {
+				if p.Path == m.focusedProject.Path {
+					m.filtered = append(m.filtered, p)
+					focusedIncluded = true
+					break
+				}
+			}
+
+			// If focused project wasn't included, add it anyway for context
+			if !focusedIncluded {
+				m.filtered = append(m.filtered, m.focusedProject)
+				m.contextOnlyPaths[m.focusedProject.Path] = true
+			}
+
+			// Then add all other projects in their existing hierarchical order
+			// (projectsToFilter is already hierarchically ordered from BuildWorkspaceTree)
+			for _, p := range matchedProjects {
+				if p.Path != m.focusedProject.Path {
+					m.filtered = append(m.filtered, p)
+				}
 			}
 		} else {
 			// Global mode: Partition matched projects by group activity

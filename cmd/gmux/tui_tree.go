@@ -56,6 +56,9 @@ func (m sessionizeModel) renderTree() string {
 	for i := start; i < end && i < len(m.filtered); i++ {
 		project := m.filtered[i]
 
+		// Check if this is a context-only (non-selectable) item
+		isContextOnly := m.contextOnlyPaths[project.Path]
+
 		// Check if this project has a key mapping
 		keyMapping := ""
 		cleanPath := filepath.Clean(project.Path)
@@ -191,22 +194,40 @@ func (m sessionizeModel) renderTree() string {
 				prefix = "  "
 			}
 		} else if m.focusedProject != nil {
-			// In focus mode
+			// In focus mode - use hierarchical parent to determine indentation
 			if project.Path == m.focusedProject.Path {
 				// This is the focused ecosystem/worktree - show as parent
 				prefix = "  "
-			} else if project.IsWorktree() {
-				// This is a worktree - check if it's a direct child or nested
-				if project.ParentProjectPath == m.focusedProject.Path {
-					// Direct worktree of the focused ecosystem
+			} else if project.GetHierarchicalParent() == m.focusedProject.Path {
+				// This is a direct child of the focused project
+				// Check if it's the last child in the visible filtered list
+				isLast := true
+				for j := i + 1; j < len(m.filtered); j++ {
+					if m.filtered[j].GetHierarchicalParent() == m.focusedProject.Path {
+						isLast = false
+						break
+					}
+				}
+				if isLast {
 					prefix = "  └─ "
 				} else {
-					// Worktree of a repo within the focused ecosystem - show nested with extra indent
-					prefix = "     └─ "
+					prefix = "  ├─ "
 				}
 			} else {
-				// Regular repo within the focused ecosystem - show as child
-				prefix = "  ├─ "
+				// This is a grandchild (e.g., worktree of a sub-project)
+				// Check if it's the last grandchild of its parent
+				isLast := true
+				for j := i + 1; j < len(m.filtered); j++ {
+					if m.filtered[j].ParentProjectPath == project.ParentProjectPath {
+						isLast = false
+						break
+					}
+				}
+				if isLast {
+					prefix = "     └─ "
+				} else {
+					prefix = "     ├─ "
+				}
 			}
 		} else {
 			// Normal mode - show worktree indicator
@@ -231,6 +252,10 @@ func (m sessionizeModel) renderTree() string {
 			indicator := core_theme.DefaultTheme.Highlight.Render("▶ ")
 
 			nameStyle := core_theme.DefaultTheme.Selected
+			if isContextOnly {
+				// Dim selected context-only items
+				nameStyle = core_theme.DefaultTheme.Muted
+			}
 			pathStyle := core_theme.DefaultTheme.Info
 
 			keyIndicator := "  " // Default: 2 spaces
@@ -316,7 +341,10 @@ func (m sessionizeModel) renderTree() string {
 		} else {
 			// Normal line with colored name - style based on project type
 			var nameStyle lipgloss.Style
-			if project.IsWorktree() {
+			if isContextOnly {
+				// Context-only items: always muted/grayed
+				nameStyle = core_theme.DefaultTheme.Muted
+			} else if project.IsWorktree() {
 				// Worktrees: Blue
 				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
 			} else {
