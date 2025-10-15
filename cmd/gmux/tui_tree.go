@@ -215,6 +215,7 @@ func (m sessionizeModel) renderTree() string {
 				}
 			} else {
 				// This is a grandchild (e.g., worktree of a sub-project)
+
 				// Check if it's the last grandchild of its parent
 				isLast := true
 				for j := i + 1; j < len(m.filtered); j++ {
