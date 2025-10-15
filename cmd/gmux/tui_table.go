@@ -127,6 +127,15 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	// --- WORKSPACE ---
 	workspaceName := project.Name
 
+	// Find this project's index in the filtered list (for isLast detection)
+	projectIndex := -1
+	for i, p := range m.filtered {
+		if p.Path == project.Path {
+			projectIndex = i
+			break
+		}
+	}
+
 	// Determine prefix based on mode and project type
 	prefix := ""
 	if m.ecosystemPickerMode {
@@ -159,7 +168,21 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 			prefix = ""
 		} else if project.GetHierarchicalParent() == m.focusedProject.Path {
 			// This is a direct child of the focused project
-			prefix = "├─ "
+			// Check if it's the last direct child
+			isLast := true
+			if projectIndex >= 0 {
+				for j := projectIndex + 1; j < len(m.filtered); j++ {
+					if m.filtered[j].GetHierarchicalParent() == m.focusedProject.Path {
+						isLast = false
+						break
+					}
+				}
+			}
+			if isLast {
+				prefix = "└─ "
+			} else {
+				prefix = "├─ "
+			}
 		} else {
 			// This is a grandchild (e.g., worktree of a sub-project)
 			prefix = "  └─ "
