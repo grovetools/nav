@@ -284,34 +284,28 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 	locator := workspace.NewNotebookLocator(coreCfg)
 
 	// Get all plan directories across all workspaces
-	planDirs, err := locator.ScanForAllPlans(provider)
+	scannedDirs, err := locator.ScanForAllPlans(provider)
 	if err != nil {
 		return resultsByPath, nil
 	}
 
-	// Group plans by workspace path
+	// Group scanned directories by workspace grouping key
 	type workspaceInfo struct {
-		path      string
+		ownerNode *workspace.WorkspaceNode
 		planDirs  []string
 		planNames []string
 	}
 	workspaceMap := make(map[string]*workspaceInfo)
 
-	for _, planDir := range planDirs {
-		// Determine the workspace for this plan directory
-		workspaceNode := provider.FindByPath(planDir)
-		if workspaceNode == nil {
-			workspaceNode = provider.FindByPath(filepath.Dir(planDir))
-		}
-		if workspaceNode == nil {
-			continue
-		}
+	for _, scannedDir := range scannedDirs {
+		ownerNode := scannedDir.Owner
+		planDir := scannedDir.Path
 
 		// Use the grouping key to aggregate plans for the same logical workspace
-		wsPath := workspaceNode.GetGroupingKey()
+		wsPath := ownerNode.GetGroupingKey()
 		if _, ok := workspaceMap[wsPath]; !ok {
 			workspaceMap[wsPath] = &workspaceInfo{
-				path:      wsPath,
+				ownerNode: ownerNode,
 				planDirs:  make([]string, 0),
 				planNames: make([]string, 0),
 			}
@@ -326,8 +320,8 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 		stats := &PlanStats{TotalPlans: len(wsInfo.planDirs)}
 		statsByGroupingKey[wsPath] = stats
 
-		// Get the active plan from state
-		activePlan := getActivePlanForPath(wsPath)
+		// Get the active plan from state using the owner node's path
+		activePlan := getActivePlanForPath(wsInfo.ownerNode.Path)
 		if activePlan != "" {
 			stats.ActivePlan = activePlan
 
