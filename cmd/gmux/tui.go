@@ -1153,9 +1153,20 @@ func (m *sessionizeModel) updateFiltered() {
 		// Add the focused project itself
 		projectsToFilter = append(projectsToFilter, m.focusedProject)
 
-		// Add all direct children (handles both ecosystem children and worktree children)
+		// Build a map of direct children for efficient lookup
+		directChildren := make(map[string]bool)
+
+		// Add all direct children (ecosystem children and ecosystem worktrees)
 		for _, p := range m.projects {
 			if p.IsChildOf(m.focusedProject.Path) {
+				projectsToFilter = append(projectsToFilter, p)
+				directChildren[p.Path] = true
+			}
+		}
+
+		// Also add worktrees of direct children (grandchildren)
+		for _, p := range m.projects {
+			if p.IsWorktree() && p.ParentProjectPath != "" && directChildren[p.ParentProjectPath] {
 				projectsToFilter = append(projectsToFilter, p)
 			}
 		}
@@ -1216,8 +1227,80 @@ func (m *sessionizeModel) updateFiltered() {
 		if m.focusedProject != nil {
 			// Focus mode: Different handling for ecosystems vs regular projects
 			if m.focusedProject.IsEcosystem() {
-				// For ecosystems, just show all filtered projects directly without complex grouping
-				m.filtered = projectsToFilter
+				// For ecosystems, group worktrees under their parents and respect fold state
+				// Separate projects into parents and worktrees
+				var parentRepos []*manager.SessionizeProject
+				worktreesByParent := make(map[string][]*manager.SessionizeProject)
+				var ecosystemWorktrees []*manager.SessionizeProject
+
+				for _, p := range projectsToFilter {
+					if p.IsWorktree() {
+						// Check if this is an ecosystem worktree (parent is the focused ecosystem)
+						if p.ParentProjectPath == m.focusedProject.Path {
+							ecosystemWorktrees = append(ecosystemWorktrees, p)
+						} else {
+							// This is a project worktree (worktree of a child project)
+							worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
+						}
+					} else {
+						parentRepos = append(parentRepos, p)
+					}
+				}
+
+				// Sort parents by activity (active sessions first)
+				sort.SliceStable(parentRepos, func(i, j int) bool {
+					sessionI := parentRepos[i].Identifier()
+					sessionJ := parentRepos[j].Identifier()
+					activeI := m.runningSessions[sessionI]
+					activeJ := m.runningSessions[sessionJ]
+
+					if activeI && !activeJ {
+						return true
+					}
+					if !activeI && activeJ {
+						return false
+					}
+					return false
+				})
+
+				// Build filtered list: ecosystem, its worktrees, then child projects with their worktrees
+				m.filtered = []*manager.SessionizeProject{}
+
+				// Add the ecosystem itself first (if it's in the list)
+				for _, parent := range parentRepos {
+					if parent.Path == m.focusedProject.Path {
+						m.filtered = append(m.filtered, parent)
+						break
+					}
+				}
+
+				// Add ecosystem worktrees if not folded
+				if !m.worktreesFolded && len(ecosystemWorktrees) > 0 {
+					sort.Slice(ecosystemWorktrees, func(i, j int) bool {
+						return strings.ToLower(ecosystemWorktrees[i].Name) < strings.ToLower(ecosystemWorktrees[j].Name)
+					})
+					m.filtered = append(m.filtered, ecosystemWorktrees...)
+				}
+
+				// Add child projects followed by their worktrees (if not folded)
+				for _, parent := range parentRepos {
+					// Skip the ecosystem itself (already added above)
+					if parent.Path == m.focusedProject.Path {
+						continue
+					}
+
+					m.filtered = append(m.filtered, parent)
+
+					if !m.worktreesFolded {
+						if worktrees, exists := worktreesByParent[parent.Path]; exists {
+							// Sort worktrees alphabetically for consistent order
+							sort.Slice(worktrees, func(i, j int) bool {
+								return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
+							})
+							m.filtered = append(m.filtered, worktrees...)
+						}
+					}
+				}
 			} else {
 				// Regular project focus: Group repos with their worktrees hierarchically
 				m.filtered = []*manager.SessionizeProject{}
@@ -1259,38 +1342,47 @@ func (m *sessionizeModel) updateFiltered() {
 				}
 			}
 		} else {
-			// Normal mode: Original sorting logic
-			// Create a mutable copy for sorting
-			sortedProjects := make([]*manager.SessionizeProject, len(projectsToFilter))
-			copy(sortedProjects, projectsToFilter)
+			// Normal mode: Group worktrees under their parents and respect fold state
+			// Separate projects into parents and worktrees
+			var parentRepos []*manager.SessionizeProject
+			worktreesByParent := make(map[string][]*manager.SessionizeProject)
 
-			sort.SliceStable(sortedProjects, func(i, j int) bool {
-				groupI := sortedProjects[i].GetGroupingKey()
-				isGroupIActive := activeGroups[groupI]
+			for _, p := range projectsToFilter {
+				if p.IsWorktree() {
+					worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
+				} else {
+					parentRepos = append(parentRepos, p)
+				}
+			}
 
-				groupJ := sortedProjects[j].GetGroupingKey()
-				isGroupJActive := activeGroups[groupJ]
+			// Sort parents by activity (active sessions first)
+			sort.SliceStable(parentRepos, func(i, j int) bool {
+				sessionI := parentRepos[i].Identifier()
+				sessionJ := parentRepos[j].Identifier()
+				activeI := m.runningSessions[sessionI]
+				activeJ := m.runningSessions[sessionJ]
 
-				if isGroupIActive && !isGroupJActive {
+				if activeI && !activeJ {
 					return true
 				}
-				if !isGroupIActive && isGroupJActive {
+				if !activeI && activeJ {
 					return false
 				}
-				return false // Maintain original order for groups of same activity status
+				return false // Maintain original order for same activity status
 			})
 
-			// Filter inactive worktrees: only include worktrees with running sessions
+			// Build filtered list: parent followed by its worktrees (if not folded)
 			m.filtered = []*manager.SessionizeProject{}
-			for _, p := range sortedProjects {
-				if !p.IsWorktree() {
-					// Always include parent repositories
-					m.filtered = append(m.filtered, p)
-				} else {
-					// Only include worktrees with active sessions
-					sessionName := p.Identifier()
-					if m.runningSessions[sessionName] {
-						m.filtered = append(m.filtered, p)
+			for _, parent := range parentRepos {
+				m.filtered = append(m.filtered, parent)
+
+				if !m.worktreesFolded {
+					if worktrees, exists := worktreesByParent[parent.Path]; exists {
+						// Sort worktrees alphabetically for consistent order
+						sort.Slice(worktrees, func(i, j int) bool {
+							return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
+						})
+						m.filtered = append(m.filtered, worktrees...)
 					}
 				}
 			}
@@ -1334,19 +1426,17 @@ func (m *sessionizeModel) updateFiltered() {
 				return getMatchQuality(parents[i]) > getMatchQuality(parents[j])
 			})
 
-			// Build result with parents followed by their worktrees (if not folded)
+			// Build result with parents followed by their worktrees
 			var result []*manager.SessionizeProject
 			for _, parent := range parents {
 				result = append(result, parent)
 
-				// Add worktrees for this parent only if not folded, sorted by match quality
-				if !m.worktreesFolded {
-					worktrees := parentWorktrees[parent.Path]
-					sort.SliceStable(worktrees, func(i, j int) bool {
-						return getMatchQuality(worktrees[i]) > getMatchQuality(worktrees[j])
-					})
-					result = append(result, worktrees...)
-				}
+				// Add worktrees for this parent, sorted by match quality
+				worktrees := parentWorktrees[parent.Path]
+				sort.SliceStable(worktrees, func(i, j int) bool {
+					return getMatchQuality(worktrees[i]) > getMatchQuality(worktrees[j])
+				})
+				result = append(result, worktrees...)
 			}
 
 			return result
