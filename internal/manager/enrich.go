@@ -14,6 +14,7 @@ import (
 	coreconfig "github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/mattsolo1/grove-flow/pkg/orchestration"
 	"github.com/sirupsen/logrus"
 )
 
@@ -262,146 +263,99 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 }
 
 // FetchPlanStatsMap fetches plan statistics for all workspaces using NotebookLocator.
-// This eliminates the subprocess call to `flow plan list` for better performance.
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
-	resultsByPath := make(map[string]*PlanStats)
+	statsByGroupingKey := make(map[string]*PlanStats)
 
-	// Initialize workspace provider and NotebookLocator
+	// 1. Initialize dependencies from grove-core
 	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel) // Suppress logs
+	logger.SetLevel(logrus.ErrorLevel)
 	discoveryService := workspace.NewDiscoveryService(logger)
 	discoveryResult, err := discoveryService.DiscoverAll()
 	if err != nil {
-		return resultsByPath, nil
+		return nil, fmt.Errorf("workspace discovery failed: %w", err)
 	}
 	provider := workspace.NewProvider(discoveryResult)
 
-	// Load config and create NotebookLocator
 	coreCfg, err := coreconfig.LoadDefault()
 	if err != nil {
 		coreCfg = &coreconfig.Config{}
 	}
 	locator := workspace.NewNotebookLocator(coreCfg)
 
-	// Get all plan directories across all workspaces
+	// 2. Scan for all plan directories
 	scannedDirs, err := locator.ScanForAllPlans(provider)
 	if err != nil {
-		return resultsByPath, nil
+		return nil, fmt.Errorf("failed to scan for plan directories: %w", err)
 	}
 
-	// Group scanned directories by workspace grouping key
-	type workspaceInfo struct {
-		ownerNode *workspace.WorkspaceNode
-		planDirs  []string
-		planNames []string
-	}
-	workspaceMap := make(map[string]*workspaceInfo)
-
+	// 3. Process each found plan directory
 	for _, scannedDir := range scannedDirs {
 		ownerNode := scannedDir.Owner
-		planDir := scannedDir.Path
+		plansRootDir := scannedDir.Path
+		groupKey := ownerNode.GetGroupingKey()
 
-		// Use the grouping key to aggregate plans for the same logical workspace
-		wsPath := ownerNode.GetGroupingKey()
-		if _, ok := workspaceMap[wsPath]; !ok {
-			workspaceMap[wsPath] = &workspaceInfo{
-				ownerNode: ownerNode,
-				planDirs:  make([]string, 0),
-				planNames: make([]string, 0),
+		// Get or create the stats object for this workspace group
+		if _, ok := statsByGroupingKey[groupKey]; !ok {
+			statsByGroupingKey[groupKey] = &PlanStats{}
+		}
+		stats := statsByGroupingKey[groupKey]
+
+		// 4. Walk the plans root directory to find individual plans
+		entries, err := os.ReadDir(plansRootDir)
+		if err != nil {
+			continue // Skip this directory if unreadable
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+
+			planPath := filepath.Join(plansRootDir, entry.Name())
+			plan, err := orchestration.LoadPlan(planPath)
+			if err != nil {
+				continue // Skip if it's not a valid plan
+			}
+
+			// 5. Aggregate stats
+			stats.TotalPlans++
+			for _, job := range plan.Jobs {
+				switch job.Status {
+				case "completed":
+					stats.Completed++
+				case "running":
+					stats.Running++
+				case "pending", "pending_user":
+					stats.Pending++
+				case "failed":
+					stats.Failed++
+				case "todo":
+					stats.Todo++
+				case "hold":
+					stats.Hold++
+				case "abandoned":
+					stats.Abandoned++
+				}
 			}
 		}
-		workspaceMap[wsPath].planDirs = append(workspaceMap[wsPath].planDirs, planDir)
-		workspaceMap[wsPath].planNames = append(workspaceMap[wsPath].planNames, filepath.Base(planDir))
-	}
 
-	// For each workspace group, get the active plan and calculate stats
-	statsByGroupingKey := make(map[string]*PlanStats)
-	for wsPath, wsInfo := range workspaceMap {
-		stats := &PlanStats{TotalPlans: len(wsInfo.planDirs)}
-		statsByGroupingKey[wsPath] = stats
-
-		// Get the active plan from state using the owner node's path
-		activePlan := getActivePlanForPath(wsInfo.ownerNode.Path)
+		// Also try to find the active plan for this workspace
+		activePlan := getActivePlanForPath(ownerNode.Path)
 		if activePlan != "" {
 			stats.ActivePlan = activePlan
-
-			// Find the plan directory for the active plan
-			var activePlanDir string
-			for i, planName := range wsInfo.planNames {
-				if planName == activePlan {
-					activePlanDir = wsInfo.planDirs[i]
-					break
-				}
-			}
-
-			// Scan the active plan directory for job statistics
-			if activePlanDir != "" {
-				entries, err := os.ReadDir(activePlanDir)
-				if err == nil {
-					for _, entry := range entries {
-						if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
-							continue
-						}
-						filename := entry.Name()
-						if filename == "spec.md" || filename == "README.md" {
-							continue
-						}
-
-						filePath := filepath.Join(activePlanDir, filename)
-						content, err := os.ReadFile(filePath)
-						if err != nil {
-							continue
-						}
-
-						// Parse job frontmatter to get status
-						jobStatus := parseJobStatus(string(content))
-						switch jobStatus {
-						case "completed":
-							stats.Completed++
-						case "running":
-							stats.Running++
-						case "pending", "pending_user":
-							stats.Pending++
-						case "failed":
-							stats.Failed++
-						case "todo":
-							stats.Todo++
-						case "hold":
-							stats.Hold++
-						case "abandoned":
-							stats.Abandoned++
-						}
-					}
-				}
-			}
 		}
 	}
 
-	// Map stats to all workspace paths (including worktrees)
-	// The TUI looks up stats by each workspace's actual path, but we built stats by grouping key
+	// 6. Map aggregated stats back to every individual node (including worktrees)
+	finalResultsByPath := make(map[string]*PlanStats)
 	for _, node := range provider.All() {
 		groupKey := node.GetGroupingKey()
 		if stats, ok := statsByGroupingKey[groupKey]; ok {
-			resultsByPath[node.Path] = stats
-		} else {
-			// Debug: Try to match by name if groupKey doesn't work
-			for gk, stats := range statsByGroupingKey {
-				if strings.Contains(gk, node.Name) {
-					resultsByPath[node.Path] = stats
-					break
-				}
-			}
+			finalResultsByPath[node.Path] = stats
 		}
 	}
 
-	if os.Getenv("GROVE_DEBUG") != "" {
-		fmt.Fprintf(os.Stderr, "FetchPlanStatsMap: Found %d stats entries\n", len(resultsByPath))
-		for path, stats := range resultsByPath {
-			fmt.Fprintf(os.Stderr, "  %s: %d plans\n", path, stats.TotalPlans)
-		}
-	}
-
-	return resultsByPath, nil
+	return finalResultsByPath, nil
 }
 
 // getActivePlanForPath reads the active plan from a workspace's state file
