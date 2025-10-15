@@ -153,22 +153,16 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		}
 		// Main ecosystem - no prefix
 	} else if m.focusedProject != nil {
-		// In focus mode
+		// In focus mode - use hierarchical parent to determine indentation
 		if project.Path == m.focusedProject.Path {
 			// This is the focused ecosystem - no prefix
 			prefix = ""
-		} else if project.IsWorktree() {
-			// Worktree
-			if project.ParentProjectPath == m.focusedProject.Path {
-				// Direct worktree of focused ecosystem
-				prefix = "└─ "
-			} else {
-				// Worktree of a repo within the focused ecosystem
-				prefix = "  └─ "
-			}
-		} else {
-			// Regular repo within focused ecosystem
+		} else if project.GetHierarchicalParent() == m.focusedProject.Path {
+			// This is a direct child of the focused project
 			prefix = "├─ "
+		} else {
+			// This is a grandchild (e.g., worktree of a sub-project)
+			prefix = "  └─ "
 		}
 	} else {
 		// Normal mode - only show worktree indicator
