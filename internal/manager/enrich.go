@@ -11,7 +11,10 @@ import (
 	"strings"
 	"sync"
 
+	coreconfig "github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/git"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/sirupsen/logrus"
 )
 
 // EnrichmentOptions controls which data to fetch and for which projects
@@ -258,139 +261,226 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 	return countsByName, nil
 }
 
-// FetchPlanStatsMap fetches plan statistics for all workspaces.
+// FetchPlanStatsMap fetches plan statistics for all workspaces using NotebookLocator.
+// This eliminates the subprocess call to `flow plan list` for better performance.
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 	resultsByPath := make(map[string]*PlanStats)
-	flowPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "flow")
-	if _, err := os.Stat(flowPath); os.IsNotExist(err) {
-		var findErr error
-		flowPath, findErr = exec.LookPath("flow")
-		if findErr != nil {
-			return resultsByPath, nil
-		}
-	}
 
-	cmd := exec.Command(flowPath, "plan", "list", "--json", "--all-workspaces", "--include-finished")
-	output, err := cmd.Output()
+	// Initialize workspace provider and NotebookLocator
+	logger := logrus.New()
+	logger.SetLevel(logrus.ErrorLevel) // Suppress logs
+	discoveryService := workspace.NewDiscoveryService(logger)
+	discoveryResult, err := discoveryService.DiscoverAll()
+	if err != nil {
+		return resultsByPath, nil
+	}
+	provider := workspace.NewProvider(discoveryResult)
+
+	// Load config and create NotebookLocator
+	coreCfg, err := coreconfig.LoadDefault()
+	if err != nil {
+		coreCfg = &coreconfig.Config{}
+	}
+	locator := workspace.NewNotebookLocator(coreCfg)
+
+	// Get all plan directories across all workspaces
+	planDirs, err := locator.ScanForAllPlans(provider)
 	if err != nil {
 		return resultsByPath, nil
 	}
 
-	type flowPlanSummary struct {
-		ID            string `json:"id"`
-		WorkspacePath string `json:"workspace_path"`
-		Status        string `json:"status"`
-	}
-
-	var summaries []flowPlanSummary
-	if err := json.Unmarshal(output, &summaries); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal flow output: %w", err)
-	}
-
+	// Group plans by workspace path
 	type workspaceInfo struct {
-		path  string
-		plans []flowPlanSummary
+		path      string
+		planDirs  []string
+		planNames []string
 	}
 	workspaceMap := make(map[string]*workspaceInfo)
 
-	for _, summary := range summaries {
-		if summary.WorkspacePath == "" {
+	for _, planDir := range planDirs {
+		// Determine the workspace for this plan directory
+		workspaceNode := provider.FindByPath(planDir)
+		if workspaceNode == nil {
+			workspaceNode = provider.FindByPath(filepath.Dir(planDir))
+		}
+		if workspaceNode == nil {
 			continue
 		}
-		if _, ok := workspaceMap[summary.WorkspacePath]; !ok {
-			workspaceMap[summary.WorkspacePath] = &workspaceInfo{
-				path:  summary.WorkspacePath,
-				plans: make([]flowPlanSummary, 0),
+
+		// Use the grouping key to aggregate plans for the same logical workspace
+		wsPath := workspaceNode.GetGroupingKey()
+		if _, ok := workspaceMap[wsPath]; !ok {
+			workspaceMap[wsPath] = &workspaceInfo{
+				path:      wsPath,
+				planDirs:  make([]string, 0),
+				planNames: make([]string, 0),
 			}
 		}
-		workspaceMap[summary.WorkspacePath].plans = append(workspaceMap[summary.WorkspacePath].plans, summary)
+		workspaceMap[wsPath].planDirs = append(workspaceMap[wsPath].planDirs, planDir)
+		workspaceMap[wsPath].planNames = append(workspaceMap[wsPath].planNames, filepath.Base(planDir))
 	}
 
-	activePlanChan := make(chan struct {
-		workspacePath string
-		activePlan    string
-	}, len(workspaceMap))
-	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, 5)
+	// For each workspace group, get the active plan and calculate stats
+	statsByGroupingKey := make(map[string]*PlanStats)
+	for wsPath, wsInfo := range workspaceMap {
+		stats := &PlanStats{TotalPlans: len(wsInfo.planDirs)}
+		statsByGroupingKey[wsPath] = stats
 
-	for _, wsInfo := range workspaceMap {
-		wg.Add(1)
-		go func(path string) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
+		// Get the active plan from state
+		activePlan := getActivePlanForPath(wsPath)
+		if activePlan != "" {
+			stats.ActivePlan = activePlan
 
-			currentCmd := exec.Command(flowPath, "plan", "current")
-			currentCmd.Dir = path
-			currentOutput, err := currentCmd.Output()
-			if err == nil {
-				outputStr := strings.TrimSpace(string(currentOutput))
-				if strings.HasPrefix(outputStr, "Active job: ") {
-					activePlan := strings.TrimPrefix(outputStr, "Active job: ")
-					activePlanChan <- struct {
-						workspacePath string
-						activePlan    string
-					}{path, activePlan}
+			// Find the plan directory for the active plan
+			var activePlanDir string
+			for i, planName := range wsInfo.planNames {
+				if planName == activePlan {
+					activePlanDir = wsInfo.planDirs[i]
+					break
 				}
 			}
-		}(wsInfo.path)
-	}
 
-	go func() {
-		wg.Wait()
-		close(activePlanChan)
-	}()
+			// Scan the active plan directory for job statistics
+			if activePlanDir != "" {
+				entries, err := os.ReadDir(activePlanDir)
+				if err == nil {
+					for _, entry := range entries {
+						if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+							continue
+						}
+						filename := entry.Name()
+						if filename == "spec.md" || filename == "README.md" {
+							continue
+						}
 
-	activePlansByWorkspace := make(map[string]string)
-	for result := range activePlanChan {
-		activePlansByWorkspace[result.workspacePath] = result.activePlan
-	}
-
-	for workspacePath, wsInfo := range workspaceMap {
-		stats := &PlanStats{TotalPlans: len(wsInfo.plans)}
-		resultsByPath[workspacePath] = stats
-		activePlan := activePlansByWorkspace[workspacePath]
-		if activePlan == "" {
-			continue
-		}
-		stats.ActivePlan = activePlan
-
-		for _, summary := range wsInfo.plans {
-			if summary.ID == activePlan {
-				statusParts := strings.Split(summary.Status, ", ")
-				for _, part := range statusParts {
-					fields := strings.Fields(part)
-					if len(fields) >= 2 {
-						count, err := strconv.Atoi(fields[0])
+						filePath := filepath.Join(activePlanDir, filename)
+						content, err := os.ReadFile(filePath)
 						if err != nil {
 							continue
 						}
-						status := fields[1]
-						// Handle "on hold" multi-word status
-						if status == "on" && len(fields) >= 3 && fields[2] == "hold" {
-							status = "hold"
-						}
-						switch status {
+
+						// Parse job frontmatter to get status
+						jobStatus := parseJobStatus(string(content))
+						switch jobStatus {
 						case "completed":
-							stats.Completed = count
+							stats.Completed++
 						case "running":
-							stats.Running = count
-						case "pending":
-							stats.Pending = count
+							stats.Running++
+						case "pending", "pending_user":
+							stats.Pending++
 						case "failed":
-							stats.Failed = count
+							stats.Failed++
 						case "todo":
-							stats.Todo = count
+							stats.Todo++
 						case "hold":
-							stats.Hold = count
+							stats.Hold++
 						case "abandoned":
-							stats.Abandoned = count
+							stats.Abandoned++
 						}
 					}
 				}
-				break
 			}
 		}
 	}
+
+	// Map stats to all workspace paths (including worktrees)
+	// The TUI looks up stats by each workspace's actual path, but we built stats by grouping key
+	for _, node := range provider.All() {
+		groupKey := node.GetGroupingKey()
+		if stats, ok := statsByGroupingKey[groupKey]; ok {
+			resultsByPath[node.Path] = stats
+		} else {
+			// Debug: Try to match by name if groupKey doesn't work
+			for gk, stats := range statsByGroupingKey {
+				if strings.Contains(gk, node.Name) {
+					resultsByPath[node.Path] = stats
+					break
+				}
+			}
+		}
+	}
+
+	if os.Getenv("GROVE_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "FetchPlanStatsMap: Found %d stats entries\n", len(resultsByPath))
+		for path, stats := range resultsByPath {
+			fmt.Fprintf(os.Stderr, "  %s: %d plans\n", path, stats.TotalPlans)
+		}
+	}
+
 	return resultsByPath, nil
+}
+
+// getActivePlanForPath reads the active plan from a workspace's state file
+func getActivePlanForPath(workspacePath string) string {
+	stateFilePath := filepath.Join(workspacePath, ".grove", "state.yml")
+	data, err := os.ReadFile(stateFilePath)
+	if err != nil {
+		return ""
+	}
+
+	var stateMap map[string]interface{}
+	if err := json.Unmarshal(data, &stateMap); err != nil {
+		// Try YAML format
+		stateMap = make(map[string]interface{})
+		// Simple YAML parsing - look for "flow.active_plan:" line
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "flow.active_plan:") {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
+					return strings.TrimSpace(parts[1])
+				}
+			}
+		}
+		return ""
+	}
+
+	// Try both keys for backward compatibility
+	if val, ok := stateMap["flow.active_plan"].(string); ok {
+		return val
+	}
+	if val, ok := stateMap["active_plan"].(string); ok {
+		return val
+	}
+	return ""
+}
+
+// parseJobStatus extracts the status field from job frontmatter
+func parseJobStatus(content string) string {
+	lines := strings.Split(content, "\n")
+	inFrontmatter := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "---" {
+			if !inFrontmatter {
+				inFrontmatter = true
+				continue
+			} else {
+				break
+			}
+		}
+
+		if !inFrontmatter {
+			continue
+		}
+
+		// Skip lines with leading whitespace (nested YAML structures)
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			continue
+		}
+
+		parts := strings.SplitN(trimmed, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"`)
+
+		if key == "status" {
+			return value
+		}
+	}
+	return "pending"
 }
