@@ -346,11 +346,11 @@ func (m sessionizeModel) renderTree() string {
 				// Context-only items: always muted/grayed
 				nameStyle = core_theme.DefaultTheme.Muted
 			} else if project.IsWorktree() {
-				// Worktrees: Blue
-				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
-			} else {
-				// Primary repos: Cyan
+				// Worktrees: Cyan
 				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
+			} else {
+				// Primary repos: Blue
+				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
 			}
 			pathStyle := core_theme.DefaultTheme.Muted
 

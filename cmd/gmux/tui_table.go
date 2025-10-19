@@ -198,11 +198,11 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 	// Apply color styling
 	if project.IsWorktree() {
-		// Apply blue styling for worktrees
-		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(workspaceName)
-	} else if m.focusedProject == nil || project.Path != m.focusedProject.Path {
-		// Apply cyan styling for main projects (not the focused ecosystem itself)
+		// Apply cyan styling for worktrees
 		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(workspaceName)
+	} else if m.focusedProject == nil || project.Path != m.focusedProject.Path {
+		// Apply blue styling for main projects (not the focused ecosystem itself)
+		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(workspaceName)
 	}
 
 	// --- KEY ---
