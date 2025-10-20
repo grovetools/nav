@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -197,13 +198,30 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	workspaceName = prefix + project.Name
 
 	// Apply color styling
-	if project.IsWorktree() {
-		// Apply cyan styling for worktrees
-		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(workspaceName)
-	} else if m.focusedProject == nil || project.Path != m.focusedProject.Path {
-		// Apply blue styling for main projects (not the focused ecosystem itself)
-		workspaceName = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(workspaceName)
+	var style lipgloss.Style
+	switch project.Kind {
+	case workspace.KindEcosystemWorktree:
+		// Ecosystem worktrees are violet (keep color even when focused)
+		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet)
+	case workspace.KindStandaloneProjectWorktree,
+		workspace.KindEcosystemSubProjectWorktree,
+		workspace.KindEcosystemWorktreeSubProjectWorktree:
+		// Other worktrees are blue
+		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
+	case workspace.KindEcosystemRoot:
+		// Ecosystem roots are default color
+		style = lipgloss.NewStyle()
+	default:
+		// Sub-projects and standalone projects are cyan
+		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
 	}
+
+	// Don't color the focused project itself in the table view, except for ecosystem worktrees
+	if m.focusedProject != nil && project.Path == m.focusedProject.Path && project.Kind != workspace.KindEcosystemWorktree {
+		style = lipgloss.NewStyle()
+	}
+
+	workspaceName = style.Render(workspaceName)
 
 	// --- KEY ---
 	keyMapping := ""

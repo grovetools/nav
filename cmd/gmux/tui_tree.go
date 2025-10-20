@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 )
 
 // renderTree renders the tree view for projects with full styling
@@ -345,12 +346,23 @@ func (m sessionizeModel) renderTree() string {
 			if isContextOnly {
 				// Context-only items: always muted/grayed
 				nameStyle = core_theme.DefaultTheme.Muted
-			} else if project.IsWorktree() {
-				// Worktrees: Cyan
-				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
 			} else {
-				// Primary repos: Blue
-				nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
+				switch project.Kind {
+				case workspace.KindEcosystemWorktree:
+					// Ecosystem worktrees are violet
+					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet)
+				case workspace.KindStandaloneProjectWorktree,
+					workspace.KindEcosystemSubProjectWorktree,
+					workspace.KindEcosystemWorktreeSubProjectWorktree:
+					// Other worktrees are blue
+					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
+				case workspace.KindEcosystemRoot:
+					// Root ecosystems are default color
+					nameStyle = lipgloss.NewStyle()
+				default:
+					// Sub-projects and standalone projects are cyan
+					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
+				}
 			}
 			pathStyle := core_theme.DefaultTheme.Muted
 
