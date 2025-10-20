@@ -1221,21 +1221,34 @@ func (m *sessionizeModel) updateFiltered() {
 		// Add the focused project itself
 		projectsToFilter = append(projectsToFilter, m.focusedProject)
 
-		// Build a map of direct children for efficient lookup
-		directChildren := make(map[string]bool)
+		// This map will only track sub-projects, not ecosystem worktrees, for grandchild traversal
+		directChildrenSubProjects := make(map[string]bool)
 
 		// Add all direct children (ecosystem children and ecosystem worktrees)
 		for _, p := range m.projects {
 			if p.IsChildOf(m.focusedProject.Path) {
 				projectsToFilter = append(projectsToFilter, p)
-				directChildren[p.Path] = true
+
+				// IMPORTANT: Only track sub-projects for finding their worktrees later.
+				// An ecosystem worktree (like website-infra) is also an ecosystem, so this check excludes it.
+				if !p.IsEcosystem() {
+					directChildrenSubProjects[p.Path] = true
+				}
 			}
 		}
 
-		// Also add worktrees of direct children (grandchildren)
+		// Now, only add worktrees of the direct *sub-project* children
+		// IMPORTANT: Exclude worktrees that are located inside ecosystem worktrees.
+		// For KindEcosystemWorktreeSubProjectWorktree, GetHierarchicalParent() returns the
+		// ecosystem worktree path (not the git parent), so we can filter them out by checking
+		// that the hierarchical parent matches the ParentProjectPath.
 		for _, p := range m.projects {
-			if p.IsWorktree() && p.ParentProjectPath != "" && directChildren[p.ParentProjectPath] {
-				projectsToFilter = append(projectsToFilter, p)
+			if p.IsWorktree() && p.ParentProjectPath != "" && directChildrenSubProjects[p.ParentProjectPath] {
+				// Only include if the hierarchical parent is the same as the git parent
+				// (i.e., this is a normal worktree, not one inside an ecosystem worktree)
+				if p.GetHierarchicalParent() == p.ParentProjectPath {
+					projectsToFilter = append(projectsToFilter, p)
+				}
 			}
 		}
 	} else {
