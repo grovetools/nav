@@ -30,11 +30,8 @@ func highlightMatch(text, filter string) string {
 	match := text[index : index+len(filter)]
 	after := text[index+len(filter):]
 
-	// Highlight the match with yellow background
-	highlightStyle := lipgloss.NewStyle().
-		Foreground(core_theme.DefaultColors.DarkText).
-		Background(core_theme.DefaultColors.Yellow).
-		Bold(true)
+	// Highlight the match with reversed warning style
+	highlightStyle := core_theme.DefaultTheme.Warning.Copy().Reverse(true)
 
 	return before + highlightStyle.Render(match) + after
 }
@@ -79,10 +76,10 @@ func formatChanges(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus)
 	// Add lines added/deleted if available
 	if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
 		if extStatus.LinesAdded > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("+%d", extStatus.LinesAdded)))
+			changes = append(changes, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("+%d", extStatus.LinesAdded)))
 		}
 		if extStatus.LinesDeleted > 0 {
-			changes = append(changes, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted)))
+			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("-%d", extStatus.LinesDeleted)))
 		}
 	}
 
@@ -112,7 +109,7 @@ func formatPlanStats(stats *manager.PlanStats) string {
 	var parts []string
 
 	// Show total plans count
-	totalPlansStr := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(fmt.Sprintf("(%d)", stats.TotalPlans))
+	totalPlansStr := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("(%d)", stats.TotalPlans))
 	parts = append(parts, totalPlansStr)
 
 	// Show active plan name if available
@@ -123,25 +120,25 @@ func formatPlanStats(stats *manager.PlanStats) string {
 		// Show job stats for active plan
 		var jobStats []string
 		if stats.Running > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("◐ %d", stats.Running)))
 		}
 		if stats.Hold > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("⏸ %d", stats.Hold)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("⏸ %d", stats.Hold)))
 		}
 		if stats.Todo > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render(fmt.Sprintf("○ %d", stats.Todo)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○ %d", stats.Todo)))
 		}
 		if stats.Pending > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("○ %d", stats.Pending)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("○ %d", stats.Pending)))
 		}
 		if stats.Completed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("● %d", stats.Completed)))
 		}
 		if stats.Failed > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("✗ %d", stats.Failed)))
 		}
 		if stats.Abandoned > 0 {
-			jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render(fmt.Sprintf("⊗ %d", stats.Abandoned)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("⊗ %d", stats.Abandoned)))
 		}
 
 		if len(jobStats) > 0 {

@@ -952,13 +952,11 @@ func (m manageModel) View() string {
 	var b strings.Builder
 
 	// Title with mode indicators
-	inlineTitleStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Bold(true)
-	b.WriteString(inlineTitleStyle.Render("Session Hotkeys"))
+	b.WriteString(core_theme.DefaultTheme.Header.Render("Session Hotkeys"))
 
 	// Show move mode indicator
 	if m.moveMode {
-		moveModeStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Bold(true)
-		b.WriteString(" " + moveModeStyle.Render("[MOVE MODE]"))
+		b.WriteString(" " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]"))
 	}
 	b.WriteString("\n\n")
 
@@ -1210,8 +1208,7 @@ func (m manageModel) View() string {
 	// Render locked section if there are locked keys
 	if len(lockedRows) > 0 {
 		b.WriteString("\n")
-		lockedHeaderStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Bold(true)
-		b.WriteString(lockedHeaderStyle.Render("Locked Keys") + "\n")
+		b.WriteString(core_theme.DefaultTheme.Warning.Render("Locked Keys") + "\n")
 
 		var lockedTableStr string
 		if !cursorInUnlocked {
@@ -1320,25 +1317,25 @@ func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
 	}
 
 	statusSymbol := ""
-	var statusColor lipgloss.Color
+	var statusStyle lipgloss.Style
 	switch session.Status {
 	case "running":
 		statusSymbol = "▶"
-		statusColor = core_theme.DefaultColors.Green
+		statusStyle = core_theme.DefaultTheme.Success
 	case "idle":
 		statusSymbol = "⏸"
-		statusColor = core_theme.DefaultColors.Yellow
+		statusStyle = core_theme.DefaultTheme.Warning
 	case "completed":
 		statusSymbol = "✓"
-		statusColor = core_theme.DefaultColors.Cyan
+		statusStyle = core_theme.DefaultTheme.Info
 	case "failed", "error":
 		statusSymbol = "✗"
-		statusColor = core_theme.DefaultColors.Red
+		statusStyle = core_theme.DefaultTheme.Error
 	default:
 		return ""
 	}
 
-	statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+	statusStyled := statusStyle.Render(statusSymbol)
 
 	if session.Duration != "" {
 		return statusStyled + " " + session.Duration
@@ -1355,16 +1352,16 @@ func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
 
 	var jobStats []string
 	if stats.Running > 0 {
-		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue).Render(fmt.Sprintf("◐ %d", stats.Running)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("◐ %d", stats.Running)))
 	}
 	if stats.Pending > 0 {
-		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("○ %d", stats.Pending)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("○ %d", stats.Pending)))
 	}
 	if stats.Completed > 0 {
-		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("● %d", stats.Completed)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("● %d", stats.Completed)))
 	}
 	if stats.Failed > 0 {
-		jobStats = append(jobStats, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("✗ %d", stats.Failed)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("✗ %d", stats.Failed)))
 	}
 
 	return strings.Join(jobStats, " ")

@@ -201,19 +201,19 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	var style lipgloss.Style
 	switch project.Kind {
 	case workspace.KindEcosystemWorktree:
-		// Ecosystem worktrees are violet (keep color even when focused)
-		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet)
+		// Ecosystem worktrees use accent style (keep color even when focused)
+		style = core_theme.DefaultTheme.Accent
 	case workspace.KindStandaloneProjectWorktree,
 		workspace.KindEcosystemSubProjectWorktree,
 		workspace.KindEcosystemWorktreeSubProjectWorktree:
-		// Other worktrees are blue
-		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
+		// Other worktrees use info style
+		style = core_theme.DefaultTheme.Info
 	case workspace.KindEcosystemRoot:
 		// Ecosystem roots are default color
 		style = lipgloss.NewStyle()
 	default:
-		// Sub-projects and standalone projects are cyan
-		style = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
+		// Sub-projects and standalone projects use info style
+		style = core_theme.DefaultTheme.Info
 	}
 
 	// Don't color the focused project itself in the table view, except for ecosystem worktrees
@@ -245,15 +245,11 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	statusIndicator := "-"
 	if sessionExists {
 		if sessionName == m.currentSession {
-			// Current session - use blue indicator
-			statusIndicator = lipgloss.NewStyle().
-				Foreground(core_theme.DefaultColors.Blue).
-				Render("●")
+			// Current session - use info style
+			statusIndicator = core_theme.DefaultTheme.Info.Render("●")
 		} else {
-			// Other active session - use green indicator
-			statusIndicator = lipgloss.NewStyle().
-				Foreground(core_theme.DefaultColors.Green).
-				Render("●")
+			// Other active session - use success style
+			statusIndicator = core_theme.DefaultTheme.Success.Render("●")
 		}
 	}
 
@@ -314,22 +310,22 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 				if status != nil {
 					if status.UntrackedCount > 0 {
 						// New files (untracked)
-						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("N:%d", status.UntrackedCount)))
+						changeParts = append(changeParts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("N:%d", status.UntrackedCount)))
 					}
 					if status.ModifiedCount > 0 {
 						// Modified files (includes modified and deleted in working tree)
-						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Yellow).Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
+						changeParts = append(changeParts, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("M:%d", status.ModifiedCount)))
 					}
 					if status.StagedCount > 0 {
 						// Staged files (includes all staged changes: adds, modifies, deletes)
-						changeParts = append(changeParts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan).Render(fmt.Sprintf("S:%d", status.StagedCount)))
+						changeParts = append(changeParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("S:%d", status.StagedCount)))
 					}
 				}
 
 				// Add line changes if available
 				if extStatus != nil && (extStatus.LinesAdded > 0 || extStatus.LinesDeleted > 0) {
-					added := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render(fmt.Sprintf("+%d", extStatus.LinesAdded))
-					deleted := lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Red).Render(fmt.Sprintf("-%d", extStatus.LinesDeleted))
+					added := core_theme.DefaultTheme.Success.Render(fmt.Sprintf("+%d", extStatus.LinesAdded))
+					deleted := core_theme.DefaultTheme.Error.Render(fmt.Sprintf("-%d", extStatus.LinesDeleted))
 					changeParts = append(changeParts, added+" "+deleted)
 				}
 
@@ -345,10 +341,10 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	if m.showNoteCounts && project.NoteCounts != nil {
 		var parts []string
 		if project.NoteCounts.Current > 0 {
-			parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet).Render(fmt.Sprintf("C:%d", project.NoteCounts.Current)))
+			parts = append(parts, core_theme.DefaultTheme.Accent.Render(fmt.Sprintf("C:%d", project.NoteCounts.Current)))
 		}
 		if project.NoteCounts.Issues > 0 {
-			parts = append(parts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Pink).Render(fmt.Sprintf("I:%d", project.NoteCounts.Issues)))
+			parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("I:%d", project.NoteCounts.Issues)))
 		}
 		if len(parts) > 0 {
 			notes = strings.Join(parts, " ")
@@ -370,25 +366,25 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		if project.ClaudeSession != nil {
 			// This is a Claude session entry - use its own status
 			statusSymbol := ""
-			var statusColor lipgloss.Color
+			var statusStyle lipgloss.Style
 			switch project.ClaudeSession.Status {
 			case "running":
 				statusSymbol = "▶"
-				statusColor = core_theme.DefaultColors.Green
+				statusStyle = core_theme.DefaultTheme.Success
 			case "idle":
 				statusSymbol = "⏸"
-				statusColor = core_theme.DefaultColors.Yellow
+				statusStyle = core_theme.DefaultTheme.Warning
 			case "completed":
 				statusSymbol = "✓"
-				statusColor = core_theme.DefaultColors.Cyan
+				statusStyle = core_theme.DefaultTheme.Info
 			case "failed", "error":
 				statusSymbol = "✗"
-				statusColor = core_theme.DefaultColors.Red
+				statusStyle = core_theme.DefaultTheme.Error
 			default:
-				statusColor = core_theme.DefaultColors.MutedText
+				statusStyle = core_theme.DefaultTheme.Muted
 			}
 
-			statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+			statusStyled := statusStyle.Render(statusSymbol)
 			claude = fmt.Sprintf("%s %s", statusStyled, project.ClaudeSession.Duration)
 		} else if m.hasGroveHooks {
 			// Regular project - check if it has any Claude sessions
@@ -401,26 +397,26 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 				// Style the claude status
 				statusSymbol := ""
-				var statusColor lipgloss.Color
+				var statusStyle lipgloss.Style
 				switch claudeStatus {
 				case "running":
 					statusSymbol = "▶"
-					statusColor = core_theme.DefaultColors.Green
+					statusStyle = core_theme.DefaultTheme.Success
 				case "idle":
 					statusSymbol = "⏸"
-					statusColor = core_theme.DefaultColors.Yellow
+					statusStyle = core_theme.DefaultTheme.Warning
 				case "completed":
 					statusSymbol = "✓"
-					statusColor = core_theme.DefaultColors.Cyan
+					statusStyle = core_theme.DefaultTheme.Info
 				case "failed", "error":
 					statusSymbol = "✗"
-					statusColor = core_theme.DefaultColors.Red
+					statusStyle = core_theme.DefaultTheme.Error
 				default:
-					statusColor = core_theme.DefaultColors.MutedText
+					statusStyle = core_theme.DefaultTheme.Muted
 				}
 
 				if statusSymbol != "" {
-					statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+					statusStyled := statusStyle.Render(statusSymbol)
 					claude = fmt.Sprintf("%s %s", statusStyled, claudeDuration)
 				}
 			} else {
@@ -434,26 +430,26 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 						}
 
 						statusSymbol := ""
-						var statusColor lipgloss.Color
+						var statusStyle lipgloss.Style
 						switch claudeStatus {
 						case "running":
 							statusSymbol = "▶"
-							statusColor = core_theme.DefaultColors.Green
+							statusStyle = core_theme.DefaultTheme.Success
 						case "idle":
 							statusSymbol = "⏸"
-							statusColor = core_theme.DefaultColors.Yellow
+							statusStyle = core_theme.DefaultTheme.Warning
 						case "completed":
 							statusSymbol = "✓"
-							statusColor = core_theme.DefaultColors.Cyan
+							statusStyle = core_theme.DefaultTheme.Info
 						case "failed", "error":
 							statusSymbol = "✗"
-							statusColor = core_theme.DefaultColors.Red
+							statusStyle = core_theme.DefaultTheme.Error
 						default:
-							statusColor = core_theme.DefaultColors.MutedText
+							statusStyle = core_theme.DefaultTheme.Muted
 						}
 
 						if statusSymbol != "" {
-							statusStyled := lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+							statusStyled := statusStyle.Render(statusSymbol)
 							claude = fmt.Sprintf("%s %s", statusStyled, claudeDuration)
 						}
 						break
@@ -472,7 +468,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 			pathDisplay = strings.Replace(pathDisplay, os.Getenv("HOME"), "~", 1)
 		}
 		// Apply muted styling
-		pathDisplay = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render(pathDisplay)
+		pathDisplay = core_theme.DefaultTheme.Muted.Render(pathDisplay)
 	}
 
 	// Build row based on enabled columns

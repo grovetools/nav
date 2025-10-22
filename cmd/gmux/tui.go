@@ -1737,47 +1737,47 @@ func (m sessionizeModel) View() string {
 	// Build toggle indicators
 	gitToggle := "s:git status "
 	if m.showGitStatus {
-		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+		gitToggle += core_theme.DefaultTheme.Success.Render("✓")
 	} else {
-		gitToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+		gitToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
 	branchToggle := " b:branch "
 	if m.showBranch {
-		branchToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+		branchToggle += core_theme.DefaultTheme.Success.Render("✓")
 	} else {
-		branchToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+		branchToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
 	claudeToggle := " c:claude "
 	if m.showClaudeSessions {
-		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+		claudeToggle += core_theme.DefaultTheme.Success.Render("✓")
 	} else {
-		claudeToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+		claudeToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
 	noteToggle := " n:notes "
 	if m.showNoteCounts {
-		noteToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+		noteToggle += core_theme.DefaultTheme.Success.Render("✓")
 	} else {
-		noteToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+		noteToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
 	planToggle := " f:plans "
 	if m.showPlanStats {
-		planToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("✓")
+		planToggle += core_theme.DefaultTheme.Success.Render("✓")
 	} else {
-		planToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("✗")
+		planToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
 	pathsToggle := " p:paths "
 	switch m.pathDisplayMode {
 	case 0:
-		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.MutedText).Render("off")
+		pathsToggle += core_theme.DefaultTheme.Muted.Render("off")
 	case 1:
-		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("~")
+		pathsToggle += core_theme.DefaultTheme.Success.Render("~")
 	case 2:
-		pathsToggle += lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Green).Render("full")
+		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
 	}
 
 	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s%s]", gitToggle, branchToggle, claudeToggle, noteToggle, planToggle, pathsToggle)

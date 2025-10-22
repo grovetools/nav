@@ -87,25 +87,25 @@ func (m sessionizeModel) renderTree() string {
 		if project.ClaudeSession != nil {
 			// This is a Claude session entry - use its own status
 			statusSymbol := ""
-			var statusColor lipgloss.Color
+			var statusStyle lipgloss.Style
 			switch project.ClaudeSession.Status {
 			case "running":
 				statusSymbol = "▶"
-				statusColor = core_theme.DefaultColors.Green
+				statusStyle = core_theme.DefaultTheme.Success
 			case "idle":
 				statusSymbol = "⏸"
-				statusColor = core_theme.DefaultColors.Yellow
+				statusStyle = core_theme.DefaultTheme.Warning
 			case "completed":
 				statusSymbol = "✓"
-				statusColor = core_theme.DefaultColors.Cyan
+				statusStyle = core_theme.DefaultTheme.Info
 			case "failed", "error":
 				statusSymbol = "✗"
-				statusColor = core_theme.DefaultColors.Red
+				statusStyle = core_theme.DefaultTheme.Error
 			default:
-				statusColor = core_theme.DefaultColors.MutedText
+				statusStyle = core_theme.DefaultTheme.Muted
 			}
 
-			claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+			claudeStatusStyled = statusStyle.Render(statusSymbol)
 			claudeDuration = project.ClaudeSession.Duration
 		} else if m.hasGroveHooks {
 			// Regular project - check if it has any Claude sessions
@@ -130,26 +130,26 @@ func (m sessionizeModel) renderTree() string {
 
 			// Style the claude status (without duration - that goes at the end)
 			statusSymbol := ""
-			var statusColor lipgloss.Color
+			var statusStyle lipgloss.Style
 			switch claudeStatus {
 			case "running":
 				statusSymbol = "▶"
-				statusColor = core_theme.DefaultColors.Green
+				statusStyle = core_theme.DefaultTheme.Success
 			case "idle":
 				statusSymbol = "⏸"
-				statusColor = core_theme.DefaultColors.Yellow
+				statusStyle = core_theme.DefaultTheme.Warning
 			case "completed":
 				statusSymbol = "✓"
-				statusColor = core_theme.DefaultColors.Cyan
+				statusStyle = core_theme.DefaultTheme.Info
 			case "failed", "error":
 				statusSymbol = "✗"
-				statusColor = core_theme.DefaultColors.Red
+				statusStyle = core_theme.DefaultTheme.Error
 			default:
-				statusColor = core_theme.DefaultColors.MutedText
+				statusStyle = core_theme.DefaultTheme.Muted
 			}
 
 			if statusSymbol != "" {
-				claudeStatusStyled = lipgloss.NewStyle().Foreground(statusColor).Render(statusSymbol)
+				claudeStatusStyled = statusStyle.Render(statusSymbol)
 			} else {
 				claudeStatusStyled = " " // Empty space to maintain alignment
 			}
@@ -269,15 +269,11 @@ func (m sessionizeModel) renderTree() string {
 			if sessionExists {
 				// Check if this is the current session
 				if sessionName == m.currentSession {
-					// Current session - use blue indicator
-					sessionIndicator = lipgloss.NewStyle().
-						Foreground(core_theme.DefaultColors.Blue).
-						Render("●")
+					// Current session - use info style
+					sessionIndicator = core_theme.DefaultTheme.Info.Render("●")
 				} else {
-					// Other active session - use green indicator
-					sessionIndicator = lipgloss.NewStyle().
-						Foreground(core_theme.DefaultColors.Green).
-						Render("●")
+					// Other active session - use success style
+					sessionIndicator = core_theme.DefaultTheme.Success.Render("●")
 				}
 			}
 
@@ -316,10 +312,10 @@ func (m sessionizeModel) renderTree() string {
 			if m.showNoteCounts && project.NoteCounts != nil {
 				var counts []string
 				if project.NoteCounts.Current > 0 {
-					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet).Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
+					counts = append(counts, core_theme.DefaultTheme.Accent.Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
 				}
 				if project.NoteCounts.Issues > 0 {
-					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Pink).Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
+					counts = append(counts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
 				}
 				if len(counts) > 0 {
 					line += "  " + strings.Join(counts, " ")
@@ -349,19 +345,19 @@ func (m sessionizeModel) renderTree() string {
 			} else {
 				switch project.Kind {
 				case workspace.KindEcosystemWorktree:
-					// Ecosystem worktrees are violet
-					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet)
+					// Ecosystem worktrees use accent style
+					nameStyle = core_theme.DefaultTheme.Accent
 				case workspace.KindStandaloneProjectWorktree,
 					workspace.KindEcosystemSubProjectWorktree,
 					workspace.KindEcosystemWorktreeSubProjectWorktree:
-					// Other worktrees are blue
-					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Blue)
+					// Other worktrees use info style
+					nameStyle = core_theme.DefaultTheme.Info
 				case workspace.KindEcosystemRoot:
 					// Root ecosystems are default color
 					nameStyle = lipgloss.NewStyle()
 				default:
-					// Sub-projects and standalone projects are cyan
-					nameStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Cyan)
+					// Sub-projects and standalone projects use info style
+					nameStyle = core_theme.DefaultTheme.Info
 				}
 			}
 			pathStyle := core_theme.DefaultTheme.Muted
@@ -376,15 +372,11 @@ func (m sessionizeModel) renderTree() string {
 			if sessionExists {
 				// Check if this is the current session
 				if sessionName == m.currentSession {
-					// Current session - use blue indicator
-					sessionIndicator = lipgloss.NewStyle().
-						Foreground(core_theme.DefaultColors.Blue).
-						Render("●")
+					// Current session - use info style
+					sessionIndicator = core_theme.DefaultTheme.Info.Render("●")
 				} else {
-					// Other active session - use green indicator
-					sessionIndicator = lipgloss.NewStyle().
-						Foreground(core_theme.DefaultColors.Green).
-						Render("●")
+					// Other active session - use success style
+					sessionIndicator = core_theme.DefaultTheme.Success.Render("●")
 				}
 			}
 
@@ -422,10 +414,10 @@ func (m sessionizeModel) renderTree() string {
 			if m.showNoteCounts && project.NoteCounts != nil {
 				var counts []string
 				if project.NoteCounts.Current > 0 {
-					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Violet).Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
+					counts = append(counts, core_theme.DefaultTheme.Accent.Render(fmt.Sprintf("⟦C:%d⟧", project.NoteCounts.Current)))
 				}
 				if project.NoteCounts.Issues > 0 {
-					counts = append(counts, lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Pink).Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
+					counts = append(counts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⟦I:%d⟧", project.NoteCounts.Issues)))
 				}
 				if len(counts) > 0 {
 					line += "  " + strings.Join(counts, " ")
