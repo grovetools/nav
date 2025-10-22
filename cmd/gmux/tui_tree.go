@@ -250,10 +250,10 @@ func (m sessionizeModel) renderTree() string {
 		}
 
 		if i == m.cursor {
-			// Highlight selected line
+			// Highlight selected line - build the entire line first with all styled components
 			indicator := core_theme.DefaultTheme.Highlight.Render("▶ ")
 
-			nameStyle := core_theme.DefaultTheme.Selected
+			nameStyle := lipgloss.NewStyle().Bold(true)
 			if isContextOnly {
 				// Dim selected context-only items
 				nameStyle = core_theme.DefaultTheme.Muted
@@ -277,7 +277,7 @@ func (m sessionizeModel) renderTree() string {
 				}
 			}
 
-			// Build the line
+			// Build the line with all styled components
 			line := fmt.Sprintf("%s%s%s", indicator, keyIndicator, sessionIndicator)
 			if m.hasGroveHooks && m.showClaudeSessions {
 				line += fmt.Sprintf(" %s", claudeStatusStyled)
@@ -289,8 +289,8 @@ func (m sessionizeModel) renderTree() string {
 			line += nameStyle.Render(displayName)
 
 			if branchName != "" {
-				mutedSelectedStyle := core_theme.DefaultTheme.Selected.Copy().Foreground(core_theme.DefaultTheme.Muted.GetForeground())
-				line += " " + mutedSelectedStyle.Render("("+branchName+")")
+				mutedStyle := core_theme.DefaultTheme.Muted
+				line += " " + mutedStyle.Render("("+branchName+")")
 			}
 
 			// Add path based on display mode (0=none, 1=compact, 2=full)
@@ -335,6 +335,7 @@ func (m sessionizeModel) renderTree() string {
 				line += "  " + core_theme.DefaultTheme.Muted.Render(claudeDuration)
 			}
 
+			// No background highlighting - just render the line with the arrow indicator
 			b.WriteString(line)
 		} else {
 			// Normal line with colored name - style based on project type
