@@ -228,7 +228,7 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 	if _, err := os.Stat(nbPath); err == nil {
 		cmd = exec.Command(nbPath, "list", "--workspaces", "--json")
 	} else {
-		cmd = exec.Command("nb", "list", "--workspaces", "--json")
+		cmd = exec.Command("grove", "nb", "list", "--workspaces", "--json")
 	}
 
 	output, err := cmd.Output()
