@@ -8,8 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	tablecomponent "github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -31,9 +30,6 @@ var keyCmd = &cobra.Command{
 // displaySessionsTable shows sessions in a styled table and returns true if any sessions have paths
 func displaySessionsTable(sessions []models.TmuxSession) bool {
 	// Define styles
-	re := lipgloss.NewRenderer(os.Stdout)
-	baseStyle := re.NewStyle().Padding(0, 1)
-	headerStyle := baseStyle.Copy().Bold(true).Foreground(core_theme.DefaultColors.LightText)
 	keyStyle := core_theme.DefaultTheme.Highlight
 	repoStyle := core_theme.DefaultTheme.Info
 	pathStyle := core_theme.DefaultTheme.Success
@@ -53,7 +49,7 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 		if s.Repository != "" {
 			repo = repoStyle.Render(s.Repository)
 		}
-		
+
 		if path != "" {
 			hasConfiguredSessions = true
 			path = pathStyle.Render(path)
@@ -62,21 +58,10 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 		rows = append(rows, []string{styledKey, repo, path})
 	}
 
-	// Create the table
-	t := table.New().
-		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Border)).
+	// Create styled table
+	t := tablecomponent.NewStyledTable().
 		Headers("Key", "Repository", "Path").
 		Rows(rows...)
-
-	// Apply styling - only for headers since content is pre-styled
-	t.StyleFunc(func(row, col int) lipgloss.Style {
-		if row == 0 {
-			return headerStyle
-		}
-		// Return minimal style to preserve pre-styled content
-		return lipgloss.NewStyle().Padding(0, 1)
-	})
 
 	fmt.Println(t)
 	return hasConfiguredSessions
@@ -430,8 +415,6 @@ var keyAddCmd = &cobra.Command{
 		fmt.Println()
 
 		// Build project table
-		re := lipgloss.NewRenderer(os.Stdout)
-		headerStyle := re.NewStyle().Bold(true).Foreground(core_theme.DefaultColors.LightText).Padding(0, 1)
 		indexStyle := core_theme.DefaultTheme.Warning
 		projectStyle := core_theme.DefaultTheme.Info
 		pathStyle := core_theme.DefaultTheme.Success
@@ -444,18 +427,9 @@ var keyAddCmd = &cobra.Command{
 			rows = append(rows, []string{index, project, path})
 		}
 
-		t := table.New().
-			Border(lipgloss.NormalBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(core_theme.DefaultColors.Border)).
+		t := tablecomponent.NewStyledTable().
 			Headers("#", "Project", "Path").
 			Rows(rows...)
-
-		t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == 0 {
-				return headerStyle
-			}
-			return lipgloss.NewStyle().Padding(0, 1)
-		})
 
 		fmt.Println(t)
 		fmt.Println()
