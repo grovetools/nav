@@ -1,5 +1,7 @@
 package manager
 
+//go:generate sh -c "cd ../.. && go run ./tools/schema-generator/"
+
 // TmuxConfig represents the 'tmux' section in grove.yml.
 // This struct now only contains static configuration specific to gmux itself.
 // Project discovery is now handled by grove-core's DiscoveryService.
