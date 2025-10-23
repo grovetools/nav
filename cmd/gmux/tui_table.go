@@ -197,27 +197,25 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 	workspaceName = prefix + project.Name
 
-	// Apply color styling
+	// Apply subtle styling for different workspace types
 	var style lipgloss.Style
 	switch project.Kind {
-	case workspace.KindEcosystemWorktree:
-		// Ecosystem worktrees use accent style (keep color even when focused)
-		style = core_theme.DefaultTheme.Accent
-	case workspace.KindStandaloneProjectWorktree,
+	case workspace.KindEcosystemWorktree,
+		workspace.KindStandaloneProjectWorktree,
 		workspace.KindEcosystemSubProjectWorktree,
 		workspace.KindEcosystemWorktreeSubProjectWorktree:
-		// Other worktrees use info style
-		style = core_theme.DefaultTheme.Info
+		// Worktrees use faint/dim styling for visual distinction
+		style = lipgloss.NewStyle().Faint(true)
 	case workspace.KindEcosystemRoot:
-		// Ecosystem roots are default color
+		// Ecosystem roots are normal weight
 		style = lipgloss.NewStyle()
 	default:
-		// Sub-projects and standalone projects use info style
-		style = core_theme.DefaultTheme.Info
+		// Sub-projects and standalone projects are normal weight
+		style = lipgloss.NewStyle()
 	}
 
-	// Don't color the focused project itself in the table view, except for ecosystem worktrees
-	if m.focusedProject != nil && project.Path == m.focusedProject.Path && project.Kind != workspace.KindEcosystemWorktree {
+	// Don't apply styling to the focused project itself in the table view
+	if m.focusedProject != nil && project.Path == m.focusedProject.Path {
 		style = lipgloss.NewStyle()
 	}
 

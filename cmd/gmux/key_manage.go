@@ -958,7 +958,7 @@ func (m manageModel) View() string {
 	if m.moveMode {
 		b.WriteString(" " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]"))
 	}
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	// Separate sessions into unlocked and locked
 	var unlockedSessions []models.TmuxSession
@@ -1192,14 +1192,10 @@ func (m manageModel) View() string {
 	if len(unlockedRows) > 0 {
 		var unlockedTableStr string
 		if cursorInUnlocked {
-			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, adjustedCursor, table.SelectableTableOptions{
-				HighlightColumn: 2, // Repository column
-			})
+			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, adjustedCursor, table.SelectableTableOptions{})
 		} else {
 			// No selection in this table
-			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, -1, table.SelectableTableOptions{
-				HighlightColumn: 2,
-			})
+			unlockedTableStr = table.SelectableTableWithOptions(headers, unlockedRows, -1, table.SelectableTableOptions{})
 		}
 		b.WriteString(unlockedTableStr)
 		b.WriteString("\n")
@@ -1208,17 +1204,14 @@ func (m manageModel) View() string {
 	// Render locked section if there are locked keys
 	if len(lockedRows) > 0 {
 		b.WriteString("\n")
-		b.WriteString(core_theme.DefaultTheme.Warning.Render("Locked Keys") + "\n")
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Locked Keys"))
+		b.WriteString("\n")
 
 		var lockedTableStr string
 		if !cursorInUnlocked {
-			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, adjustedCursor, table.SelectableTableOptions{
-				HighlightColumn: 2,
-			})
+			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, adjustedCursor, table.SelectableTableOptions{})
 		} else {
-			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, -1, table.SelectableTableOptions{
-				HighlightColumn: 2,
-			})
+			lockedTableStr = table.SelectableTableWithOptions(headers, lockedRows, -1, table.SelectableTableOptions{})
 		}
 		b.WriteString(lockedTableStr)
 	}
