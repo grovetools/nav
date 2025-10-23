@@ -56,13 +56,12 @@ type sessionizeModel struct {
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
 
 	// View toggles
-	showGitStatus      bool   // Whether to fetch and show Git status
-	showBranch         bool   // Whether to show branch names
-	showClaudeSessions bool   // Whether to fetch and show Claude sessions
-	showNoteCounts     bool   // Whether to fetch and show note counts
-	showPlanStats      bool   // Whether to show plan stats from grove-flow
-	pathDisplayMode    int    // 0=no paths, 1=compact (~), 2=full paths
-	viewMode           string // "tree" or "table"
+	showGitStatus      bool // Whether to fetch and show Git status
+	showBranch         bool // Whether to show branch names
+	showClaudeSessions bool // Whether to fetch and show Claude sessions
+	showNoteCounts     bool // Whether to fetch and show note counts
+	showPlanStats      bool // Whether to show plan stats from grove-flow
+	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
@@ -169,7 +168,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showNoteCounts := true
 	showPlanStats := true
 	pathDisplayMode := 1 // Default to compact paths (~)
-	viewMode := "tree"   // Default to tree view
 	if state, err := manager.LoadState(configDir); err == nil {
 		if state.FocusedEcosystemPath != "" {
 			// Find the project with this path
@@ -196,9 +194,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		}
 		if state.PathDisplayMode != nil {
 			pathDisplayMode = *state.PathDisplayMode
-		}
-		if state.ViewMode != nil {
-			viewMode = *state.ViewMode
 		}
 	}
 
@@ -231,7 +226,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showNoteCounts:           showNoteCounts,
 		showPlanStats:            showPlanStats,
 		pathDisplayMode:          pathDisplayMode,
-		viewMode:                 viewMode,
 		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
@@ -250,7 +244,6 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		ShowNoteCounts:       boolPtr(m.showNoteCounts),
 		ShowPlanStats:        boolPtr(m.showPlanStats),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
-		ViewMode:             stringPtr(m.viewMode),
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
@@ -921,15 +914,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "p":
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
-				_ = m.buildState().Save(m.configDir)
-				return m, nil
-			case "t":
-				// Toggle view mode
-				if m.viewMode == "tree" {
-					m.viewMode = "table"
-				} else {
-					m.viewMode = "tree"
-				}
 				_ = m.buildState().Save(m.configDir)
 				return m, nil
 			}
@@ -1714,12 +1698,8 @@ func (m sessionizeModel) View() string {
 	b.WriteString(header.String())
 	b.WriteString("\n\n")
 
-	// Render projects based on view mode
-	if m.viewMode == "table" {
-		b.WriteString(m.renderTable())
-	} else {
-		b.WriteString(m.renderTree())
-	}
+	// Render projects using table view
+	b.WriteString(m.renderTable())
 
 	// Help text at bottom
 	if len(m.filtered) == 0 {

@@ -12,15 +12,14 @@ import (
 
 // SessionizerState holds the persistent state for the gmux sessionizer
 type SessionizerState struct {
-	FocusedEcosystemPath string  `yaml:"focused_ecosystem_path,omitempty"`
-	WorktreesFolded      bool    `yaml:"worktrees_folded,omitempty"`
-	ShowGitStatus        *bool   `yaml:"show_git_status,omitempty"`
-	ShowBranch           *bool   `yaml:"show_branch,omitempty"`
-	ShowClaudeSessions   *bool   `yaml:"show_claude_sessions,omitempty"`
-	ShowNoteCounts       *bool   `yaml:"show_note_counts,omitempty"`
-	ShowPlanStats        *bool   `yaml:"show_plan_stats,omitempty"`
-	PathDisplayMode      *int    `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
-	ViewMode             *string `yaml:"view_mode,omitempty"`         // "tree" or "table"
+	FocusedEcosystemPath string `yaml:"focused_ecosystem_path,omitempty"`
+	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
+	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
+	ShowBranch           *bool  `yaml:"show_branch,omitempty"`
+	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
+	ShowNoteCounts       *bool  `yaml:"show_note_counts,omitempty"`
+	ShowPlanStats        *bool  `yaml:"show_plan_stats,omitempty"`
+	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
 }
 
 // CachedProject holds project data with explicit types for proper JSON serialization
