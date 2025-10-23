@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 )
@@ -19,6 +20,12 @@ import (
 type gitStatusMsg struct {
 	path   string
 	status *manager.ExtendedGitStatus
+}
+
+// initialProjectsEnrichedMsg is sent after initial project data is loaded from session paths.
+type initialProjectsEnrichedMsg struct {
+	enrichedProjects map[string]*manager.SessionizeProject
+	projectList      []*manager.SessionizeProject
 }
 
 // gitStatusMapMsg is sent when git statuses for multiple projects are fetched.
@@ -224,4 +231,50 @@ func clearStatusCmd(duration time.Duration) tea.Cmd {
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
 		return statusMsg{message: ""}
 	})
+}
+
+// enrichInitialProjectsCmd gets WorkspaceNode info for all mapped sessions.
+func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[string]*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		enrichedProjects := make(map[string]*manager.SessionizeProject)
+		var projectList []*manager.SessionizeProject
+
+		// Copy cached projects first to avoid re-analyzing paths
+		for path, proj := range cachedProjects {
+			enrichedProjects[path] = proj
+		}
+
+		for _, s := range sessions {
+			if s.Path == "" {
+				continue
+			}
+
+			// Use expanded and cleaned path as the key
+			expandedPath := expandPath(s.Path)
+			cleanPath, err := filepath.Abs(expandedPath)
+			if err != nil {
+				continue // Skip if path is invalid
+			}
+			cleanPath = filepath.Clean(cleanPath)
+
+			if _, exists := enrichedProjects[cleanPath]; !exists {
+				// Not in cache, so we need to get its info
+				node, err := workspace.GetProjectByPath(s.Path)
+				if err == nil {
+					proj := &manager.SessionizeProject{WorkspaceNode: node}
+					enrichedProjects[cleanPath] = proj
+				}
+			}
+		}
+
+		// Create list from map
+		for _, proj := range enrichedProjects {
+			projectList = append(projectList, proj)
+		}
+
+		return initialProjectsEnrichedMsg{
+			enrichedProjects: enrichedProjects,
+			projectList:      projectList,
+		}
+	}
 }

@@ -80,7 +80,7 @@ var keyManageCmd = &cobra.Command{
 		m := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
 
 		// Run the interactive program
-		p := tea.NewProgram(m, tea.WithAltScreen())
+		p := tea.NewProgram(&m, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("error running program: %w", err)
 		}
@@ -125,24 +125,27 @@ type manageModel struct {
 	isLoading    bool
 	usedCache    bool
 	spinnerFrame int
+	// View toggles
+	pathDisplayMode int // 0=no paths, 1=compact (~), 2=full paths
 }
 
 // Key bindings
 type keyMap struct {
 	keymap.Base
-	Up        key.Binding
-	Down      key.Binding
-	Toggle    key.Binding
-	Edit      key.Binding
-	SetKey    key.Binding
-	Open      key.Binding
-	Delete    key.Binding
-	Save      key.Binding
-	MoveMode  key.Binding
-	Lock      key.Binding
-	MoveUp    key.Binding
-	MoveDown  key.Binding
+	Up          key.Binding
+	Down        key.Binding
+	Toggle      key.Binding
+	Edit        key.Binding
+	SetKey      key.Binding
+	Open        key.Binding
+	Delete      key.Binding
+	Save        key.Binding
+	MoveMode    key.Binding
+	Lock        key.Binding
+	MoveUp      key.Binding
+	MoveDown    key.Binding
 	ConfirmMove key.Binding
+	TogglePaths key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -175,6 +178,10 @@ func (k keyMap) FullHelp() [][]key.Binding {
 			k.Lock,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "View")),
+			k.TogglePaths,
 		},
 	}
 }
@@ -233,6 +240,10 @@ var keys = keyMap{
 		key.WithKeys("enter"),
 		key.WithHelp("enter", "confirm move"),
 	),
+	TogglePaths: key.NewBinding(
+		key.WithKeys("p"),
+		key.WithHelp("p", "toggle paths"),
+	),
 }
 
 func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*manager.SessionizeProject, usedCache bool) manageModel {
@@ -266,39 +277,21 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		usedCache:         usedCache,
 		isLoading:         usedCache, // Start as loading if we used cache
 		enrichmentLoading: make(map[string]bool),
+		pathDisplayMode:   0, // Default to no paths
 	}
 }
 
-func (m manageModel) Init() tea.Cmd {
+func (m *manageModel) Init() tea.Cmd {
 	// Ensure sessions are ordered with locked keys at bottom
 	m.rebuildSessionsOrder()
 
-	// Get mapped projects to enrich
-	var mappedProjects []*manager.SessionizeProject
-	for _, s := range m.sessions {
-		if s.Path != "" {
-			if proj, err := workspace.GetProjectByPath(s.Path); err == nil {
-				mappedProjects = append(mappedProjects, &manager.SessionizeProject{WorkspaceNode: proj})
-			}
-		}
-	}
-
 	cmds := []tea.Cmd{
+		enrichInitialProjectsCmd(m.sessions, m.enrichedProjects),
 		enrichCwdProjectCmd(m.cwdPath),
-		fetchAllGitStatusesForKeyManageCmd(mappedProjects),
-		fetchAllClaudeSessionsForKeyManageCmd(),
-		fetchAllNoteCountsForKeyManageCmd(),
-		fetchAllPlanStatsForKeyManageCmd(),
 	}
-
-	// Set loading flags
-	m.enrichmentLoading["git"] = true
-	m.enrichmentLoading["claude"] = true
-	m.enrichmentLoading["notes"] = true
-	m.enrichmentLoading["plans"] = true
 
 	// Start spinner animation if loading
-	if m.isLoading || len(mappedProjects) > 0 {
+	if m.isLoading {
 		cmds = append(cmds, spinnerTickCmd())
 	}
 
@@ -376,18 +369,37 @@ func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 }
 
 
-func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case initialProjectsEnrichedMsg:
+		m.enrichedProjects = msg.enrichedProjects
+		m.isLoading = false // Initial project identification is done
+
+		var cmds []tea.Cmd
+		cmds = append(cmds, fetchAllGitStatusesForKeyManageCmd(msg.projectList))
+		cmds = append(cmds, fetchAllNoteCountsForKeyManageCmd())
+		cmds = append(cmds, fetchAllPlanStatsForKeyManageCmd())
+
+		m.enrichmentLoading["git"] = true
+		m.enrichmentLoading["notes"] = true
+		m.enrichmentLoading["plans"] = true
+
+		cmds = append(cmds, spinnerTickCmd())
+
+		// Save to cache
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+
+		return m, tea.Batch(cmds...)
+
 	case cwdProjectEnrichedMsg:
 		m.cwdProject = msg.project
 		// Enrich the CWD project immediately
 		if m.cwdProject != nil {
 			go func() {
 				opts := &manager.EnrichmentOptions{
-					FetchGitStatus:      true,
-					FetchClaudeSessions: true,
-					FetchNoteCounts:     true,
-					FetchPlanStats:      true,
+					FetchGitStatus:  true,
+					FetchNoteCounts: true,
+					FetchPlanStats:  true,
 				}
 				manager.EnrichProjects(context.Background(), []*manager.SessionizeProject{m.cwdProject}, opts)
 			}()
@@ -734,6 +746,11 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.Toggle()
 			return m, nil
 
+		case key.Matches(msg, m.keys.TogglePaths):
+			// Toggle paths display mode (0 -> 1 -> 2 -> 0)
+			m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
+			return m, nil
+
 		case key.Matches(msg, m.keys.Quit):
 			// Auto-save on quit
 			if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
@@ -939,7 +956,7 @@ func (m manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m manageModel) View() string {
+func (m *manageModel) View() string {
 	if m.quitting && m.message != "" {
 		return m.message + "\n"
 	}
@@ -981,17 +998,17 @@ func (m manageModel) View() string {
 		gitHeader = "Git " + spinner
 	}
 
-	claudeHeader := "Claude"
-	if m.enrichmentLoading["claude"] {
-		claudeHeader = "Claude " + spinner
-	}
-
 	plansHeader := "Plans"
 	if m.enrichmentLoading["plans"] {
 		plansHeader = "Plans " + spinner
 	}
 
-	headers := []string{"#", "Key", "Repository", "Worktree", gitHeader, claudeHeader, plansHeader, "Ecosystem"}
+	// Build headers based on path display mode
+	headers := []string{"#", "Key", "Repository", "Worktree", gitHeader, plansHeader, "Ecosystem"}
+	if m.pathDisplayMode > 0 {
+		headers = append(headers, "Path")
+	}
+
 	var unlockedRows [][]string
 	var lockedRows [][]string
 
@@ -999,7 +1016,6 @@ func (m manageModel) View() string {
 	for i, s := range unlockedSessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
-		claudeStatus := ""
 		planStatus := ""
 
 		if s.Path != "" {
@@ -1018,39 +1034,33 @@ func (m manageModel) View() string {
 				// RULE 2: Determine Ecosystem display.
 				if projInfo.ParentEcosystemPath != "" {
 					// Project is within an ecosystem.
-					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
-
-					// Set ecosystem name
-					ecosystem = baseEcosystem
+					// Use the root ecosystem for the Ecosystem column
+					if projInfo.RootEcosystemPath != "" {
+						ecosystem = filepath.Base(projInfo.RootEcosystemPath)
+					} else {
+						ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
+					}
 
 					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
 					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath {
 						// This project is inside an ecosystem worktree
 						ecoWorktreeName := filepath.Base(projInfo.ParentEcosystemPath)
 
-						// Repository should be the actual project name (not the ecosystem)
-						repository = projInfo.Name
-
-						// If this is also a worktree of that repo, keep the worktree name
+						// If this is also a worktree of that repo, show the eco worktree name in the Worktree column
 						// Otherwise, show the ecosystem worktree name with indicator
 						if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
 							// This is a worktree of a repo inside an eco-worktree
 							repository = filepath.Base(projInfo.ParentProjectPath)
-							worktree = projInfo.Name
+							worktree = ecoWorktreeName
 						} else {
 							// This is a repo inside an eco-worktree (not a worktree itself)
+							repository = projInfo.Name
 							worktree = ecoWorktreeName + " *"
 						}
 					}
 				} else if projInfo.IsEcosystem() {
 					// It's a root ecosystem.
 					ecosystem = projInfo.Name
-				}
-
-				// RULE 3: Clean up redundancies for clarity.
-				if projInfo.IsEcosystem() && !projInfo.IsWorktree() {
-					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
-					repository = ""
 				}
 
 				// Format Git status (with colors)
@@ -1062,11 +1072,6 @@ func (m manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
-
-				// Format Claude status
-				if projInfo.ClaudeSession != nil {
-					claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
-				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1074,15 +1079,34 @@ func (m manageModel) View() string {
 
 		}
 
+		// Add "n/a" for worktree column if it's a root repo
+		worktreeDisplay := worktree
+		if worktreeDisplay == "" && repository != "" {
+			worktreeDisplay = dimStyle.Render("n/a")
+		}
+
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
 			repository,
-			worktree,
+			worktreeDisplay,
 			gitStatus,
-			claudeStatus,
 			planStatus,
 			ecosystem,
+		}
+		// Add path column if enabled
+		if m.pathDisplayMode > 0 {
+			pathStr := ""
+			if s.Path != "" {
+				if m.pathDisplayMode == 1 {
+					// Compact mode: replace home with ~
+					pathStr = strings.Replace(s.Path, os.Getenv("HOME"), "~", 1)
+				} else {
+					// Full path mode
+					pathStr = s.Path
+				}
+			}
+			row = append(row, pathStr)
 		}
 		unlockedRows = append(unlockedRows, row)
 	}
@@ -1091,7 +1115,6 @@ func (m manageModel) View() string {
 	for i, s := range lockedSessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
-		claudeStatus := ""
 		planStatus := ""
 
 		if s.Path != "" {
@@ -1110,39 +1133,33 @@ func (m manageModel) View() string {
 				// RULE 2: Determine Ecosystem display.
 				if projInfo.ParentEcosystemPath != "" {
 					// Project is within an ecosystem.
-					baseEcosystem := filepath.Base(projInfo.ParentEcosystemPath)
-
-					// Set ecosystem name
-					ecosystem = baseEcosystem
+					// Use the root ecosystem for the Ecosystem column
+					if projInfo.RootEcosystemPath != "" {
+						ecosystem = filepath.Base(projInfo.RootEcosystemPath)
+					} else {
+						ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
+					}
 
 					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
 					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath {
 						// This project is inside an ecosystem worktree
 						ecoWorktreeName := filepath.Base(projInfo.ParentEcosystemPath)
 
-						// Repository should be the actual project name (not the ecosystem)
-						repository = projInfo.Name
-
-						// If this is also a worktree of that repo, keep the worktree name
+						// If this is also a worktree of that repo, show the eco worktree name in the Worktree column
 						// Otherwise, show the ecosystem worktree name with indicator
 						if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
 							// This is a worktree of a repo inside an eco-worktree
 							repository = filepath.Base(projInfo.ParentProjectPath)
-							worktree = projInfo.Name
+							worktree = ecoWorktreeName
 						} else {
 							// This is a repo inside an eco-worktree (not a worktree itself)
+							repository = projInfo.Name
 							worktree = ecoWorktreeName + " *"
 						}
 					}
 				} else if projInfo.IsEcosystem() {
 					// It's a root ecosystem.
 					ecosystem = projInfo.Name
-				}
-
-				// RULE 3: Clean up redundancies for clarity.
-				if projInfo.IsEcosystem() && !projInfo.IsWorktree() {
-					// For a root ecosystem, its name is in the Ecosystem column. Don't repeat it in Repository.
-					repository = ""
 				}
 
 				// Format Git status (with colors)
@@ -1154,11 +1171,6 @@ func (m manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
-
-				// Format Claude status
-				if projInfo.ClaudeSession != nil {
-					claudeStatus = formatClaudeStatus(projInfo.ClaudeSession)
-				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1166,15 +1178,34 @@ func (m manageModel) View() string {
 
 		}
 
+		// Add "n/a" for worktree column if it's a root repo
+		worktreeDisplay := worktree
+		if worktreeDisplay == "" && repository != "" {
+			worktreeDisplay = dimStyle.Render("n/a")
+		}
+
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
 			repository,
-			worktree,
+			worktreeDisplay,
 			gitStatus,
-			claudeStatus,
 			planStatus,
 			ecosystem,
+		}
+		// Add path column if enabled
+		if m.pathDisplayMode > 0 {
+			pathStr := ""
+			if s.Path != "" {
+				if m.pathDisplayMode == 1 {
+					// Compact mode: replace home with ~
+					pathStr = strings.Replace(s.Path, os.Getenv("HOME"), "~", 1)
+				} else {
+					// Full path mode
+					pathStr = s.Path
+				}
+			}
+			row = append(row, pathStr)
 		}
 		lockedRows = append(lockedRows, row)
 	}
@@ -1228,7 +1259,17 @@ func (m manageModel) View() string {
 	} else if m.moveMode {
 		b.WriteString(helpStyle.Render("MOVE MODE: j/k to move • l to lock/unlock • enter to save • q/m to cancel"))
 	} else {
-		b.WriteString(helpStyle.Render("Press ? for help • m for move mode • l to lock rows • * = part of ecosystem worktree"))
+		// Build footer with path toggle status
+		pathsToggle := " p:paths "
+		switch m.pathDisplayMode {
+		case 0:
+			pathsToggle += core_theme.DefaultTheme.Muted.Render("off")
+		case 1:
+			pathsToggle += core_theme.DefaultTheme.Success.Render("~")
+		case 2:
+			pathsToggle += core_theme.DefaultTheme.Success.Render("full")
+		}
+		b.WriteString(helpStyle.Render("Press ? for help • m for move mode • l to lock rows •" + pathsToggle))
 	}
 
 	return b.String()
