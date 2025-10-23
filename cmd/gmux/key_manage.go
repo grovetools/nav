@@ -97,7 +97,7 @@ var (
 
 	dimStyle = core_theme.DefaultTheme.Muted
 
-	helpStyle = core_theme.DefaultTheme.Faint
+	helpStyle = core_theme.DefaultTheme.Muted
 )
 
 // Model for the interactive session manager
