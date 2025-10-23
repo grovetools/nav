@@ -149,8 +149,7 @@ type keyMap struct {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	// Return empty to show no help in footer - all help goes in popup
-	return []key.Binding{}
+	return []key.Binding{k.MoveMode, k.Lock, k.TogglePaths, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
@@ -1254,23 +1253,13 @@ func (m *manageModel) View() string {
 	}
 
 	// Show different help text based on mode
-	if m.setKeyMode {
-		b.WriteString(helpStyle.Render("SET KEY MODE: Press key or number to map CWD. ESC to cancel."))
-	} else if m.moveMode {
-		b.WriteString(helpStyle.Render("MOVE MODE: j/k to move • l to lock/unlock • enter to save • q/m to cancel"))
-	} else {
-		// Build footer with path toggle status
-		pathsToggle := " p:paths "
-		switch m.pathDisplayMode {
-		case 0:
-			pathsToggle += core_theme.DefaultTheme.Muted.Render("off")
-		case 1:
-			pathsToggle += core_theme.DefaultTheme.Success.Render("~")
-		case 2:
-			pathsToggle += core_theme.DefaultTheme.Success.Render("full")
-		}
-		b.WriteString(helpStyle.Render("Press ? for help • m for move mode • l to lock rows •" + pathsToggle))
+	var modeIndicator string
+	if m.moveMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MOVE MODE]")
+	} else if m.setKeyMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SET KEY MODE]")
 	}
+	b.WriteString(m.help.View() + modeIndicator)
 
 	return b.String()
 }
