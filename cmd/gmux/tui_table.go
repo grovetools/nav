@@ -58,7 +58,7 @@ func (m sessionizeModel) renderTable() string {
 	}
 
 	// Define table headers based on what's enabled
-	headers := []string{"K", "●", "WORKSPACE"}
+	headers := []string{"K", "S", "WORKSPACE"}
 
 	// Get spinner for animation
 	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
@@ -195,31 +195,48 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		}
 	}
 
-	workspaceName = prefix + project.Name
+	// Determine workspace icon based on project kind
+	icon := ""
+	switch project.Kind {
+	case workspace.KindEcosystemRoot:
+		icon = core_theme.IconEcosystem
+	case workspace.KindEcosystemWorktree:
+		icon = core_theme.IconEcosystemWorktree
+	case workspace.KindStandaloneProjectWorktree,
+		workspace.KindEcosystemSubProjectWorktree,
+		workspace.KindEcosystemWorktreeSubProjectWorktree:
+		icon = core_theme.IconWorktree
+	default:
+		// Sub-projects and standalone projects
+		icon = core_theme.IconRepo
+	}
 
-	// Apply subtle styling for different workspace types
-	var style lipgloss.Style
+	// Prepend icon with muted styling
+	iconStyled := core_theme.DefaultTheme.Muted.Render(icon + " ")
+
+	// Apply subtle styling for different workspace types (only to the name, not icon)
+	var nameStyled string
 	switch project.Kind {
 	case workspace.KindEcosystemWorktree,
 		workspace.KindStandaloneProjectWorktree,
 		workspace.KindEcosystemSubProjectWorktree,
 		workspace.KindEcosystemWorktreeSubProjectWorktree:
 		// Worktrees use faint/dim styling for visual distinction
-		style = lipgloss.NewStyle().Faint(true)
+		if m.focusedProject != nil && project.Path == m.focusedProject.Path {
+			// Don't apply faint styling to the focused project itself
+			nameStyled = project.Name
+		} else {
+			nameStyled = lipgloss.NewStyle().Faint(true).Render(project.Name)
+		}
 	case workspace.KindEcosystemRoot:
 		// Ecosystem roots are normal weight
-		style = lipgloss.NewStyle()
+		nameStyled = project.Name
 	default:
 		// Sub-projects and standalone projects are normal weight
-		style = lipgloss.NewStyle()
+		nameStyled = project.Name
 	}
 
-	// Don't apply styling to the focused project itself in the table view
-	if m.focusedProject != nil && project.Path == m.focusedProject.Path {
-		style = lipgloss.NewStyle()
-	}
-
-	workspaceName = style.Render(workspaceName)
+	workspaceName = prefix + iconStyled + nameStyled
 
 	// --- KEY ---
 	keyMapping := ""
@@ -244,10 +261,10 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	if sessionExists {
 		if sessionName == m.currentSession {
 			// Current session - use info style
-			statusIndicator = core_theme.DefaultTheme.Info.Render("●")
+			statusIndicator = core_theme.DefaultTheme.Info.Render("■")
 		} else {
 			// Other active session - use success style
-			statusIndicator = core_theme.DefaultTheme.Success.Render("●")
+			statusIndicator = core_theme.DefaultTheme.Success.Render("■")
 		}
 	}
 
@@ -265,7 +282,8 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 			if m.showBranch {
 				if extStatus != nil && extStatus.StatusInfo != nil {
-					branch = extStatus.StatusInfo.Branch
+					branchIcon := core_theme.DefaultTheme.Muted.Render(core_theme.IconGitBranch + " ")
+					branch = branchIcon + extStatus.StatusInfo.Branch
 				}
 			}
 			if m.showGitStatus {

@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -1189,8 +1190,17 @@ func (m *sessionizeModel) updateFiltered() {
 			m.filtered = append(m.filtered, eco)
 
 			if worktrees, hasWorktrees := worktreesByParent[eco.Path]; hasWorktrees {
-				// Sort worktrees alphabetically
+				// Sort worktrees: ecosystem worktrees first, then regular worktrees, both alphabetically
 				sort.Slice(worktrees, func(i, j int) bool {
+					iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
+					jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
+
+					// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
+					if iIsEcoWT != jIsEcoWT {
+						return iIsEcoWT
+					}
+
+					// Otherwise sort alphabetically
 					return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
 				})
 				m.filtered = append(m.filtered, worktrees...)
@@ -1324,17 +1334,31 @@ func (m *sessionizeModel) updateFiltered() {
 					}
 				}
 
-				// Sort direct children alphabetically
+				// Sort direct children: ecosystem worktrees first, then other children, both alphabetically
 				sort.Slice(directChildren, func(i, j int) bool {
+					iIsEcoWT := directChildren[i].Kind == workspace.KindEcosystemWorktree
+					jIsEcoWT := directChildren[j].Kind == workspace.KindEcosystemWorktree
+
+					// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
+					if iIsEcoWT != jIsEcoWT {
+						return iIsEcoWT
+					}
+
+					// Otherwise sort alphabetically
 					return strings.ToLower(directChildren[i].Name) < strings.ToLower(directChildren[j].Name)
 				})
 
-				// Add direct children
+				// Add direct children, filtering ecosystem worktrees based on fold state
 				for _, child := range directChildren {
+					// Skip ecosystem worktrees if worktrees are folded
+					if m.worktreesFolded && child.Kind == workspace.KindEcosystemWorktree {
+						continue
+					}
+
 					m.filtered = append(m.filtered, child)
 
-					// If worktrees are not folded, add this child's worktrees
-					if !m.worktreesFolded {
+					// If worktrees are not folded, add this child's worktrees (only for non-ecosystem-worktree children)
+					if !m.worktreesFolded && child.Kind != workspace.KindEcosystemWorktree {
 						for _, gc := range grandchildren {
 							if gc.ParentProjectPath == child.Path {
 								m.filtered = append(m.filtered, gc)
@@ -1419,8 +1443,17 @@ func (m *sessionizeModel) updateFiltered() {
 
 				if !m.worktreesFolded {
 					if worktrees, exists := worktreesByParent[parent.Path]; exists {
-						// Sort worktrees alphabetically for consistent order
+						// Sort worktrees: ecosystem worktrees first, then regular worktrees, both alphabetically
 						sort.Slice(worktrees, func(i, j int) bool {
+							iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
+							jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
+
+							// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
+							if iIsEcoWT != jIsEcoWT {
+								return iIsEcoWT
+							}
+
+							// Otherwise sort alphabetically
 							return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
 						})
 						m.filtered = append(m.filtered, worktrees...)
@@ -1472,10 +1505,26 @@ func (m *sessionizeModel) updateFiltered() {
 			for _, parent := range parents {
 				result = append(result, parent)
 
-				// Add worktrees for this parent, sorted by match quality
+				// Add worktrees for this parent, sorted by match quality, with ecosystem worktrees prioritized
 				worktrees := parentWorktrees[parent.Path]
 				sort.SliceStable(worktrees, func(i, j int) bool {
-					return getMatchQuality(worktrees[i]) > getMatchQuality(worktrees[j])
+					iQuality := getMatchQuality(worktrees[i])
+					jQuality := getMatchQuality(worktrees[j])
+
+					// If match quality differs, sort by that
+					if iQuality != jQuality {
+						return iQuality > jQuality
+					}
+
+					// For same match quality, prioritize ecosystem worktrees
+					iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
+					jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
+					if iIsEcoWT != jIsEcoWT {
+						return iIsEcoWT
+					}
+
+					// Otherwise maintain stable order
+					return false
 				})
 				result = append(result, worktrees...)
 			}
@@ -1709,6 +1758,12 @@ func (m sessionizeModel) View() string {
 			b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No matching projects"))
 		}
 	}
+
+	// Icon legend
+	legendStyle := core_theme.DefaultTheme.Muted
+	legend := fmt.Sprintf("Icons: %s open tmux session • %s ecosystem • %s repo • %s eco-worktree • %s worktree • %s branch",
+		"■", "◆", "●", "◇", "⑂", "⎇")
+	b.WriteString("\n" + legendStyle.Render(legend))
 
 	// Help text
 	helpStyle := core_theme.DefaultTheme.Muted

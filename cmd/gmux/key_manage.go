@@ -1017,7 +1017,7 @@ func (m *manageModel) View() string {
 	}
 
 	// Build headers based on path display mode
-	headers := []string{"#", "Key", "Repository", "Worktree", gitHeader, plansHeader, "Ecosystem"}
+	headers := []string{"#", "Key", "Repository", "Branch/Worktree", gitHeader, plansHeader, "Ecosystem"}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "Path")
 	}
@@ -1038,10 +1038,41 @@ func (m *manageModel) View() string {
 				// RULE 1: Determine Repository and Worktree.
 				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
 				if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
-					repository = filepath.Base(projInfo.ParentProjectPath)
-					worktree = projInfo.Name
+					// Get parent project info to determine its icon
+					parentName := filepath.Base(projInfo.ParentProjectPath)
+					parentIcon := core_theme.IconRepo // Default to repo icon
+
+					// Try to find parent project to get its exact kind
+					if parentProj, found := m.enrichedProjects[projInfo.ParentProjectPath]; found {
+						if parentProj.Kind == workspace.KindEcosystemRoot {
+							parentIcon = core_theme.IconEcosystem
+						}
+					}
+
+					parentIconStyled := core_theme.DefaultTheme.Muted.Render(parentIcon + " ")
+					repository = parentIconStyled + parentName
+
+					// Determine icon for the worktree
+					worktreeIcon := ""
+					switch projInfo.Kind {
+					case workspace.KindEcosystemWorktree:
+						worktreeIcon = core_theme.IconEcosystemWorktree
+					default:
+						worktreeIcon = core_theme.IconWorktree
+					}
+					worktreeIconStyled := core_theme.DefaultTheme.Muted.Render(worktreeIcon + " ")
+					worktree = worktreeIconStyled + projInfo.Name
 				} else {
-					repository = projInfo.Name
+					// Determine icon for non-worktree
+					icon := ""
+					switch projInfo.Kind {
+					case workspace.KindEcosystemRoot:
+						icon = core_theme.IconEcosystem
+					default:
+						icon = core_theme.IconRepo
+					}
+					iconStyled := core_theme.DefaultTheme.Muted.Render(icon + " ")
+					repository = iconStyled + projInfo.Name
 				}
 
 				// RULE 2: Determine Ecosystem display.
@@ -1092,17 +1123,33 @@ func (m *manageModel) View() string {
 
 		}
 
-		// Add "n/a" for worktree column if it's a root repo
-		worktreeDisplay := worktree
-		if worktreeDisplay == "" && repository != "" {
-			worktreeDisplay = dimStyle.Render("n/a")
+		// Determine what to show in Branch/Worktree column
+		branchWorktreeDisplay := worktree
+		if branchWorktreeDisplay == "" && repository != "" {
+			// This is a main repo (not a worktree), show branch name with icon
+			if s.Path != "" {
+				cleanPath := filepath.Clean(s.Path)
+				if projInfo, found := m.enrichedProjects[cleanPath]; found {
+					if projInfo.GitStatus != nil && projInfo.GitStatus.StatusInfo != nil && projInfo.GitStatus.StatusInfo.Branch != "" {
+						// Add branch icon
+						branchIcon := core_theme.DefaultTheme.Muted.Render(core_theme.IconGitBranch + " ")
+						branchWorktreeDisplay = branchIcon + projInfo.GitStatus.StatusInfo.Branch
+					} else {
+						branchWorktreeDisplay = dimStyle.Render("n/a")
+					}
+				} else {
+					branchWorktreeDisplay = dimStyle.Render("n/a")
+				}
+			} else {
+				branchWorktreeDisplay = dimStyle.Render("n/a")
+			}
 		}
 
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
 			repository,
-			worktreeDisplay,
+			branchWorktreeDisplay,
 			gitStatus,
 			planStatus,
 			ecosystem,
@@ -1137,10 +1184,41 @@ func (m *manageModel) View() string {
 				// RULE 1: Determine Repository and Worktree.
 				// For a worktree, Repository is its parent. Otherwise, it's the project itself.
 				if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
-					repository = filepath.Base(projInfo.ParentProjectPath)
-					worktree = projInfo.Name
+					// Get parent project info to determine its icon
+					parentName := filepath.Base(projInfo.ParentProjectPath)
+					parentIcon := core_theme.IconRepo // Default to repo icon
+
+					// Try to find parent project to get its exact kind
+					if parentProj, found := m.enrichedProjects[projInfo.ParentProjectPath]; found {
+						if parentProj.Kind == workspace.KindEcosystemRoot {
+							parentIcon = core_theme.IconEcosystem
+						}
+					}
+
+					parentIconStyled := core_theme.DefaultTheme.Muted.Render(parentIcon + " ")
+					repository = parentIconStyled + parentName
+
+					// Determine icon for the worktree
+					worktreeIcon := ""
+					switch projInfo.Kind {
+					case workspace.KindEcosystemWorktree:
+						worktreeIcon = core_theme.IconEcosystemWorktree
+					default:
+						worktreeIcon = core_theme.IconWorktree
+					}
+					worktreeIconStyled := core_theme.DefaultTheme.Muted.Render(worktreeIcon + " ")
+					worktree = worktreeIconStyled + projInfo.Name
 				} else {
-					repository = projInfo.Name
+					// Determine icon for non-worktree
+					icon := ""
+					switch projInfo.Kind {
+					case workspace.KindEcosystemRoot:
+						icon = core_theme.IconEcosystem
+					default:
+						icon = core_theme.IconRepo
+					}
+					iconStyled := core_theme.DefaultTheme.Muted.Render(icon + " ")
+					repository = iconStyled + projInfo.Name
 				}
 
 				// RULE 2: Determine Ecosystem display.
@@ -1191,17 +1269,33 @@ func (m *manageModel) View() string {
 
 		}
 
-		// Add "n/a" for worktree column if it's a root repo
-		worktreeDisplay := worktree
-		if worktreeDisplay == "" && repository != "" {
-			worktreeDisplay = dimStyle.Render("n/a")
+		// Determine what to show in Branch/Worktree column
+		branchWorktreeDisplay := worktree
+		if branchWorktreeDisplay == "" && repository != "" {
+			// This is a main repo (not a worktree), show branch name with icon
+			if s.Path != "" {
+				cleanPath := filepath.Clean(s.Path)
+				if projInfo, found := m.enrichedProjects[cleanPath]; found {
+					if projInfo.GitStatus != nil && projInfo.GitStatus.StatusInfo != nil && projInfo.GitStatus.StatusInfo.Branch != "" {
+						// Add branch icon
+						branchIcon := core_theme.DefaultTheme.Muted.Render(core_theme.IconGitBranch + " ")
+						branchWorktreeDisplay = branchIcon + projInfo.GitStatus.StatusInfo.Branch
+					} else {
+						branchWorktreeDisplay = dimStyle.Render("n/a")
+					}
+				} else {
+					branchWorktreeDisplay = dimStyle.Render("n/a")
+				}
+			} else {
+				branchWorktreeDisplay = dimStyle.Render("n/a")
+			}
 		}
 
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
 			repository,
-			worktreeDisplay,
+			branchWorktreeDisplay,
 			gitStatus,
 			planStatus,
 			ecosystem,
