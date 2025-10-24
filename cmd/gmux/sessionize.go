@@ -54,7 +54,14 @@ var sessionizeCmd = &cobra.Command{
 				return fmt.Errorf("failed to initialize manager: %w", err)
 			}
 			_ = mgr.RecordProjectAccess(args[0])
-			return sessionizeProject(args[0])
+			// When a path is given, we must still resolve it to a full project object
+			// before passing it to the updated sessionizeProject function.
+			node, err := workspace.GetProjectByPath(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to get project info for path %s: %w", args[0], err)
+			}
+			project := &manager.SessionizeProject{WorkspaceNode: node}
+			return sessionizeProject(project)
 		}
 
 		// Otherwise, show the interactive project picker
@@ -162,31 +169,23 @@ var sessionizeCmd = &cobra.Command{
 			if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
 				_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
 			}
-			return sessionizeProject(sm.selected.Path)
+			return sessionizeProject(sm.selected)
 		}
 
 		return nil
 	},
 }
 
-// sessionizeProject creates or switches to a tmux session for the given project path
-func sessionizeProject(projectPath string) error {
-	// Expand path if needed
-	if strings.HasPrefix(projectPath, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			projectPath = filepath.Join(home, projectPath[2:])
-		}
+// sessionizeProject creates or switches to a tmux session for the given project.
+func sessionizeProject(project *manager.SessionizeProject) error {
+	if project == nil {
+		return fmt.Errorf("no project selected")
 	}
 
-	// Use the centralized function from grove-core to get project info
-	projInfo, err := workspace.GetProjectByPath(projectPath)
-	if err != nil {
-		return fmt.Errorf("failed to analyze project path: %w", err)
-	}
-
-	sessionName := projInfo.Identifier()
-	absPath := projInfo.Path // Get the absolute path from the returned info
+	// The project object already contains all necessary information.
+	// We no longer need to call workspace.GetProjectByPath.
+	sessionName := project.Identifier()
+	absPath := project.Path
 
 	// Check if we're in tmux
 	if os.Getenv("TMUX") == "" {
