@@ -317,6 +317,11 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 				continue // Skip if it's not a valid plan
 			}
 
+			// Skip finished plans
+			if plan.Config != nil && plan.Config.Status == "finished" {
+				continue
+			}
+
 			// 5. Aggregate stats
 			stats.TotalPlans++
 			for _, job := range plan.Jobs {
