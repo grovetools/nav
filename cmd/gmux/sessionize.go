@@ -228,6 +228,10 @@ func sessionizeProject(projectPath string) error {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}
 
+	// Close popup if running in one
+	cmd := client.ClosePopupCmd()
+	cmd.Run() // Ignore errors
+
 	return nil
 }
 func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {

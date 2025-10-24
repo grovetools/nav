@@ -81,8 +81,19 @@ var keyManageCmd = &cobra.Command{
 
 		// Run the interactive program
 		p := tea.NewProgram(&m, tea.WithAltScreen())
-		if _, err := p.Run(); err != nil {
+		finalModel, err := p.Run()
+		if err != nil {
 			return fmt.Errorf("error running program: %w", err)
+		}
+
+		// Execute command on exit if set
+		if mm, ok := finalModel.(*manageModel); ok && mm.commandOnExit != nil {
+			mm.commandOnExit.Stdin = os.Stdin
+			mm.commandOnExit.Stdout = os.Stdout
+			mm.commandOnExit.Stderr = os.Stderr
+			if err := mm.commandOnExit.Run(); err != nil {
+				// Silently ignore popup close errors
+			}
 		}
 
 		return nil
@@ -126,7 +137,8 @@ type manageModel struct {
 	usedCache    bool
 	spinnerFrame int
 	// View toggles
-	pathDisplayMode int // 0=no paths, 1=compact (~), 2=full paths
+	pathDisplayMode int          // 0=no paths, 1=compact (~), 2=full paths
+	commandOnExit   *exec.Cmd    // Command to run after TUI exits
 }
 
 // Key bindings
@@ -578,6 +590,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									// Exit the manager after switching
 									m.message = fmt.Sprintf("Switching to %s...", sessionName)
 									m.quitting = true
+									m.commandOnExit = client.ClosePopupCmd()
 									return m, tea.Quit
 								}
 							} else {
@@ -897,6 +910,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							// Exit the manager after switching
 							m.message = fmt.Sprintf("Switching to %s...", sessionName)
 							m.quitting = true
+							m.commandOnExit = client.ClosePopupCmd()
 							return m, tea.Quit
 						}
 					} else {
