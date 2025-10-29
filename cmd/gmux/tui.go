@@ -83,7 +83,7 @@ type sessionizeModel struct {
 	// Enrichment loading state
 	enrichmentLoading map[string]bool // tracks which enrichments are currently loading
 }
-func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool) sessionizeModel {
+func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
 	ti.Placeholder = "Press / to filter..."
@@ -170,10 +170,23 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showPlanStats := true
 	pathDisplayMode := 1 // Default to compact paths (~)
 	if state, err := manager.LoadState(configDir); err == nil {
+		// Prioritize CWD focus path over saved state
+		if cwdFocusPath != "" {
+			state.FocusedEcosystemPath = cwdFocusPath
+		}
 		if state.FocusedEcosystemPath != "" {
-			// Find the project with this path
+			// Find the project with this path (try exact match first, then case-insensitive)
 			if proj, ok := projectMap[state.FocusedEcosystemPath]; ok {
 				focusedProject = proj
+			} else {
+				// Try case-insensitive lookup (needed on case-insensitive filesystems like macOS)
+				lowerFocusPath := strings.ToLower(state.FocusedEcosystemPath)
+				for path, proj := range projectMap {
+					if strings.ToLower(path) == lowerFocusPath {
+						focusedProject = proj
+						break
+					}
+				}
 			}
 		}
 		worktreesFolded = state.WorktreesFolded

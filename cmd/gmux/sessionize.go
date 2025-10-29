@@ -146,8 +146,22 @@ var sessionizeCmd = &cobra.Command{
 			projectPtrs[i] = &projects[i]
 		}
 
+		// Determine initial focus based on CWD
+		var cwdFocusPath string
+		cwd, err := os.Getwd()
+		if err == nil {
+			node, err := workspace.GetProjectByPath(cwd)
+			if err == nil {
+				if node.Kind == workspace.KindEcosystemRoot || node.Kind == workspace.KindEcosystemWorktree {
+					cwdFocusPath = node.Path
+				} else if node.ParentEcosystemPath != "" {
+					cwdFocusPath = node.ParentEcosystemPath
+				}
+			}
+		}
+
 		// Create the interactive model
-		m := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache)
+		m := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache, cwdFocusPath)
 
 		// If a focused project was loaded from state, update the filtered list
 		if m.focusedProject != nil {
