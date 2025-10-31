@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
@@ -29,6 +30,24 @@ import (
 // Message for CWD project enrichment
 type cwdProjectEnrichedMsg struct {
 	project *manager.SessionizeProject
+}
+
+// New message
+type rulesStateMsg struct {
+	rulesState map[string]grovecontext.RuleStatus
+}
+
+// New command
+func fetchRulesStateForKeyManageCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		mgr := grovecontext.NewManager("")
+		rulesState := make(map[string]grovecontext.RuleStatus)
+		for _, p := range projects {
+			rule := filepath.Join(p.Path, "**")
+			rulesState[p.Path] = mgr.GetRuleStatus(rule)
+		}
+		return rulesStateMsg{rulesState}
+	}
 }
 
 var keyManageCmd = &cobra.Command{
@@ -390,6 +409,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, fetchAllGitStatusesForKeyManageCmd(msg.projectList))
 		cmds = append(cmds, fetchAllNoteCountsForKeyManageCmd())
 		cmds = append(cmds, fetchAllPlanStatsForKeyManageCmd())
+		cmds = append(cmds, fetchRulesStateForKeyManageCmd(msg.projectList))
 
 		m.enrichmentLoading["git"] = true
 		m.enrichmentLoading["notes"] = true
@@ -401,6 +421,24 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
 
 		return m, tea.Batch(cmds...)
+
+	case rulesStateMsg:
+		for path, status := range msg.rulesState {
+			if proj, ok := m.enrichedProjects[path]; ok {
+				switch status {
+				case grovecontext.RuleHot:
+					proj.ContextStatus = "H"
+				case grovecontext.RuleCold:
+					proj.ContextStatus = "C"
+				case grovecontext.RuleExcluded:
+					proj.ContextStatus = "X"
+				default:
+					proj.ContextStatus = ""
+				}
+			}
+		}
+		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
+		return m, nil
 
 	case cwdProjectEnrichedMsg:
 		m.cwdProject = msg.project
@@ -1017,7 +1055,7 @@ func (m *manageModel) View() string {
 	}
 
 	// Build headers based on path display mode
-	headers := []string{"#", "Key", "Repository", "Branch/Worktree", gitHeader, plansHeader, "Ecosystem"}
+	headers := []string{"#", "Key", "CX", "Repository", "Branch/Worktree", gitHeader, plansHeader, "Ecosystem"}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "Path")
 	}
@@ -1030,6 +1068,7 @@ func (m *manageModel) View() string {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		planStatus := ""
+		cxStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1116,6 +1155,16 @@ func (m *manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
+				if projInfo.ContextStatus != "" {
+					switch projInfo.ContextStatus {
+					case "H":
+						cxStatus = core_theme.DefaultTheme.Success.Render("H")
+					case "C":
+						cxStatus = core_theme.DefaultTheme.Info.Render("C")
+					case "X":
+						cxStatus = core_theme.DefaultTheme.Error.Render("X")
+					}
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1148,6 +1197,7 @@ func (m *manageModel) View() string {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
+			cxStatus,
 			repository,
 			branchWorktreeDisplay,
 			gitStatus,
@@ -1176,6 +1226,7 @@ func (m *manageModel) View() string {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
 		planStatus := ""
+		cxStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1262,6 +1313,16 @@ func (m *manageModel) View() string {
 				if projInfo.PlanStats != nil {
 					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
 				}
+				if projInfo.ContextStatus != "" {
+					switch projInfo.ContextStatus {
+					case "H":
+						cxStatus = core_theme.DefaultTheme.Success.Render("H")
+					case "C":
+						cxStatus = core_theme.DefaultTheme.Info.Render("C")
+					case "X":
+						cxStatus = core_theme.DefaultTheme.Error.Render("X")
+					}
+				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1294,6 +1355,7 @@ func (m *manageModel) View() string {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
+			cxStatus,
 			repository,
 			branchWorktreeDisplay,
 			gitStatus,

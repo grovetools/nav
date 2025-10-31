@@ -8,21 +8,24 @@ import (
 // sessionizeKeyMap defines the key bindings for the sessionize TUI
 type sessionizeKeyMap struct {
 	keymap.Base
-	EditKey          key.Binding
-	ClearKey         key.Binding
-	CopyPath         key.Binding
-	CloseSession     key.Binding
-	FocusEcosystem   key.Binding
-	ClearFocus       key.Binding
-	ToggleWorktrees  key.Binding
-	ToggleGitStatus  key.Binding
-	ToggleBranch     key.Binding
-	ToggleClaude     key.Binding
-	ToggleNoteCounts key.Binding
-	TogglePlanStats  key.Binding
-	TogglePaths      key.Binding
-	FilterDirty      key.Binding
-	RefreshProjects  key.Binding
+	EditKey           key.Binding
+	ClearKey          key.Binding
+	CopyPath          key.Binding
+	CloseSession      key.Binding
+	FocusEcosystem    key.Binding
+	ClearFocus        key.Binding
+	ToggleWorktrees   key.Binding
+	ToggleGitStatus   key.Binding
+	ToggleBranch      key.Binding
+	ToggleClaude      key.Binding
+	ToggleNoteCounts  key.Binding
+	TogglePlanStats   key.Binding
+	TogglePaths       key.Binding
+	FilterDirty       key.Binding
+	RefreshProjects   key.Binding
+	ToggleHotContext  key.Binding
+	ToggleColdContext key.Binding
+	ToggleExclude     key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -57,13 +60,18 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.FocusEcosystem,
 			k.ClearFocus,
 			k.ToggleWorktrees,
+			k.FilterDirty,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Context Management")),
+			k.ToggleHotContext,
+			k.ToggleColdContext,
+			k.ToggleExclude,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
 			k.ToggleGitStatus,
 			k.ToggleBranch,
 			k.ToggleClaude,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
 			k.TogglePaths,
-			k.FilterDirty,
 		},
 	}
 }
@@ -107,8 +115,8 @@ var sessionizeKeys = sessionizeKeyMap{
 		key.WithHelp("b", "toggle branch names"),
 	),
 	ToggleClaude: key.NewBinding(
-		key.WithKeys("c"),
-		key.WithHelp("c", "toggle claude sessions"),
+		key.WithKeys("C"),
+		key.WithHelp("shift+c", "toggle claude sessions"),
 	),
 	ToggleNoteCounts: key.NewBinding(
 		key.WithKeys("n"),
@@ -129,5 +137,17 @@ var sessionizeKeys = sessionizeKeyMap{
 	RefreshProjects: key.NewBinding(
 		key.WithKeys("ctrl+r"),
 		key.WithHelp("ctrl+r", "refresh project list"),
+	),
+	ToggleHotContext: key.NewBinding(
+		key.WithKeys("h"),
+		key.WithHelp("h", "toggle hot context"),
+	),
+	ToggleColdContext: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle cold context"),
+	),
+	ToggleExclude: key.NewBinding(
+		key.WithKeys("x"),
+		key.WithHelp("x", "toggle exclude"),
 	),
 }

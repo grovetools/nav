@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
@@ -68,6 +70,92 @@ type runningSessionsUpdateMsg struct {
 type keyMapUpdateMsg struct {
 	keyMap   map[string]string     // map[path]key
 	sessions []models.TmuxSession // Also pass the full session list
+}
+
+// rulesStateUpdateMsg is sent when the context rules have been parsed.
+type rulesStateUpdateMsg struct {
+	rulesState map[string]grovecontext.RuleStatus
+}
+
+// ruleToggleResultMsg is sent after a rule is toggled.
+type ruleToggleResultMsg struct {
+	err error
+}
+
+// fetchRulesStateCmd loads the context rules and determines the status for each project path.
+func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		mgr := grovecontext.NewManager("") // Use CWD
+		rulesState := make(map[string]grovecontext.RuleStatus)
+
+		for _, project := range projects {
+			// Check for alias rule first if this is part of an ecosystem
+			var status grovecontext.RuleStatus
+			if project.RootEcosystemPath != "" {
+				// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
+				ecosystemName := filepath.Base(project.RootEcosystemPath)
+				if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
+					// This is inside an ecosystem worktree, use the worktree name
+					ecosystemName = filepath.Base(project.ParentEcosystemPath)
+				}
+				workspaceName := project.Name
+				ruleName := mgr.GetDefaultRuleName()
+				if ruleName == "" {
+					ruleName = "default"
+				}
+				aliasRule := fmt.Sprintf("@a:%s:%s::%s", ecosystemName, workspaceName, ruleName)
+				status = mgr.GetRuleStatus(aliasRule)
+			}
+
+			// If no alias status found, check for path-based rule
+			if status == 0 {
+				pathRule := filepath.Join(project.Path, "**")
+				status = mgr.GetRuleStatus(pathRule)
+			}
+
+			rulesState[project.Path] = status
+		}
+		return rulesStateUpdateMsg{rulesState: rulesState}
+	}
+}
+
+// toggleRuleCmd adds or removes a context rule for a given project.
+func toggleRuleCmd(project *manager.SessionizeProject, action string) tea.Cmd {
+	return func() tea.Msg {
+		if project == nil {
+			return ruleToggleResultMsg{err: fmt.Errorf("no project selected")}
+		}
+		mgr := grovecontext.NewManager("")
+
+		// Construct alias rule using the project's ecosystem and workspace info
+		rule := filepath.Join(project.Path, "**")
+
+		// If this is part of an ecosystem, construct an alias
+		if project.RootEcosystemPath != "" {
+			// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
+			ecosystemName := filepath.Base(project.RootEcosystemPath)
+			if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
+				// This is inside an ecosystem worktree, use the worktree name
+				ecosystemName = filepath.Base(project.ParentEcosystemPath)
+			}
+			workspaceName := project.Name
+
+			// Get the default rule name from grove.yml
+			ruleName := mgr.GetDefaultRuleName()
+			if ruleName == "" {
+				ruleName = "default"
+			}
+
+			// Construct alias: @a:ecosystem:workspace::rule
+			rule = fmt.Sprintf("@a:%s:%s::%s", ecosystemName, workspaceName, ruleName)
+		}
+
+		if err := mgr.AppendRule(rule, action); err != nil {
+			return ruleToggleResultMsg{err: err}
+		}
+
+		return ruleToggleResultMsg{err: nil}
+	}
 }
 
 // getWorktreeParent checks if a path is a Git worktree and returns the parent path

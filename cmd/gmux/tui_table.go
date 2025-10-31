@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
@@ -58,7 +59,7 @@ func (m sessionizeModel) renderTable() string {
 	}
 
 	// Define table headers based on what's enabled
-	headers := []string{"K", "WORKSPACE"}
+	headers := []string{"K", "S", "CX", "WORKSPACE"}
 
 	// Get spinner for animation
 	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
@@ -267,6 +268,27 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		}
 	}
 	// Leave keyMapping empty if no key is bound
+
+	// --- STATUS ---
+	statusIndicator := ""
+	if sessionExists {
+		statusIndicator = core_theme.DefaultTheme.Success.Render("■")
+	} else {
+		statusIndicator = core_theme.DefaultTheme.Muted.Render("-")
+	}
+
+	// --- CONTEXT STATUS ---
+	cxStatus := ""
+	if status, ok := m.rulesState[project.Path]; ok {
+		switch status {
+		case grovecontext.RuleHot:
+			cxStatus = core_theme.DefaultTheme.Success.Render("H")
+		case grovecontext.RuleCold:
+			cxStatus = core_theme.DefaultTheme.Info.Render("C")
+		case grovecontext.RuleExcluded:
+			cxStatus = core_theme.DefaultTheme.Error.Render("X")
+		}
+	}
 
 	// --- BRANCH, GIT STATUS, CHANGES ---
 	branch := "-"
@@ -488,7 +510,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 
 	// Build row based on enabled columns
-	row := []string{keyMapping, workspaceName}
+	row := []string{keyMapping, statusIndicator, cxStatus, workspaceName}
 
 	if m.showBranch {
 		row = append(row, branch)

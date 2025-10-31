@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -82,6 +83,9 @@ type sessionizeModel struct {
 
 	// Enrichment loading state
 	enrichmentLoading map[string]bool // tracks which enrichments are currently loading
+
+	// Context rules state
+	rulesState map[string]grovecontext.RuleStatus // path -> status
 }
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
@@ -212,6 +216,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	}
 
 	return sessionizeModel{
+		rulesState:               make(map[string]grovecontext.RuleStatus),
 		projects:                 projects,
 		filtered:                 projects,
 		projectMap:               projectMap,
@@ -290,6 +295,9 @@ func (m sessionizeModel) Init() tea.Cmd {
 	// If we used cache, we already have projects with enrichment data
 	if !m.usedCache {
 		cmds = append(cmds, fetchProjectsCmd(m.manager, m.configDir))
+	} else {
+		// if we used cache, we have projects, so we can fetch rules state
+		cmds = append(cmds, fetchRulesStateCmd(m.projects))
 	}
 
 	// Fetch fresh enrichment data (will update cached data in background)
@@ -507,7 +515,22 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		}
 
-		return m, m.enrichVisibleProjects()
+		return m, tea.Batch(m.enrichVisibleProjects(), fetchRulesStateCmd(m.projects))
+
+	case rulesStateUpdateMsg:
+		m.rulesState = msg.rulesState
+		return m, nil
+
+	case ruleToggleResultMsg:
+		if msg.err != nil {
+			m.statusMessage = fmt.Sprintf("Error: %v", msg.err)
+			m.statusTimeout = time.Now().Add(3 * time.Second)
+			return m, clearStatusCmd(3 * time.Second)
+		}
+		m.statusMessage = "Context rule updated!"
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		// Refresh rules state
+		return m, tea.Batch(clearStatusCmd(2*time.Second), fetchRulesStateCmd(m.projects))
 
 	case runningSessionsUpdateMsg:
 		// Replace the running sessions map
@@ -688,6 +711,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.filterInput.Blur()
+				m.updateFiltered()
 				return m, nil
 			case tea.KeyEnter:
 				// Handle ecosystem picker mode
@@ -898,7 +922,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
 				return m, m.enrichVisibleProjects()
-			case "c":
+			case "C":
 				// Toggle claude sessions
 				m.showClaudeSessions = !m.showClaudeSessions
 				_ = m.buildState().Save(m.configDir)
@@ -907,6 +931,21 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, fetchAllClaudeSessionsCmd()
 				}
 				return m, nil
+			case "h": // Toggle hot context
+				if m.cursor < len(m.filtered) {
+					selected := m.filtered[m.cursor]
+					return m, toggleRuleCmd(selected, "hot")
+				}
+			case "c": // Toggle cold context
+				if m.cursor < len(m.filtered) {
+					selected := m.filtered[m.cursor]
+					return m, toggleRuleCmd(selected, "cold")
+				}
+			case "x": // Toggle exclude
+				if m.cursor < len(m.filtered) {
+					selected := m.filtered[m.cursor]
+					return m, toggleRuleCmd(selected, "exclude")
+				}
 			case "n":
 				// Toggle note counts
 				m.showNoteCounts = !m.showNoteCounts
