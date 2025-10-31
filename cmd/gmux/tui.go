@@ -1372,11 +1372,17 @@ func (m *sessionizeModel) updateFiltered() {
 
 					// If worktrees are not folded, add this child's worktrees (only for non-ecosystem-worktree children)
 					if !m.worktreesFolded && child.Kind != workspace.KindEcosystemWorktree {
+						// Collect and sort this child's worktrees
+						childWorktrees := []*manager.SessionizeProject{}
 						for _, gc := range grandchildren {
 							if gc.ParentProjectPath == child.Path {
-								m.filtered = append(m.filtered, gc)
+								childWorktrees = append(childWorktrees, gc)
 							}
 						}
+						sort.Slice(childWorktrees, func(i, j int) bool {
+							return strings.ToLower(childWorktrees[i].Name) < strings.ToLower(childWorktrees[j].Name)
+						})
+						m.filtered = append(m.filtered, childWorktrees...)
 					}
 				}
 			} else {
@@ -1406,6 +1412,10 @@ func (m *sessionizeModel) updateFiltered() {
 					m.filtered = append(m.filtered, parent)
 					if !m.worktreesFolded {
 						if worktrees, exists := parentWorktrees[parent.Path]; exists {
+							// Sort worktrees alphabetically before adding
+							sort.Slice(worktrees, func(i, j int) bool {
+								return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
+							})
 							m.filtered = append(m.filtered, worktrees...)
 						}
 					}
@@ -1414,6 +1424,10 @@ func (m *sessionizeModel) updateFiltered() {
 				// Add any remaining worktrees if not folded
 				if !m.worktreesFolded {
 					if focusedWorktrees, exists := parentWorktrees[m.focusedProject.Path]; exists {
+						// Sort worktrees alphabetically before inserting
+						sort.Slice(focusedWorktrees, func(i, j int) bool {
+							return strings.ToLower(focusedWorktrees[i].Name) < strings.ToLower(focusedWorktrees[j].Name)
+						})
 						// Insert these after the focused project (at position 1)
 						m.filtered = append(m.filtered[:1], append(focusedWorktrees, m.filtered[1:]...)...)
 					}
