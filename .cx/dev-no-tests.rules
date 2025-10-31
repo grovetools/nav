@@ -1,19 +1,11 @@
-# Development rules: Code only, no tests
-
-# Include all Go source files
-**/*.go
-
-# Main/build/config files
-main.go
+*.go
 Makefile
 go.mod
 grove.yml
-!go.sum
 
-# Exclude test files
 !tests/**
-!test/**
-!**/*_test.go
 
-# Exclude docs
-!docs
+@view: @a:grove-ecosystem:grove-core::dev-no-tests
+@view: @a:grove-ecosystem:grove-flow::dev-no-tests
+@view: @a:grove-ecosystem:grove-hooks::dev-no-tests
+
