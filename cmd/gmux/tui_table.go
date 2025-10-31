@@ -58,7 +58,7 @@ func (m sessionizeModel) renderTable() string {
 	}
 
 	// Define table headers based on what's enabled
-	headers := []string{"K", "S", "WORKSPACE"}
+	headers := []string{"K", "WORKSPACE"}
 
 	// Get spinner for animation
 	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
@@ -211,8 +211,22 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		icon = core_theme.IconRepo
 	}
 
-	// Prepend icon with muted styling
-	iconStyled := core_theme.DefaultTheme.Muted.Render(icon + " ")
+	// Determine icon color based on session status
+	sessionName := project.Identifier()
+	sessionExists := m.runningSessions[sessionName]
+
+	var iconStyle lipgloss.Style
+	if sessionExists {
+		if sessionName == m.currentSession {
+			iconStyle = core_theme.DefaultTheme.Info // Current session - cyan
+		} else {
+			iconStyle = core_theme.DefaultTheme.Highlight // Other active session
+		}
+	} else {
+		iconStyle = core_theme.DefaultTheme.Muted // Inactive
+	}
+
+	iconStyled := iconStyle.Render(icon + " ")
 
 	// Apply subtle styling for different workspace types (only to the name, not icon)
 	var nameStyled string
@@ -253,20 +267,6 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		}
 	}
 	// Leave keyMapping empty if no key is bound
-
-	// --- STATUS ---
-	sessionName := project.Identifier()
-	sessionExists := m.runningSessions[sessionName]
-	statusIndicator := "-"
-	if sessionExists {
-		if sessionName == m.currentSession {
-			// Current session - use info style
-			statusIndicator = core_theme.DefaultTheme.Info.Render("■")
-		} else {
-			// Other active session - use success style
-			statusIndicator = core_theme.DefaultTheme.Success.Render("■")
-		}
-	}
 
 	// --- BRANCH, GIT STATUS, CHANGES ---
 	branch := "-"
@@ -488,7 +488,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 
 	// Build row based on enabled columns
-	row := []string{keyMapping, statusIndicator, workspaceName}
+	row := []string{keyMapping, workspaceName}
 
 	if m.showBranch {
 		row = append(row, branch)

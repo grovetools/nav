@@ -1774,8 +1774,10 @@ func (m sessionizeModel) View() string {
 
 	// Icon legend
 	legendStyle := core_theme.DefaultTheme.Muted
-	legend := fmt.Sprintf("Icons: %s open tmux session • %s ecosystem • %s repo • %s eco-worktree • %s worktree • %s branch",
-		"■", "◆", "●", "◇", "⑂", "⎇")
+	currentIcon := core_theme.DefaultTheme.Info.Render("●")
+	activeIcon := core_theme.DefaultTheme.Highlight.Render("●")
+	legend := fmt.Sprintf("Icons: %s current • %s active • %s ecosystem • %s repo • %s eco-worktree • %s worktree • %s branch",
+		currentIcon, activeIcon, "◆", "●", "◇", "⑂", "⎇")
 	b.WriteString("\n" + legendStyle.Render(legend))
 
 	// Help text
