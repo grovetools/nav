@@ -21,6 +21,7 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 )
@@ -179,14 +180,12 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 			state.FocusedEcosystemPath = cwdFocusPath
 		}
 		if state.FocusedEcosystemPath != "" {
-			// Find the project with this path (try exact match first, then case-insensitive)
-			if proj, ok := projectMap[state.FocusedEcosystemPath]; ok {
-				focusedProject = proj
-			} else {
-				// Try case-insensitive lookup (needed on case-insensitive filesystems like macOS)
-				lowerFocusPath := strings.ToLower(state.FocusedEcosystemPath)
+			// Find the project with this path using normalized path comparison
+			normalizedFocusPath, err := pathutil.NormalizeForLookup(state.FocusedEcosystemPath)
+			if err == nil {
 				for path, proj := range projectMap {
-					if strings.ToLower(path) == lowerFocusPath {
+					normalizedPath, err := pathutil.NormalizeForLookup(path)
+					if err == nil && normalizedPath == normalizedFocusPath {
 						focusedProject = proj
 						break
 					}
@@ -1097,11 +1096,16 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Then find if this project already has a key mapping
+	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+	if err != nil {
+		return // Cannot normalize path
+	}
 	for i, s := range m.sessions {
 		if s.Path != "" {
 			expandedPath := expandPath(s.Path)
 			absPath, _ := filepath.Abs(expandedPath)
-			if strings.EqualFold(filepath.Clean(absPath), cleanPath) {
+			normalizedAbsPath, err := pathutil.NormalizeForLookup(filepath.Clean(absPath))
+			if err == nil && normalizedAbsPath == normalizedCleanPath {
 				targetSessionIndex = i
 				break
 			}
@@ -1159,6 +1163,10 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 
 func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 	cleanPath := filepath.Clean(projectPath)
+	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+	if err != nil {
+		return // Cannot normalize path
+	}
 
 	// Find if this project has a key mapping
 	var targetSessionIndex = -1
@@ -1166,7 +1174,8 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		if s.Path != "" {
 			expandedPath := expandPath(s.Path)
 			absPath, _ := filepath.Abs(expandedPath)
-			if strings.EqualFold(filepath.Clean(absPath), cleanPath) {
+			normalizedAbsPath, err := pathutil.NormalizeForLookup(filepath.Clean(absPath))
+			if err == nil && normalizedAbsPath == normalizedCleanPath {
 				targetSessionIndex = i
 				break
 			}
@@ -1937,13 +1946,17 @@ func (m sessionizeModel) viewKeyEditor() string {
 
 	// Find current key for the selected project
 	cleanSelectedPath := filepath.Clean(selectedPath)
-	for _, s := range m.sessions {
-		if s.Path != "" {
-			expandedPath := expandPath(s.Path)
-			absPath, _ := filepath.Abs(expandedPath)
-			if strings.EqualFold(filepath.Clean(absPath), cleanSelectedPath) {
-				currentKey = s.Key
-				break
+	normalizedSelectedPath, err := pathutil.NormalizeForLookup(cleanSelectedPath)
+	if err == nil {
+		for _, s := range m.sessions {
+			if s.Path != "" {
+				expandedPath := expandPath(s.Path)
+				absPath, _ := filepath.Abs(expandedPath)
+				normalizedAbsPath, err := pathutil.NormalizeForLookup(filepath.Clean(absPath))
+				if err == nil && normalizedAbsPath == normalizedSelectedPath {
+					currentKey = s.Key
+					break
+				}
 			}
 		}
 	}

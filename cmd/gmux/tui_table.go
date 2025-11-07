@@ -11,6 +11,7 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 )
 
@@ -256,14 +257,19 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	// --- KEY ---
 	keyMapping := ""
 	cleanPath := filepath.Clean(project.Path)
-	if key, hasKey := m.keyMap[cleanPath]; hasKey {
-		keyMapping = key
-	} else {
-		// Try case-insensitive match on macOS
-		for path, key := range m.keyMap {
-			if strings.EqualFold(path, cleanPath) {
-				keyMapping = key
-				break
+	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+	if err == nil {
+		// Try exact match first
+		if key, hasKey := m.keyMap[cleanPath]; hasKey {
+			keyMapping = key
+		} else {
+			// Try normalized path match
+			for path, key := range m.keyMap {
+				normalizedPath, err := pathutil.NormalizeForLookup(path)
+				if err == nil && normalizedPath == normalizedCleanPath {
+					keyMapping = key
+					break
+				}
 			}
 		}
 	}
@@ -458,9 +464,10 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 					claude = fmt.Sprintf("%s %s", statusStyled, claudeDuration)
 				}
 			} else {
-				// Try case-insensitive match on macOS
+				// Try normalized path match
 				for path, status := range m.claudeStatusMap {
-					if strings.EqualFold(path, cleanPath) {
+					normalizedPath, err := pathutil.NormalizeForLookup(path)
+					if err == nil && normalizedPath == normalizedCleanPath {
 						claudeStatus := status
 						claudeDuration := ""
 						if duration, foundDur := m.claudeDurationMap[path]; foundDur {

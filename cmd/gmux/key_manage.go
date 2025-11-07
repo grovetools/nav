@@ -22,6 +22,7 @@ import (
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-core/util/pathutil"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
@@ -877,11 +878,18 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Check if CWD is already mapped to another key
-			cwdCleanPath := filepath.Clean(m.cwdProject.Path)
+			cwdNormalizedPath, err := pathutil.NormalizeForLookup(m.cwdProject.Path)
+			if err != nil {
+				m.message = "Failed to normalize CWD path"
+				return m, nil
+			}
 			for _, s := range m.sessions {
 				if s.Path != "" {
-					sCleanPath := filepath.Clean(s.Path)
-					if sCleanPath == cwdCleanPath {
+					sNormalizedPath, err := pathutil.NormalizeForLookup(s.Path)
+					if err != nil {
+						continue
+					}
+					if sNormalizedPath == cwdNormalizedPath {
 						m.message = fmt.Sprintf("CWD is already mapped to key '%s'", s.Key)
 						return m, nil
 					}
@@ -894,7 +902,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			session.Description = ""
 
 			// Add to enriched projects map for immediate display
-			m.enrichedProjects[cwdCleanPath] = m.cwdProject
+			m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
 
 			m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, m.cwdProject.Name)
 			return m, nil
@@ -1466,13 +1474,21 @@ func (m *manageModel) mapKeyToCwd(targetIndex int) {
 	}
 
 	targetSession := &m.sessions[targetIndex]
-	cwdCleanPath := filepath.Clean(m.cwdProject.Path)
+	cwdNormalizedPath, err := pathutil.NormalizeForLookup(m.cwdProject.Path)
+	if err != nil {
+		m.message = "Failed to normalize CWD path"
+		m.setKeyMode = false
+		return
+	}
 
 	// Find and clear any pre-existing mapping for the CWD path
 	for i := range m.sessions {
 		if m.sessions[i].Path != "" {
-			sessionCleanPath := filepath.Clean(m.sessions[i].Path)
-			if sessionCleanPath == cwdCleanPath {
+			sessionNormalizedPath, err := pathutil.NormalizeForLookup(m.sessions[i].Path)
+			if err != nil {
+				continue
+			}
+			if sessionNormalizedPath == cwdNormalizedPath {
 				m.sessions[i].Path = ""
 				m.sessions[i].Repository = ""
 				m.sessions[i].Description = ""
@@ -1487,7 +1503,7 @@ func (m *manageModel) mapKeyToCwd(targetIndex int) {
 	targetSession.Description = ""
 
 	// Add to enriched projects map for immediate UI refresh
-	m.enrichedProjects[cwdCleanPath] = m.cwdProject
+	m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
 
 	// Exit set key mode
 	m.setKeyMode = false
