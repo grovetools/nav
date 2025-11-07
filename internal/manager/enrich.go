@@ -264,7 +264,7 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 
 // FetchPlanStatsMap fetches plan statistics for all workspaces using NotebookLocator.
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
-	statsByGroupingKey := make(map[string]*PlanStats)
+	statsByPath := make(map[string]*PlanStats)
 
 	// 1. Initialize dependencies from grove-core
 	logger := logrus.New()
@@ -282,23 +282,17 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 	}
 	locator := workspace.NewNotebookLocator(coreCfg)
 
-	// 2. Scan for all plan directories
-	scannedDirs, err := locator.ScanForAllPlans(provider)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan for plan directories: %w", err)
-	}
+	// 2. Process each workspace node individually
+	for _, node := range provider.All() {
+		// Get or create the stats object for this specific workspace path
+		stats := &PlanStats{}
+		statsByPath[node.Path] = stats
 
-	// 3. Process each found plan directory
-	for _, scannedDir := range scannedDirs {
-		ownerNode := scannedDir.Owner
-		plansRootDir := scannedDir.Path
-		groupKey := ownerNode.GetGroupingKey()
-
-		// Get or create the stats object for this workspace group
-		if _, ok := statsByGroupingKey[groupKey]; !ok {
-			statsByGroupingKey[groupKey] = &PlanStats{}
+		// 3. Get the plans directory for this specific node
+		plansRootDir, err := locator.GetPlansDir(node)
+		if err != nil {
+			continue // Skip if we can't find the plans directory
 		}
-		stats := statsByGroupingKey[groupKey]
 
 		// 4. Walk the plans root directory to find individual plans
 		entries, err := os.ReadDir(plansRootDir)
@@ -322,7 +316,7 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 				continue
 			}
 
-			// 5. Aggregate stats
+			// 5. Aggregate stats for this node
 			stats.TotalPlans++
 			for _, job := range plan.Jobs {
 				switch job.Status {
@@ -344,23 +338,14 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 			}
 		}
 
-		// Also try to find the active plan for this workspace
-		activePlan := getActivePlanForPath(ownerNode.Path)
+		// Also try to find the active plan for this specific workspace path
+		activePlan := getActivePlanForPath(node.Path)
 		if activePlan != "" {
 			stats.ActivePlan = activePlan
 		}
 	}
 
-	// 6. Map aggregated stats back to every individual node (including worktrees)
-	finalResultsByPath := make(map[string]*PlanStats)
-	for _, node := range provider.All() {
-		groupKey := node.GetGroupingKey()
-		if stats, ok := statsByGroupingKey[groupKey]; ok {
-			finalResultsByPath[node.Path] = stats
-		}
-	}
-
-	return finalResultsByPath, nil
+	return statsByPath, nil
 }
 
 // getActivePlanForPath reads the active plan from a workspace's state file
