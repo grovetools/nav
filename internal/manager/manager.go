@@ -79,7 +79,10 @@ func NewManager(configDir string) (*Manager, error) {
 	if data, err := os.ReadFile(sessionsPath); err == nil {
 		var sessionsFile TmuxSessionsFile
 		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
-			sessions = sessionsFile.Sessions
+			// Ensure sessions map is not nil before assigning
+			if sessionsFile.Sessions != nil {
+				sessions = sessionsFile.Sessions
+			}
 			lockedKeys = sessionsFile.LockedKeys
 		}
 	}

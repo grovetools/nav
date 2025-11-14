@@ -83,17 +83,21 @@ var keyManageCmd = &cobra.Command{
 		enrichedProjects := make(map[string]*manager.SessionizeProject)
 		usedCache := false
 		if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
-			// Convert cached projects to SessionizeProject
+			// Convert cached projects to SessionizeProject, validating paths exist
 			for path, cached := range cache.EnrichedProjects {
-				enrichedProjects[path] = &manager.SessionizeProject{
-					WorkspaceNode: cached.WorkspaceNode,
-					GitStatus:     cached.GitStatus,
-					ClaudeSession: cached.ClaudeSession,
-					NoteCounts:    cached.NoteCounts,
-					PlanStats:     cached.PlanStats,
+				// Validate that the path still exists
+				if _, err := os.Stat(path); err == nil {
+					enrichedProjects[path] = &manager.SessionizeProject{
+						WorkspaceNode: cached.WorkspaceNode,
+						GitStatus:     cached.GitStatus,
+						ClaudeSession: cached.ClaudeSession,
+						NoteCounts:    cached.NoteCounts,
+						PlanStats:     cached.PlanStats,
+					}
 				}
+				// Skip stale entries (paths that no longer exist)
 			}
-			usedCache = true
+			usedCache = len(enrichedProjects) > 0
 		}
 
 		// Create the interactive model
@@ -106,13 +110,38 @@ var keyManageCmd = &cobra.Command{
 			return fmt.Errorf("error running program: %w", err)
 		}
 
-		// Execute command on exit if set
-		if mm, ok := finalModel.(*manageModel); ok && mm.commandOnExit != nil {
-			mm.commandOnExit.Stdin = os.Stdin
-			mm.commandOnExit.Stdout = os.Stdout
-			mm.commandOnExit.Stderr = os.Stderr
-			if err := mm.commandOnExit.Run(); err != nil {
-				// Silently ignore popup close errors
+		// Handle post-TUI logic
+		if mm, ok := finalModel.(*manageModel); ok {
+			// Save changes if any were made
+			if mm.changesMade {
+				fmt.Println("Saving changes...")
+				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
+					fmt.Fprintf(os.Stderr, "Error saving sessions: %v\n", err)
+					return fmt.Errorf("failed to save sessions: %w", err)
+				}
+
+				if err := mgr.RegenerateBindings(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error regenerating bindings: %v\n", err)
+					return fmt.Errorf("failed to regenerate bindings: %w", err)
+				}
+
+				if err := reloadTmuxConfig(); err != nil {
+					fmt.Println("Changes saved! Remember to reload your tmux config manually: tmux source-file ~/.tmux.conf")
+				} else {
+					fmt.Println("Changes saved and tmux config reloaded!")
+				}
+			} else {
+				fmt.Println("No changes to save.")
+			}
+
+			// Execute command on exit if set
+			if mm.commandOnExit != nil {
+				mm.commandOnExit.Stdin = os.Stdin
+				mm.commandOnExit.Stdout = os.Stdout
+				mm.commandOnExit.Stderr = os.Stderr
+				if err := mm.commandOnExit.Run(); err != nil {
+					// Silently ignore popup close errors
+				}
 			}
 		}
 
@@ -159,6 +188,8 @@ type manageModel struct {
 	// View toggles
 	pathDisplayMode int          // 0=no paths, 1=compact (~), 2=full paths
 	commandOnExit   *exec.Cmd    // Command to run after TUI exits
+	// Change tracking
+	changesMade bool
 }
 
 // Key bindings
@@ -668,6 +699,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.lockedKeys[currentKey] = true
 						m.message = fmt.Sprintf("Locked key '%s'", currentKey)
 					}
+					m.changesMade = true
 					// Rebuild order to move locked keys to bottom
 					m.rebuildSessionsOrder()
 				}
@@ -704,6 +736,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.sessions[targetPos].Repository = currentRepo
 						m.sessions[targetPos].Description = currentDesc
 
+						m.changesMade = true
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved up"
@@ -744,6 +777,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.sessions[targetPos].Repository = currentRepo
 						m.sessions[targetPos].Description = currentDesc
 
+						m.changesMade = true
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved down"
@@ -788,6 +822,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.lockedKeys[currentKey] = true
 					m.message = fmt.Sprintf("Locked key '%s'", currentKey)
 				}
+				m.changesMade = true
 				// Rebuild order to move locked keys to bottom
 				m.rebuildSessionsOrder()
 			}
@@ -803,48 +838,12 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Quit):
-			// Auto-save on quit
-			if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
-				m.message = fmt.Sprintf("Error saving: %v", err)
-				// Show error briefly then quit
-				m.quitting = true
-				return m, tea.Quit
-			}
-
-			// Regenerate bindings
-			if err := m.manager.RegenerateBindings(); err != nil {
-				m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
-			} else {
-				// Try to reload tmux config
-				if err := reloadTmuxConfig(); err != nil {
-					m.message = "Changes saved! (Failed to auto-reload tmux: " + err.Error() + ")"
-				} else {
-					m.message = "Changes saved and tmux config reloaded!"
-				}
-			}
-
-			m.quitting = true
+			// Just quit - save happens after TUI exits
 			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.Save):
-			// Save changes
-			if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
-				m.message = fmt.Sprintf("Error saving: %v", err)
-			} else {
-				// Regenerate bindings
-				if err := m.manager.RegenerateBindings(); err != nil {
-					m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
-				} else {
-					// Try to reload tmux config
-					if err := reloadTmuxConfig(); err != nil {
-						m.message = "Changes saved! (Failed to auto-reload tmux: " + err.Error() + ")"
-					} else {
-						m.message = "Changes saved and tmux config reloaded!"
-					}
-					m.quitting = true
-					return m, tea.Quit
-				}
-			}
+			// Save and exit - save happens after TUI exits
+			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.SetKey):
 			// Enter set key mode
@@ -904,6 +903,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add to enriched projects map for immediate display
 			m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
 
+			m.changesMade = true
 			m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, m.cwdProject.Name)
 			return m, nil
 
@@ -976,6 +976,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
+					m.changesMade = true
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 				} else {
 					m.message = "Press 'e' or Enter to map this key"
@@ -992,6 +993,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Repository = ""
 					session.Description = ""
 
+					m.changesMade = true
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 				}
 			}
@@ -1504,6 +1506,8 @@ func (m *manageModel) mapKeyToCwd(targetIndex int) {
 
 	// Add to enriched projects map for immediate UI refresh
 	m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
+
+	m.changesMade = true
 
 	// Exit set key mode
 	m.setKeyMode = false
