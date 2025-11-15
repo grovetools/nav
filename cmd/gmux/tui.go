@@ -66,6 +66,7 @@ type sessionizeModel struct {
 	showClaudeSessions bool // Whether to fetch and show Claude sessions
 	showNoteCounts     bool // Whether to fetch and show note counts
 	showPlanStats      bool // Whether to show plan stats from grove-flow
+	showOnHold         bool // Whether to show on-hold plans
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 
 	// Filter mode
@@ -246,6 +247,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showClaudeSessions:       showClaudeSessions,
 		showNoteCounts:           showNoteCounts,
 		showPlanStats:            showPlanStats,
+		showOnHold:               false, // Default to hiding on-hold plans
 		pathDisplayMode:          pathDisplayMode,
 		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
@@ -643,6 +645,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterDirty = !m.filterDirty
 			// Clear text filter to make them mutually exclusive
 			m.filterInput.SetValue("")
+			m.updateFiltered()
+			m.cursor = 0
+			m.moveCursorToFirstSelectable()
+			return m, nil
+
+		case key.Matches(msg, sessionizeKeys.ToggleHold):
+			// Toggle on-hold plans visibility
+			m.showOnHold = !m.showOnHold
 			m.updateFiltered()
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
@@ -1343,6 +1353,17 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 		}
 		projectsToFilter = filtered
+	}
+
+	// Apply on-hold filter
+	if !m.showOnHold {
+		var nonHoldProjects []*manager.SessionizeProject
+		for _, p := range projectsToFilter {
+			if p.PlanStats == nil || p.PlanStats.PlanStatus != "hold" {
+				nonHoldProjects = append(nonHoldProjects, p)
+			}
+		}
+		projectsToFilter = nonHoldProjects
 	}
 
 	// Build map of active groups. A group is identified by GetGroupingKey(), which returns:

@@ -311,6 +311,15 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 				continue // Skip if it's not a valid plan
 			}
 
+			// For worktree nodes, set PlanStatus if this plan's worktree matches the node's worktree name
+			if node.IsWorktree() && plan.Config != nil && plan.Config.Worktree != "" {
+				// Get the worktree name from the node
+				worktreeName := node.GetWorktreeName()
+				if worktreeName != "" && plan.Config.Worktree == worktreeName {
+					stats.PlanStatus = plan.Config.Status
+				}
+			}
+
 			// Skip finished plans
 			if plan.Config != nil && plan.Config.Status == "finished" {
 				continue

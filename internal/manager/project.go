@@ -37,6 +37,7 @@ type PlanStats struct {
 	Todo       int
 	Hold       int
 	Abandoned  int
+	PlanStatus string `json:"plan_status,omitempty"` // Status of the plan itself (e.g., "hold", "finished")
 }
 
 // SessionizeProject is an enriched WorkspaceNode for the sessionize TUI.

@@ -26,6 +26,7 @@ type sessionizeKeyMap struct {
 	ToggleHotContext  key.Binding
 	ToggleColdContext key.Binding
 	ToggleExclude     key.Binding
+	ToggleHold        key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -71,6 +72,7 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.ToggleClaude,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
+			k.ToggleHold,
 			k.TogglePaths,
 		},
 	}
@@ -149,5 +151,9 @@ var sessionizeKeys = sessionizeKeyMap{
 	ToggleExclude: key.NewBinding(
 		key.WithKeys("x"),
 		key.WithHelp("x", "toggle exclude"),
+	),
+	ToggleHold: key.NewBinding(
+		key.WithKeys("H"),
+		key.WithHelp("H", "toggle on-hold"),
 	),
 }
