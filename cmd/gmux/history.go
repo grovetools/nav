@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -113,6 +114,76 @@ var historyCmd = &cobra.Command{
 		}
 
 		return nil
+	},
+}
+
+var historyLastCmd = &cobra.Command{
+	Use:     "last",
+	Aliases: []string{"l"},
+	Short:   "Switch to the most recently accessed project session",
+	Long:    `Switches to the most recently used project session without showing the interactive UI.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
+
+		// Fetch all known projects to validate history
+		allProjects, err := mgr.GetAvailableProjects()
+		if err != nil {
+			return fmt.Errorf("failed to get available projects: %w", err)
+		}
+		projectSet := make(map[string]struct{})
+		for _, p := range allProjects {
+			projectSet[p.Path] = struct{}{}
+		}
+
+		// Load and sort access history
+		history, err := mgr.GetAccessHistory()
+		if err != nil {
+			return fmt.Errorf("failed to load access history: %w", err)
+		}
+
+		var historyAccesses []*manager.ProjectAccess
+		for _, access := range history.Projects {
+			historyAccesses = append(historyAccesses, access)
+		}
+		sort.Slice(historyAccesses, func(i, j int) bool {
+			return historyAccesses[i].LastAccessed.After(historyAccesses[j].LastAccessed)
+		})
+
+		if len(historyAccesses) == 0 {
+			return fmt.Errorf("no session history found")
+		}
+
+		// Get current working directory to exclude it from results
+		cwd, _ := os.Getwd()
+		if cwd != "" {
+			cwd = filepath.Clean(cwd)
+		}
+
+		// Find the most recent, valid project that is NOT the current one
+		var latestProjectPath string
+		for _, access := range historyAccesses {
+			cleanPath := filepath.Clean(access.Path)
+			// Skip if this is the current directory (case-insensitive comparison for macOS)
+			if cwd != "" && strings.EqualFold(cleanPath, cwd) {
+				continue
+			}
+			if _, ok := projectSet[access.Path]; ok {
+				latestProjectPath = access.Path
+				break
+			}
+		}
+
+		if latestProjectPath == "" {
+			return fmt.Errorf("no valid recent sessions found")
+		}
+
+		// Record access again to bump it to the top of the history
+		_ = mgr.RecordProjectAccess(latestProjectPath)
+		// Sessionize will create or switch to the tmux session
+		return mgr.Sessionize(latestProjectPath)
 	},
 }
 
@@ -490,5 +561,6 @@ func formatRelativeTime(t time.Time) string {
 }
 
 func init() {
+	historyCmd.AddCommand(historyLastCmd)
 	rootCmd.AddCommand(historyCmd)
 }
