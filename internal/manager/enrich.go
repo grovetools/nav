@@ -256,6 +256,16 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 			countsByName[note.Workspace].Current++
 		case "issues":
 			countsByName[note.Workspace].Issues++
+		case "inbox":
+			countsByName[note.Workspace].Inbox++
+		case "completed":
+			countsByName[note.Workspace].Completed++
+		case "review":
+			countsByName[note.Workspace].Review++
+		case "in-progress":
+			countsByName[note.Workspace].InProgress++
+		default:
+			countsByName[note.Workspace].Other++
 		}
 	}
 
@@ -265,6 +275,7 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 // FetchPlanStatsMap fetches plan statistics for all workspaces using NotebookLocator.
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 	statsByPath := make(map[string]*PlanStats)
+	seenDirs := make(map[string]*PlanStats) // Cache for already processed directories
 
 	// 1. Initialize dependencies from grove-core
 	logger := logrus.New()
@@ -284,15 +295,23 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 
 	// 2. Process each workspace node individually
 	for _, node := range provider.All() {
-		// Get or create the stats object for this specific workspace path
-		stats := &PlanStats{}
-		statsByPath[node.Path] = stats
-
 		// 3. Get the plans directory for this specific node
 		plansRootDir, err := locator.GetPlansDir(node)
 		if err != nil {
+			statsByPath[node.Path] = &PlanStats{}
 			continue // Skip if we can't find the plans directory
 		}
+
+		// Check if we have already processed this directory
+		if cachedStats, seen := seenDirs[plansRootDir]; seen {
+			statsByPath[node.Path] = cachedStats
+			continue
+		}
+
+		// Get or create the stats object for this directory
+		stats := &PlanStats{}
+		statsByPath[node.Path] = stats
+		seenDirs[plansRootDir] = stats // Add to cache before processing
 
 		// 4. Walk the plans root directory to find individual plans
 		entries, err := os.ReadDir(plansRootDir)
@@ -302,6 +321,11 @@ func FetchPlanStatsMap() (map[string]*PlanStats, error) {
 
 		for _, entry := range entries {
 			if !entry.IsDir() {
+				continue
+			}
+
+			// Skip hidden directories (like .archive, .grove)
+			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 

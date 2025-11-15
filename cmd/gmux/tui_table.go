@@ -384,11 +384,27 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	notes := "-"
 	if m.showNoteCounts && project.NoteCounts != nil {
 		var parts []string
-		if project.NoteCounts.Current > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Accent.Render(fmt.Sprintf("C:%d", project.NoteCounts.Current)))
+		if project.NoteCounts.Inbox > 0 {
+			parts = append(parts, fmt.Sprintf("N:%d", project.NoteCounts.Inbox))
 		}
 		if project.NoteCounts.Issues > 0 {
 			parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("I:%d", project.NoteCounts.Issues)))
+		}
+		if project.NoteCounts.InProgress > 0 {
+			parts = append(parts, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("P:%d", project.NoteCounts.InProgress)))
+		}
+		if project.NoteCounts.Review > 0 {
+			pinkStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Pink)
+			parts = append(parts, pinkStyle.Render(fmt.Sprintf("R:%d", project.NoteCounts.Review)))
+		}
+		if project.NoteCounts.Current > 0 {
+			parts = append(parts, core_theme.DefaultTheme.Highlight.Render(fmt.Sprintf("C:%d", project.NoteCounts.Current)))
+		}
+		if project.NoteCounts.Completed > 0 {
+			parts = append(parts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("D:%d", project.NoteCounts.Completed)))
+		}
+		if project.NoteCounts.Other > 0 {
+			parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("O:%d", project.NoteCounts.Other)))
 		}
 		if len(parts) > 0 {
 			notes = strings.Join(parts, " ")
@@ -397,7 +413,8 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 	// --- PLANS ---
 	plans := "-"
-	if m.showPlanStats && project.PlanStats != nil {
+	// Only show plan stats for repositories, not worktrees
+	if m.showPlanStats && !project.IsWorktree() && project.PlanStats != nil {
 		formattedStats := formatPlanStats(project.PlanStats)
 		if formattedStats != "" {
 			plans = formattedStats

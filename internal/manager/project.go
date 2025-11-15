@@ -22,8 +22,13 @@ type ClaudeSessionInfo struct {
 
 // NoteCounts holds counts of notes. This is now defined locally.
 type NoteCounts struct {
-	Current int
-	Issues  int
+	Current    int
+	Issues     int
+	Inbox      int
+	Completed  int
+	Review     int
+	InProgress int
+	Other      int
 }
 
 // PlanStats holds stats about grove-flow plans. This is now defined locally.
