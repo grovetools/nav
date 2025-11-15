@@ -439,7 +439,7 @@ func (m *historyModel) View() string {
 		return ""
 	}
 	if m.help.ShowAll {
-		return m.help.View()
+		return pageStyle.Render(m.help.View())
 	}
 
 	var b strings.Builder
@@ -537,7 +537,7 @@ func (m *historyModel) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.help.View())
 
-	return b.String()
+	return pageStyle.Render(b.String())
 }
 
 // formatRelativeTime converts a time.Time to a human-readable string.

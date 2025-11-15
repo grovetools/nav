@@ -170,8 +170,8 @@ type manageModel struct {
 	quitting bool
 	message  string
 	// CWD state
-	cwdPath          string
-	cwdProject       *manager.SessionizeProject
+	cwdPath    string
+	cwdProject *manager.SessionizeProject
 	// Enriched data
 	enrichedProjects  map[string]*manager.SessionizeProject // Caches enriched data by path
 	enrichmentLoading map[string]bool                       // tracks which enrichments are currently loading
@@ -186,8 +186,8 @@ type manageModel struct {
 	usedCache    bool
 	spinnerFrame int
 	// View toggles
-	pathDisplayMode int          // 0=no paths, 1=compact (~), 2=full paths
-	commandOnExit   *exec.Cmd    // Command to run after TUI exits
+	pathDisplayMode int       // 0=no paths, 1=compact (~), 2=full paths
+	commandOnExit   *exec.Cmd // Command to run after TUI exits
 	// Change tracking
 	changesMade bool
 }
@@ -429,7 +429,6 @@ func enrichCwdProjectCmd(cwdPath string) tea.Cmd {
 		}}
 	}
 }
-
 
 func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -1024,7 +1023,7 @@ func (m *manageModel) View() string {
 
 	// If help is visible, show it and return
 	if m.help.ShowAll {
-		return m.help.View()
+		return pageStyle.Render(m.help.View())
 	}
 
 	var b strings.Builder
@@ -1441,7 +1440,7 @@ func (m *manageModel) View() string {
 	}
 	b.WriteString(m.help.View() + modeIndicator)
 
-	return b.String()
+	return pageStyle.Render(b.String())
 }
 
 // rebuildSessionsOrder ensures locked keys are always at the bottom

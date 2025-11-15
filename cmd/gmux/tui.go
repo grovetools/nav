@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -26,6 +26,8 @@ import (
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 )
 
+var pageStyle = lipgloss.NewStyle().Padding(1, 2)
+
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects                 []*manager.SessionizeProject
@@ -36,14 +38,14 @@ type sessionizeModel struct {
 	filterInput              textinput.Model
 	searchPaths              []string
 	manager                  *tmux.Manager
-	configDir                string                        // configuration directory
-	keyMap                   map[string]string             // path -> key mapping
+	configDir                string            // configuration directory
+	keyMap                   map[string]string // path -> key mapping
 	runningSessions          map[string]bool   // map[sessionName] -> true
 	claudeStatusMap          map[string]string // path -> claude session status mapping
 	claudeDurationMap        map[string]string // path -> claude session state duration mapping
 	claudeDurationSecondsMap map[string]int    // path -> claude session state duration in seconds
 	hasGroveHooks            bool              // whether grove-hooks is available
-	currentSession           string                        // name of the current tmux session
+	currentSession           string            // name of the current tmux session
 	width                    int
 	height                   int
 	// Key editing mode
@@ -54,7 +56,7 @@ type sessionizeModel struct {
 	help          help.Model
 
 	// Focus mode state
-	ecosystemPickerMode bool                          // True when showing only ecosystems for selection
+	ecosystemPickerMode bool // True when showing only ecosystems for selection
 	focusedProject      *manager.SessionizeProject
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
 
@@ -77,10 +79,10 @@ type sessionizeModel struct {
 	statusTimeout time.Time
 
 	// Loading state
-	isLoading     bool
-	usedCache     bool      // Whether we loaded from cache on startup
-	spinnerFrame  int       // Current frame of the spinner animation
-	lastSpinTime  time.Time // Last time spinner was updated
+	isLoading    bool
+	usedCache    bool      // Whether we loaded from cache on startup
+	spinnerFrame int       // Current frame of the spinner animation
+	lastSpinTime time.Time // Last time spinner was updated
 
 	// Enrichment loading state
 	enrichmentLoading map[string]bool // tracks which enrichments are currently loading
@@ -88,6 +90,7 @@ type sessionizeModel struct {
 	// Context rules state
 	rulesState map[string]grovecontext.RuleStatus // path -> status
 }
+
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
@@ -333,6 +336,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 
 	return tea.Batch(cmds...)
 }
+
 // moveCursorUp moves the cursor up, skipping context-only (non-selectable) items
 func (m *sessionizeModel) moveCursorUp() {
 	if m.cursor <= 0 {
@@ -762,7 +766,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Let filter input handle all other keys when focused
 				prevValue := m.filterInput.Value()
 				m.filterInput, cmd = m.filterInput.Update(msg)
-				
+
 				// If the filter changed, update filtered list
 				if m.filterInput.Value() != prevValue {
 					m.updateFiltered()
@@ -1619,7 +1623,7 @@ func (m *sessionizeModel) updateFiltered() {
 			// First, find all matches
 			for _, p := range projectsToFilter {
 				if strings.Contains(strings.ToLower(p.Name), filter) ||
-				   strings.Contains(strings.ToLower(p.Path), filter) {
+					strings.Contains(strings.ToLower(p.Path), filter) {
 					matchedPaths[p.Path] = true
 
 					// Walk up hierarchy to include all ancestors for context
@@ -1670,7 +1674,7 @@ func (m *sessionizeModel) updateFiltered() {
 			// Clear context-only paths (only used in focus mode)
 			m.contextOnlyPaths = make(map[string]bool)
 
-			matchedParents := make(map[string]bool) // Track which parent projects matched
+			matchedParents := make(map[string]bool)               // Track which parent projects matched
 			parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
 
 			// First pass: find matching parent projects (search name only)
@@ -1683,7 +1687,7 @@ func (m *sessionizeModel) updateFiltered() {
 
 				// Check if this parent project matches the filter (name only, not full path)
 				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-				   strings.Contains(lowerName, filter) {
+					strings.Contains(lowerName, filter) {
 					matchedParents[p.Path] = true
 				}
 			}
@@ -1699,7 +1703,7 @@ func (m *sessionizeModel) updateFiltered() {
 
 				// Check if this worktree matches the filter (name only, not full path)
 				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-				   strings.Contains(lowerName, filter) {
+					strings.Contains(lowerName, filter) {
 					// Mark parent for inclusion even if parent didn't match directly
 					parentsWithMatchingWorktrees[p.ParentProjectPath] = true
 				}
@@ -1788,12 +1792,12 @@ func (m *sessionizeModel) updateFiltered() {
 func (m sessionizeModel) View() string {
 	// If help is visible, show it and return
 	if m.help.ShowAll {
-		return m.help.View()
+		return pageStyle.Render(m.help.View())
 	}
 
 	// Show key editing mode if active
 	if m.editingKeys {
-		return m.viewKeyEditor()
+		return pageStyle.Render(m.viewKeyEditor())
 	}
 
 	var b strings.Builder
@@ -1913,7 +1917,7 @@ func (m sessionizeModel) View() string {
 		b.WriteString(core_theme.DefaultTheme.Muted.Render(pathsDisplay))
 	}
 
-	return b.String()
+	return pageStyle.Render(b.String())
 }
 
 func (m sessionizeModel) viewKeyEditor() string {
