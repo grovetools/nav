@@ -48,17 +48,17 @@ func formatChanges(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus)
 
 	if hasMainDivergence {
 		if status.AheadMainCount > 0 {
-			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s%d", core_theme.IconArrowUp, status.AheadMainCount)))
 		}
 		if status.BehindMainCount > 0 {
-			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s%d", core_theme.IconArrowDown, status.BehindMainCount)))
 		}
 	} else if status.HasUpstream {
 		if status.AheadCount > 0 {
-			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
+			changes = append(changes, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s%d", core_theme.IconArrowUp, status.AheadCount)))
 		}
 		if status.BehindCount > 0 {
-			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
+			changes = append(changes, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s%d", core_theme.IconArrowDown, status.BehindCount)))
 		}
 	}
 
@@ -88,10 +88,10 @@ func formatChanges(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus)
 	if !status.IsDirty && changesStr == "" {
 		if status.HasUpstream {
 			// Clean with upstream: show green checkmark
-			return core_theme.DefaultTheme.Success.Render("✓")
+			return core_theme.DefaultTheme.Success.Render(core_theme.IconSuccess)
 		} else {
 			// Clean without upstream: show green empty circle
-			return core_theme.DefaultTheme.Success.Render("○")
+			return core_theme.DefaultTheme.Success.Render(core_theme.IconStatusTodo)
 		}
 	}
 
@@ -107,7 +107,7 @@ func formatPlanStats(stats *manager.PlanStats) string {
 
 	var parts []string
 
-	// Show total plans count
+	// Show total plans count (icon is in header)
 	totalPlansStr := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("(%d)", stats.TotalPlans))
 	parts = append(parts, totalPlansStr)
 
@@ -119,25 +119,25 @@ func formatPlanStats(stats *manager.PlanStats) string {
 		// Show job stats for active plan
 		var jobStats []string
 		if stats.Running > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("◐ %d", stats.Running)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s %d", core_theme.IconStatusRunning, stats.Running)))
 		}
 		if stats.Hold > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("⏸ %d", stats.Hold)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("%s %d", core_theme.IconStatusHold, stats.Hold)))
 		}
 		if stats.Todo > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("○ %d", stats.Todo)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("%s %d", core_theme.IconStatusTodo, stats.Todo)))
 		}
 		if stats.Pending > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("○ %d", stats.Pending)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("%s %d", core_theme.IconStatusPendingUser, stats.Pending)))
 		}
 		if stats.Completed > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("● %d", stats.Completed)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("%s %d", core_theme.IconStatusCompleted, stats.Completed)))
 		}
 		if stats.Failed > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("✗ %d", stats.Failed)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s %d", core_theme.IconStatusFailed, stats.Failed)))
 		}
 		if stats.Abandoned > 0 {
-			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("⊗ %d", stats.Abandoned)))
+			jobStats = append(jobStats, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("%s %d", core_theme.IconStatusAbandoned, stats.Abandoned)))
 		}
 
 		if len(jobStats) > 0 {

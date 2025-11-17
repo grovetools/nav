@@ -1861,10 +1861,10 @@ func (m sessionizeModel) View() string {
 
 	// Icon legend
 	legendStyle := core_theme.DefaultTheme.Muted
-	currentIcon := core_theme.DefaultTheme.Info.Render("●")
-	activeIcon := core_theme.DefaultTheme.Highlight.Render("●")
-	legend := fmt.Sprintf("Icons: %s current • %s active • %s ecosystem • %s repo • %s eco-worktree • %s worktree • %s branch",
-		currentIcon, activeIcon, "◆", "●", "◇", "⑂", "⎇")
+	currentIcon := core_theme.DefaultTheme.Info.Render(core_theme.IconBullet)
+	activeIcon := core_theme.DefaultTheme.Highlight.Render(core_theme.IconBullet)
+	legend := fmt.Sprintf("Icons: %s current • %s active • %s ecosystem • %s repo • %s worktree • %s branch",
+		currentIcon, activeIcon, core_theme.IconEcosystem, core_theme.IconRepo, core_theme.IconWorktree, core_theme.IconGitBranch)
 	b.WriteString("\n" + legendStyle.Render(legend))
 
 	// Help text
@@ -2041,7 +2041,7 @@ func (m sessionizeModel) viewKeyEditor() string {
 
 		// Selection indicator
 		if i == m.keyCursor {
-			b.WriteString(core_theme.DefaultTheme.Highlight.Render("▶ "))
+			b.WriteString(core_theme.DefaultTheme.Highlight.Render(core_theme.IconSelect + " "))
 		} else {
 			b.WriteString("  ")
 		}
@@ -2068,7 +2068,7 @@ func (m sessionizeModel) viewKeyEditor() string {
 
 		// Mark current
 		if d.isCurrent {
-			b.WriteString(core_theme.DefaultTheme.Warning.Render(" ← current"))
+			b.WriteString(core_theme.DefaultTheme.Warning.Render(" " + core_theme.IconArrowLeft + " current"))
 		}
 
 		b.WriteString("\n")

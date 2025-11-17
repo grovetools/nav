@@ -1050,7 +1050,7 @@ func (m *manageModel) View() string {
 	}
 
 	// Build table data with dynamic headers
-	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 
 	gitHeader := "Git"
@@ -1104,7 +1104,7 @@ func (m *manageModel) View() string {
 					worktreeIcon := ""
 					switch projInfo.Kind {
 					case workspace.KindEcosystemWorktree:
-						worktreeIcon = core_theme.IconEcosystemWorktree
+						worktreeIcon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
 					default:
 						worktreeIcon = core_theme.IconWorktree
 					}
@@ -1262,7 +1262,7 @@ func (m *manageModel) View() string {
 					worktreeIcon := ""
 					switch projInfo.Kind {
 					case workspace.KindEcosystemWorktree:
-						worktreeIcon = core_theme.IconEcosystemWorktree
+						worktreeIcon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
 					default:
 						worktreeIcon = core_theme.IconWorktree
 					}
@@ -1532,16 +1532,16 @@ func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
 	var statusStyle lipgloss.Style
 	switch session.Status {
 	case "running":
-		statusSymbol = "▶"
+		statusSymbol = core_theme.IconRunning
 		statusStyle = core_theme.DefaultTheme.Success
 	case "idle":
-		statusSymbol = "⏸"
+		statusSymbol = core_theme.IconStatusHold
 		statusStyle = core_theme.DefaultTheme.Warning
 	case "completed":
-		statusSymbol = "✓"
+		statusSymbol = core_theme.IconSuccess
 		statusStyle = core_theme.DefaultTheme.Info
 	case "failed", "error":
-		statusSymbol = "✗"
+		statusSymbol = core_theme.IconError
 		statusStyle = core_theme.DefaultTheme.Error
 	default:
 		return ""
@@ -1564,16 +1564,16 @@ func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
 
 	var jobStats []string
 	if stats.Running > 0 {
-		jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("◐ %d", stats.Running)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s %d", core_theme.IconStatusRunning, stats.Running)))
 	}
 	if stats.Pending > 0 {
-		jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("○ %d", stats.Pending)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("%s %d", core_theme.IconStatusPendingUser, stats.Pending)))
 	}
 	if stats.Completed > 0 {
-		jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("● %d", stats.Completed)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("%s %d", core_theme.IconStatusCompleted, stats.Completed)))
 	}
 	if stats.Failed > 0 {
-		jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("✗ %d", stats.Failed)))
+		jobStats = append(jobStats, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s %d", core_theme.IconStatusFailed, stats.Failed)))
 	}
 
 	return strings.Join(jobStats, " ")
@@ -1621,9 +1621,9 @@ func formatGitStatusPlain(status *git.StatusInfo, extStatus *manager.ExtendedGit
 	// If repo is clean (no changes)
 	if !status.IsDirty && changesStr == "" {
 		if status.HasUpstream {
-			return "✓"
+			return core_theme.IconSuccess
 		} else {
-			return "○"
+			return core_theme.IconStatusTodo
 		}
 	}
 
@@ -1639,13 +1639,13 @@ func formatClaudeStatusPlain(session *manager.ClaudeSessionInfo) string {
 	statusSymbol := ""
 	switch session.Status {
 	case "running":
-		statusSymbol = "▶"
+		statusSymbol = core_theme.IconRunning
 	case "idle":
-		statusSymbol = "⏸"
+		statusSymbol = core_theme.IconStatusHold
 	case "completed":
-		statusSymbol = "✓"
+		statusSymbol = core_theme.IconSuccess
 	case "failed", "error":
-		statusSymbol = "✗"
+		statusSymbol = core_theme.IconError
 	default:
 		return ""
 	}

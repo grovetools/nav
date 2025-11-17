@@ -446,7 +446,7 @@ func (m *historyModel) View() string {
 	var b strings.Builder
 	b.WriteString(core_theme.DefaultTheme.Header.Render("Session History"))
 	if m.isLoading {
-		spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 		b.WriteString(" " + spinner)
 	}

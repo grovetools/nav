@@ -63,39 +63,39 @@ func (m sessionizeModel) renderTable() string {
 	headers := []string{"K", "S", "CX", "WORKSPACE"}
 
 	// Get spinner for animation
-	spinnerFrames := []string{"◐", "◓", "◑", "◒"}
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 
 	if m.showBranch {
-		headers = append(headers, "BRANCH")
+		headers = append(headers, core_theme.IconGitBranch+" BRANCH")
 	}
 	if m.showGitStatus {
-		gitHeader := "GIT"
-		changesHeader := "CHANGES"
+		gitHeader := core_theme.IconGit + " GIT"
+		changesHeader := core_theme.IconGit + " CHANGES"
 		if m.enrichmentLoading["git"] {
-			gitHeader = "GIT " + spinner
-			changesHeader = "CHANGES " + spinner
+			gitHeader = core_theme.IconGit + " GIT " + spinner
+			changesHeader = core_theme.IconGit + " CHANGES " + spinner
 		}
 		headers = append(headers, gitHeader, changesHeader)
 	}
 	if m.showNoteCounts {
-		notesHeader := "NOTES"
+		notesHeader := core_theme.IconNote + " NOTES"
 		if m.enrichmentLoading["notes"] {
-			notesHeader = "NOTES " + spinner
+			notesHeader = core_theme.IconNote + " NOTES " + spinner
 		}
 		headers = append(headers, notesHeader)
 	}
 	if m.showPlanStats {
-		plansHeader := "PLANS"
+		plansHeader := core_theme.IconPlan + " PLANS"
 		if m.enrichmentLoading["plans"] {
-			plansHeader = "PLANS " + spinner
+			plansHeader = core_theme.IconPlan + " PLANS " + spinner
 		}
 		headers = append(headers, plansHeader)
 	}
 	if m.showClaudeSessions {
-		claudeHeader := "CLAUDE"
+		claudeHeader := core_theme.IconInteractiveAgent + " CLAUDE"
 		if m.enrichmentLoading["claude"] {
-			claudeHeader = "CLAUDE " + spinner
+			claudeHeader = core_theme.IconInteractiveAgent + " CLAUDE " + spinner
 		}
 		headers = append(headers, claudeHeader)
 	}
@@ -203,7 +203,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	case workspace.KindEcosystemRoot:
 		icon = core_theme.IconEcosystem
 	case workspace.KindEcosystemWorktree:
-		icon = core_theme.IconEcosystemWorktree
+		icon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
 	case workspace.KindStandaloneProjectWorktree,
 		workspace.KindEcosystemSubProjectWorktree,
 		workspace.KindEcosystemWorktreeSubProjectWorktree:
@@ -278,7 +278,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	// --- STATUS ---
 	statusIndicator := ""
 	if sessionExists {
-		statusIndicator = core_theme.DefaultTheme.Success.Render("■")
+		statusIndicator = core_theme.DefaultTheme.Success.Render(core_theme.IconBullet)
 	} else {
 		statusIndicator = core_theme.DefaultTheme.Muted.Render("-")
 	}
@@ -385,26 +385,26 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	if m.showNoteCounts && project.NoteCounts != nil {
 		var parts []string
 		if project.NoteCounts.Inbox > 0 {
-			parts = append(parts, fmt.Sprintf("N:%d", project.NoteCounts.Inbox))
+			parts = append(parts, fmt.Sprintf("%s %d", core_theme.IconNoteInbox, project.NoteCounts.Inbox))
 		}
 		if project.NoteCounts.Issues > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("I:%d", project.NoteCounts.Issues)))
+			parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s %d", core_theme.IconNoteIssues, project.NoteCounts.Issues)))
 		}
 		if project.NoteCounts.InProgress > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("P:%d", project.NoteCounts.InProgress)))
+			parts = append(parts, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("%s %d", core_theme.IconNoteInProgress, project.NoteCounts.InProgress)))
 		}
 		if project.NoteCounts.Review > 0 {
 			pinkStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Pink)
-			parts = append(parts, pinkStyle.Render(fmt.Sprintf("R:%d", project.NoteCounts.Review)))
+			parts = append(parts, pinkStyle.Render(fmt.Sprintf("%s %d", core_theme.IconNoteReview, project.NoteCounts.Review)))
 		}
 		if project.NoteCounts.Current > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Highlight.Render(fmt.Sprintf("C:%d", project.NoteCounts.Current)))
+			parts = append(parts, core_theme.DefaultTheme.Highlight.Render(fmt.Sprintf("%s %d", core_theme.IconNoteCurrent, project.NoteCounts.Current)))
 		}
 		if project.NoteCounts.Completed > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("D:%d", project.NoteCounts.Completed)))
+			parts = append(parts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("%s %d", core_theme.IconNoteCompleted, project.NoteCounts.Completed)))
 		}
 		if project.NoteCounts.Other > 0 {
-			parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("O:%d", project.NoteCounts.Other)))
+			parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("%s %d", core_theme.IconNote, project.NoteCounts.Other)))
 		}
 		if len(parts) > 0 {
 			notes = strings.Join(parts, " ")
@@ -430,16 +430,16 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 			var statusStyle lipgloss.Style
 			switch project.ClaudeSession.Status {
 			case "running":
-				statusSymbol = "▶"
+				statusSymbol = core_theme.IconRunning
 				statusStyle = core_theme.DefaultTheme.Success
 			case "idle":
-				statusSymbol = "⏸"
+				statusSymbol = core_theme.IconStatusHold
 				statusStyle = core_theme.DefaultTheme.Warning
 			case "completed":
-				statusSymbol = "✓"
+				statusSymbol = core_theme.IconSuccess
 				statusStyle = core_theme.DefaultTheme.Info
 			case "failed", "error":
-				statusSymbol = "✗"
+				statusSymbol = core_theme.IconError
 				statusStyle = core_theme.DefaultTheme.Error
 			default:
 				statusStyle = core_theme.DefaultTheme.Muted
@@ -461,16 +461,16 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 				var statusStyle lipgloss.Style
 				switch claudeStatus {
 				case "running":
-					statusSymbol = "▶"
+					statusSymbol = core_theme.IconRunning
 					statusStyle = core_theme.DefaultTheme.Success
 				case "idle":
-					statusSymbol = "⏸"
+					statusSymbol = core_theme.IconStatusHold
 					statusStyle = core_theme.DefaultTheme.Warning
 				case "completed":
-					statusSymbol = "✓"
+					statusSymbol = core_theme.IconSuccess
 					statusStyle = core_theme.DefaultTheme.Info
 				case "failed", "error":
-					statusSymbol = "✗"
+					statusSymbol = core_theme.IconError
 					statusStyle = core_theme.DefaultTheme.Error
 				default:
 					statusStyle = core_theme.DefaultTheme.Muted
@@ -495,16 +495,16 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 						var statusStyle lipgloss.Style
 						switch claudeStatus {
 						case "running":
-							statusSymbol = "▶"
+							statusSymbol = core_theme.IconRunning
 							statusStyle = core_theme.DefaultTheme.Success
 						case "idle":
-							statusSymbol = "⏸"
+							statusSymbol = core_theme.IconStatusHold
 							statusStyle = core_theme.DefaultTheme.Warning
 						case "completed":
-							statusSymbol = "✓"
+							statusSymbol = core_theme.IconSuccess
 							statusStyle = core_theme.DefaultTheme.Info
 						case "failed", "error":
-							statusSymbol = "✗"
+							statusSymbol = core_theme.IconError
 							statusStyle = core_theme.DefaultTheme.Error
 						default:
 							statusStyle = core_theme.DefaultTheme.Muted
