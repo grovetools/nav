@@ -16,10 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	// This variable will be shared by listCmd and keyListCmd
-	listStyle string
-)
+// (listStyle is now declared in main.go)
 
 var keyCmd = &cobra.Command{
 	Use:   "key",

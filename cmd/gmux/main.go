@@ -14,6 +14,7 @@ import (
 
 var (
 	configDir string
+	listStyle string // Shared by listCmd and keyListCmd
 )
 
 var rootCmd = &cobra.Command{
