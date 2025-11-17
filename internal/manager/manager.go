@@ -313,17 +313,18 @@ func (m *Manager) GetAvailableProjectsSorted() ([]DiscoveredProject, error) {
 	}
 
 	// Load access history and sort projects
-	history, err := LoadAccessHistory(m.configDir)
+	history, err := workspace.LoadAccessHistory(m.configDir)
 	if err != nil {
 		// If we can't load history, just return unsorted
 		return projects, nil
 	}
 
-	return history.SortProjectsByAccess(projects), nil
+	// Use local SortProjectsByAccess which understands SessionizeProject
+	return SortProjectsByAccess(history, projects), nil
 }
 
 func (m *Manager) RecordProjectAccess(path string) error {
-	history, err := LoadAccessHistory(m.configDir)
+	history, err := workspace.LoadAccessHistory(m.configDir)
 	if err != nil {
 		return err
 	}
@@ -332,8 +333,8 @@ func (m *Manager) RecordProjectAccess(path string) error {
 	return history.Save(m.configDir)
 }
 
-func (m *Manager) GetAccessHistory() (*AccessHistory, error) {
-	return LoadAccessHistory(m.configDir)
+func (m *Manager) GetAccessHistory() (*workspace.AccessHistory, error) {
+	return workspace.LoadAccessHistory(m.configDir)
 }
 
 // GetEnabledSearchPaths is deprecated as search paths are now managed

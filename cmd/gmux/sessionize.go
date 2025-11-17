@@ -113,7 +113,7 @@ var sessionizeCmd = &cobra.Command{
 
 			// Sort by access history
 			if history, err := mgr.GetAccessHistory(); err == nil {
-				projects = history.SortProjectsByAccess(projects)
+				projects = manager.SortProjectsByAccess(history, projects)
 			}
 		}
 

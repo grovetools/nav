@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/tui/keymap"
@@ -27,7 +28,7 @@ const mutedThreshold = 7 * 24 * time.Hour // 1 week
 // historyItem holds a project and its last access time.
 type historyItem struct {
 	project *manager.SessionizeProject
-	access  *manager.ProjectAccess
+	access  *workspace.ProjectAccess
 }
 
 var historyCmd = &cobra.Command{
@@ -57,7 +58,7 @@ var historyCmd = &cobra.Command{
 			return fmt.Errorf("failed to load access history: %w", err)
 		}
 
-		var historyAccesses []*manager.ProjectAccess
+		var historyAccesses []*workspace.ProjectAccess
 		for _, access := range history.Projects {
 			historyAccesses = append(historyAccesses, access)
 		}
@@ -144,7 +145,7 @@ var historyLastCmd = &cobra.Command{
 			return fmt.Errorf("failed to load access history: %w", err)
 		}
 
-		var historyAccesses []*manager.ProjectAccess
+		var historyAccesses []*workspace.ProjectAccess
 		for _, access := range history.Projects {
 			historyAccesses = append(historyAccesses, access)
 		}

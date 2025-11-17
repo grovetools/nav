@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 )
 
@@ -67,7 +68,7 @@ func (m *Manager) RecordProjectAccess(path string) error {
 }
 
 // GetAccessHistory returns the project access history
-func (m *Manager) GetAccessHistory() (*manager.AccessHistory, error) {
+func (m *Manager) GetAccessHistory() (*workspace.AccessHistory, error) {
 	return m.mgr.GetAccessHistory()
 }
 

@@ -200,7 +200,7 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 
 		// Sort by access history
 		if history, err := mgr.GetAccessHistory(); err == nil {
-			projects = history.SortProjectsByAccess(projects)
+			projects = manager.SortProjectsByAccess(history, projects)
 		}
 
 		// Convert to pointers
