@@ -6,7 +6,8 @@ package manager
 // This struct now only contains static configuration specific to gmux itself.
 // Project discovery is now handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
-	AvailableKeys []string `yaml:"available_keys"`
+	AvailableKeys          []string `yaml:"available_keys"`
+	ShowChildProcesses     bool     `yaml:"show_child_processes,omitempty"`     // Enable child process detection in window selector
 }
 
 // TmuxSessionsFile represents the sessions file stored in ~/.config/grove/gmux/sessions.yml

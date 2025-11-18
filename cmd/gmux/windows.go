@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,7 +17,9 @@ import (
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/keymap"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
+	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var windowsCmd = &cobra.Command{
@@ -33,7 +37,13 @@ var windowsCmd = &cobra.Command{
 			return fmt.Errorf("not in a tmux session or failed to get session name: %w", err)
 		}
 
-		m := newWindowsModel(client, sessionName)
+		// Load config to check if child process detection is enabled (default: false)
+		showChildProcesses := false
+		if tmuxCfg, err := loadTmuxConfig(); err == nil && tmuxCfg != nil {
+			showChildProcesses = tmuxCfg.ShowChildProcesses
+		}
+
+		m := newWindowsModel(client, sessionName, showChildProcesses)
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		finalModel, err := p.Run()
 		if err != nil {
@@ -56,21 +66,23 @@ var windowsCmd = &cobra.Command{
 // --- Bubbletea Model ---
 
 type windowsModel struct {
-	client          *tmuxclient.Client
-	sessionName     string
-	windows         []tmuxclient.Window
-	filteredWindows []tmuxclient.Window
-	cursor          int
-	help            help.Model
-	keys            windowsKeyMap
-	filterInput     textinput.Model
-	renameInput     textinput.Model
-	mode            string // "normal", "filter", "rename"
-	selectedWindow  *tmuxclient.Window
-	quitting        bool
-	width, height   int
-	err             error
-	preview         string
+	client             *tmuxclient.Client
+	sessionName        string
+	windows            []tmuxclient.Window
+	filteredWindows    []tmuxclient.Window
+	cursor             int
+	help               help.Model
+	keys               windowsKeyMap
+	filterInput        textinput.Model
+	renameInput        textinput.Model
+	mode               string // "normal", "filter", "rename"
+	selectedWindow     *tmuxclient.Window
+	quitting           bool
+	width, height      int
+	err                error
+	preview            string
+	processCache       map[int]string // Cache PID -> process name mapping
+	showChildProcesses bool           // Whether to detect child processes
 }
 
 type windowsKeyMap struct {
@@ -152,7 +164,7 @@ func fetchPreviewCmd(client *tmuxclient.Client, sessionName string, windowIndex 
 	}
 }
 
-func newWindowsModel(client *tmuxclient.Client, sessionName string) windowsModel {
+func newWindowsModel(client *tmuxclient.Client, sessionName string, showChildProcesses bool) windowsModel {
 	filterInput := textinput.New()
 	filterInput.Placeholder = "Filter by name..."
 	filterInput.CharLimit = 64
@@ -162,13 +174,14 @@ func newWindowsModel(client *tmuxclient.Client, sessionName string) windowsModel
 	renameInput.CharLimit = 128
 
 	return windowsModel{
-		client:      client,
-		sessionName: sessionName,
-		keys:        windowsKeys,
-		help:        help.New(windowsKeys),
-		filterInput: filterInput,
-		renameInput: renameInput,
-		mode:        "normal",
+		client:             client,
+		sessionName:        sessionName,
+		keys:               windowsKeys,
+		help:               help.New(windowsKeys),
+		filterInput:        filterInput,
+		renameInput:        renameInput,
+		mode:               "normal",
+		showChildProcesses: showChildProcesses,
 	}
 }
 
@@ -186,6 +199,10 @@ func (m windowsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case windowsLoadedMsg:
 		m.windows = msg.windows
+		// Build process cache once for all windows (if enabled)
+		if m.showChildProcesses {
+			m.processCache = buildProcessCache(m.windows)
+		}
 		m.applyFilter()
 		// Fetch preview for first window
 		if len(m.filteredWindows) > 0 {
@@ -297,13 +314,19 @@ func (m windowsModel) View() string {
 			name += "*"
 		}
 
-		// Show process name in muted style (skip generic shells/wrappers)
+		// Show process name in muted style
 		line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
 
+		// Get cached process name or fall back to current command
+		processName := m.processCache[win.PID]
+		if processName == "" {
+			processName = win.Command
+		}
+
 		// Only show command if it's not a generic shell or wrapper
-		if shouldShowCommand(win.Command) {
+		if shouldShowCommand(processName) {
 			processStyle := core_theme.DefaultTheme.Muted
-			line += " " + processStyle.Render(fmt.Sprintf("[%s]", win.Command))
+			line += " " + processStyle.Render(fmt.Sprintf("[%s]", processName))
 		}
 
 		listBuilder.WriteString(line)
@@ -530,6 +553,28 @@ func getIconForWindow(w tmuxclient.Window) string {
 	}
 
 	return " "
+}
+
+func loadTmuxConfig() (*manager.TmuxConfig, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	groveConfigPath := filepath.Join(homeDir, ".grove", "grove.yml")
+	data, err := os.ReadFile(groveConfigPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var rawConfig struct {
+		Tmux *manager.TmuxConfig `yaml:"tmux"`
+	}
+	if err := yaml.Unmarshal(data, &rawConfig); err != nil {
+		return nil, err
+	}
+
+	return rawConfig.Tmux, nil
 }
 
 func init() {
