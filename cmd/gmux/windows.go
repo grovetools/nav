@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/tui/components/help"
 	"github.com/mattsolo1/grove-core/tui/keymap"
@@ -69,6 +70,7 @@ type windowsModel struct {
 	quitting        bool
 	width, height   int
 	err             error
+	preview         string
 }
 
 type windowsKeyMap struct {
@@ -120,6 +122,9 @@ var windowsKeys = windowsKeyMap{
 type windowsLoadedMsg struct {
 	windows []tmuxclient.Window
 }
+type previewLoadedMsg struct {
+	preview string
+}
 type errorMsg struct{ err error }
 
 func fetchWindowsCmd(client *tmuxclient.Client, sessionName string) tea.Cmd {
@@ -133,6 +138,17 @@ func fetchWindowsCmd(client *tmuxclient.Client, sessionName string) tea.Cmd {
 			return windows[i].Index < windows[j].Index
 		})
 		return windowsLoadedMsg{windows}
+	}
+}
+
+func fetchPreviewCmd(client *tmuxclient.Client, sessionName string, windowIndex int) tea.Cmd {
+	return func() tea.Msg {
+		target := fmt.Sprintf("%s:%d", sessionName, windowIndex)
+		preview, err := client.CapturePane(context.Background(), target)
+		if err != nil {
+			return previewLoadedMsg{preview: fmt.Sprintf("Error: %v", err)}
+		}
+		return previewLoadedMsg{preview: preview}
 	}
 }
 
@@ -171,6 +187,14 @@ func (m windowsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case windowsLoadedMsg:
 		m.windows = msg.windows
 		m.applyFilter()
+		// Fetch preview for first window
+		if len(m.filteredWindows) > 0 {
+			return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[0].Index)
+		}
+		return m, nil
+
+	case previewLoadedMsg:
+		m.preview = msg.preview
 		return m, nil
 
 	case errorMsg:
@@ -204,9 +228,17 @@ func (m windowsModel) View() string {
 		return fmt.Sprintf("Error: %v\n", m.err)
 	}
 
-	var b strings.Builder
-	b.WriteString(core_theme.DefaultTheme.Header.Render("Window Selector"))
-	b.WriteString("\n\n")
+	// Calculate layout: 30% for list, 70% for preview
+	listWidth := m.width * 30 / 100
+	if listWidth < 20 {
+		listWidth = 20
+	}
+	previewWidth := m.width - listWidth - 1 // -1 for separator
+
+	// Build window list
+	var listBuilder strings.Builder
+	listBuilder.WriteString(core_theme.DefaultTheme.Header.Render("Window Selector"))
+	listBuilder.WriteString("\n\n")
 
 	for i, win := range m.filteredWindows {
 		cursor := " "
@@ -222,23 +254,47 @@ func (m windowsModel) View() string {
 		}
 
 		line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
-		b.WriteString(line)
-		b.WriteString("\n")
+		listBuilder.WriteString(line)
+		listBuilder.WriteString("\n")
 	}
 
-	b.WriteString("\n")
+	listBuilder.WriteString("\n")
 
-	// Footer
+	// Footer for list
 	switch m.mode {
 	case "filter":
-		b.WriteString("Filter: " + m.filterInput.View())
+		listBuilder.WriteString("Filter: " + m.filterInput.View())
 	case "rename":
-		b.WriteString("Rename: " + m.renameInput.View())
+		listBuilder.WriteString("Rename: " + m.renameInput.View())
 	default:
-		b.WriteString(m.help.View())
+		listBuilder.WriteString(m.help.View())
 	}
 
-	return pageStyle.Render(b.String())
+	// Build preview panel
+	var previewBuilder strings.Builder
+	previewBuilder.WriteString(core_theme.DefaultTheme.Header.Render("Preview"))
+	previewBuilder.WriteString("\n\n")
+
+	// Wrap preview content
+	previewLines := strings.Split(m.preview, "\n")
+	for _, line := range previewLines {
+		if len(line) > previewWidth {
+			previewBuilder.WriteString(line[:previewWidth])
+		} else {
+			previewBuilder.WriteString(line)
+		}
+		previewBuilder.WriteString("\n")
+	}
+
+	// Use lipgloss to create side-by-side layout
+	listStyle := lipgloss.NewStyle().Width(listWidth)
+	previewStyle := lipgloss.NewStyle().Width(previewWidth)
+
+	return lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		listStyle.Render(listBuilder.String()),
+		previewStyle.Render(previewBuilder.String()),
+	)
 }
 
 func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -246,10 +302,16 @@ func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
+			if m.cursor < len(m.filteredWindows) {
+				return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[m.cursor].Index)
+			}
 		}
 	case key.Matches(msg, m.keys.Down):
 		if m.cursor < len(m.filteredWindows)-1 {
 			m.cursor++
+			if m.cursor < len(m.filteredWindows) {
+				return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[m.cursor].Index)
+			}
 		}
 	case key.Matches(msg, m.keys.Filter):
 		m.mode = "filter"
