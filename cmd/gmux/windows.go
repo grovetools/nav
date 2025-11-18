@@ -376,11 +376,13 @@ func (m windowsModel) View() string {
 	listStyle := lipgloss.NewStyle().Width(listWidth).Height(m.height)
 	previewStyle := lipgloss.NewStyle().Width(previewWidth).Height(m.height)
 
-	return lipgloss.JoinHorizontal(
+	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		listStyle.Render(listBuilder.String()),
 		previewStyle.Render(previewBuilder.String()),
 	)
+
+	return pageStyle.Render(content)
 }
 
 func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
