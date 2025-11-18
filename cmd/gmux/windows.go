@@ -362,19 +362,23 @@ func (m *windowsModel) applyFilter() {
 }
 
 func getIconForWindow(w tmuxclient.Window) string {
-	switch w.Name {
-	case "editor":
-		return "✏️"
-	case "notebook":
-		return "📒"
-	case "console":
-		return "❯"
-	case "plan":
-		return "🗺️"
-	}
+	// Check for impl jobs first (highest priority)
 	if strings.Contains(w.Command, "impl") {
 		return core_theme.IconInteractiveAgent
 	}
+
+	// Check for special window names
+	switch w.Name {
+	case "editor":
+		return core_theme.IconFile
+	case "notebook":
+		return core_theme.IconNote
+	case "console":
+		return core_theme.IconShell
+	case "plan":
+		return core_theme.IconPlan
+	}
+
 	return " "
 }
 
