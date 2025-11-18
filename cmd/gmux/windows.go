@@ -229,11 +229,55 @@ func (m windowsModel) View() string {
 	}
 
 	// Calculate layout: 30% for list, 70% for preview
+	if m.width < 40 {
+		// Terminal too narrow for split view, just show list
+		var b strings.Builder
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Window Selector"))
+		b.WriteString("\n\n")
+
+		for i, win := range m.filteredWindows {
+			cursor := " "
+			if m.cursor == i {
+				cursor = "→"
+			}
+
+			icon := getIconForWindow(win)
+
+			name := win.Name
+			if win.IsActive {
+				name += "*"
+			}
+
+			line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+
+		b.WriteString("\n")
+
+		switch m.mode {
+		case "filter":
+			b.WriteString("Filter: " + m.filterInput.View())
+		case "rename":
+			b.WriteString("Rename: " + m.renameInput.View())
+		default:
+			b.WriteString(m.help.View())
+		}
+
+		return b.String()
+	}
+
 	listWidth := m.width * 30 / 100
 	if listWidth < 20 {
 		listWidth = 20
 	}
+	if listWidth > m.width-20 {
+		listWidth = m.width - 20
+	}
 	previewWidth := m.width - listWidth - 1 // -1 for separator
+	if previewWidth < 10 {
+		previewWidth = 10
+	}
 
 	// Build window list
 	var listBuilder strings.Builder
