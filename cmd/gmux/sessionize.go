@@ -237,7 +237,7 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	}
 
 	// Switch to the session
-	if err := client.SwitchClient(ctx, sessionName); err != nil {
+	if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}
 

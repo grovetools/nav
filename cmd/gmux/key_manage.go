@@ -653,7 +653,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								}
 
 								// Switch to the session
-								if err := client.SwitchClient(ctx, sessionName); err != nil {
+								if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 									m.message = fmt.Sprintf("Failed to switch to session: %v", err)
 								} else {
 									// Exit the manager after switching
@@ -949,7 +949,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 
 						// Switch to the session
-						if err := client.SwitchClient(ctx, sessionName); err != nil {
+						if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 							m.message = fmt.Sprintf("Failed to switch to session: %v", err)
 						} else {
 							// Exit the manager after switching

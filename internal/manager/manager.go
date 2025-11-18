@@ -585,7 +585,7 @@ func (m *Manager) Sessionize(path string) error {
 
 	// Switch to the session if we're in tmux
 	if inTmux {
-		return m.tmuxClient.SwitchClient(ctx, sessionName)
+		return m.tmuxClient.SwitchClientToSession(ctx, sessionName)
 	}
 
 	// Attach to the session if we're outside tmux
