@@ -228,7 +228,7 @@ func (m windowsModel) View() string {
 		return fmt.Sprintf("Error: %v\n", m.err)
 	}
 
-	// Calculate layout: 30% for list, 70% for preview
+	// Calculate layout: 50% for list, 50% for preview
 	if m.width < 40 {
 		// Terminal too narrow for split view, just show list
 		var b strings.Builder
@@ -267,7 +267,7 @@ func (m windowsModel) View() string {
 		return b.String()
 	}
 
-	listWidth := m.width * 30 / 100
+	listWidth := m.width * 50 / 100
 	if listWidth < 20 {
 		listWidth = 20
 	}
@@ -297,7 +297,15 @@ func (m windowsModel) View() string {
 			name += "*"
 		}
 
+		// Show process name in muted style (skip generic shells/wrappers)
 		line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
+
+		// Only show command if it's not a generic shell or wrapper
+		if shouldShowCommand(win.Command) {
+			processStyle := core_theme.DefaultTheme.Muted
+			line += " " + processStyle.Render(fmt.Sprintf("[%s]", win.Command))
+		}
+
 		listBuilder.WriteString(line)
 		listBuilder.WriteString("\n")
 	}
@@ -478,21 +486,46 @@ func (m *windowsModel) applyFilter() {
 	}
 }
 
+func shouldShowCommand(cmd string) bool {
+	// Temporarily disabled - show all commands
+	return true
+
+	// Skip generic shells and wrappers that don't provide useful info
+	// genericCommands := []string{
+	// 	"fish",
+	// 	"bash",
+	// 	"zsh",
+	// 	"sh",
+	// 	"volta-shim",
+	// 	"node-shim",
+	// }
+
+	// for _, generic := range genericCommands {
+	// 	if cmd == generic {
+	// 		return false
+	// 	}
+	// }
+
+	// return true
+}
+
 func getIconForWindow(w tmuxclient.Window) string {
 	// Check for impl jobs first (highest priority)
-	if strings.Contains(w.Command, "impl") {
+	if strings.Contains(w.Name, "impl") || strings.Contains(w.Command, "impl") {
 		return core_theme.IconInteractiveAgent
 	}
 
-	// Check for special window names
-	switch w.Name {
-	case "editor":
-		return core_theme.IconFile
-	case "notebook":
-		return core_theme.IconNote
-	case "console":
+	// Check for special window name patterns
+	if strings.Contains(w.Name, "editor") {
+		return core_theme.IconCode
+	}
+	if strings.Contains(w.Name, "notebook") {
+		return core_theme.IconNotebook
+	}
+	if strings.Contains(w.Name, "term") {
 		return core_theme.IconShell
-	case "plan":
+	}
+	if strings.Contains(w.Name, "plan") {
 		return core_theme.IconPlan
 	}
 
