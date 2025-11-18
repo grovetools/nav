@@ -80,7 +80,7 @@ type windowsKeyMap struct {
 }
 
 func (k windowsKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Filter, k.Rename, k.Close, k.Quit}
+	return []key.Binding{k.Quit}
 }
 
 func (k windowsKeyMap) FullHelp() [][]key.Binding {
