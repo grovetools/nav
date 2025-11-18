@@ -319,20 +319,31 @@ func (m windowsModel) View() string {
 	previewBuilder.WriteString(core_theme.DefaultTheme.Header.Render("Preview"))
 	previewBuilder.WriteString("\n\n")
 
-	// Wrap preview content
+	// Calculate max height for preview (account for header, footer, padding)
+	maxPreviewHeight := m.height - 6 // Leave room for headers and footer
+	if maxPreviewHeight < 1 {
+		maxPreviewHeight = 1
+	}
+
+	// Wrap preview content and limit to maxPreviewHeight
 	previewLines := strings.Split(m.preview, "\n")
+	lineCount := 0
 	for _, line := range previewLines {
+		if lineCount >= maxPreviewHeight {
+			break
+		}
 		if len(line) > previewWidth {
 			previewBuilder.WriteString(line[:previewWidth])
 		} else {
 			previewBuilder.WriteString(line)
 		}
 		previewBuilder.WriteString("\n")
+		lineCount++
 	}
 
-	// Use lipgloss to create side-by-side layout
-	listStyle := lipgloss.NewStyle().Width(listWidth)
-	previewStyle := lipgloss.NewStyle().Width(previewWidth)
+	// Use lipgloss to create side-by-side layout with height constraints
+	listStyle := lipgloss.NewStyle().Width(listWidth).Height(m.height)
+	previewStyle := lipgloss.NewStyle().Width(previewWidth).Height(m.height)
 
 	return lipgloss.JoinHorizontal(
 		lipgloss.Top,
