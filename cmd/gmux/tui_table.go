@@ -390,6 +390,9 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		if project.NoteCounts.Issues > 0 {
 			parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("%s %d", core_theme.IconNoteIssues, project.NoteCounts.Issues)))
 		}
+		if project.NoteCounts.Docs > 0 {
+			parts = append(parts, fmt.Sprintf("%s %d", core_theme.IconDocs, project.NoteCounts.Docs))
+		}
 		if project.NoteCounts.InProgress > 0 {
 			parts = append(parts, core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("%s %d", core_theme.IconNoteInProgress, project.NoteCounts.InProgress)))
 		}

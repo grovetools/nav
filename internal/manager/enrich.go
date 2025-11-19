@@ -258,6 +258,8 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 			countsByName[note.Workspace].Issues++
 		case "inbox":
 			countsByName[note.Workspace].Inbox++
+		case "docs":
+			countsByName[note.Workspace].Docs++
 		case "completed":
 			countsByName[note.Workspace].Completed++
 		case "review":

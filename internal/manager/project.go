@@ -25,6 +25,7 @@ type NoteCounts struct {
 	Current    int
 	Issues     int
 	Inbox      int
+	Docs       int
 	Completed  int
 	Review     int
 	InProgress int
