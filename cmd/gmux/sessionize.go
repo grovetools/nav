@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattsolo1/grove-core/logging"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
@@ -553,50 +554,52 @@ explicit_projects:
 }
 
 // groupClonedProjectsAsEcosystem identifies projects cloned via `cx repo` and groups them
-// under a virtual "Cloned Repos" ecosystem node. It modifies the projects in-place
-// to set their parent ecosystem path and returns a new slice with the virtual
-// ecosystem node prepended.
+// under a virtual "cx-repos" ecosystem node. Projects are identified by their
+// ParentEcosystemPath pointing to the cx ecosystem path (~/.grove/cx).
+// This function adds a virtual ecosystem node if one doesn't already exist.
 func groupClonedProjectsAsEcosystem(projects []manager.SessionizeProject) []manager.SessionizeProject {
 	logger := logging.NewLogger("gmux-sessionize")
 
+	// Get the cx ecosystem path to identify cloned repos
+	cxEcoPath, err := repo.GetCxEcosystemPath()
+	if err != nil {
+		logger.Warnf("Could not get cx ecosystem path: %v", err)
+		return projects
+	}
+
 	var clonedProjectIndices []int
 	for i := range projects {
-		// Cloned repos are identified by this kind from grove-core.
-		if projects[i].Kind == workspace.KindNonGroveRepo {
+		// Cloned repos are now identified by their ParentEcosystemPath pointing to cx ecosystem
+		if projects[i].ParentEcosystemPath == cxEcoPath {
 			clonedProjectIndices = append(clonedProjectIndices, i)
 		}
 	}
-	logger.Debugf("Total projects: %d, Cloned repos found: %d", len(projects), len(clonedProjectIndices))
+	logger.Debugf("Total projects: %d, Cloned repos found: %d (cx path: %s)", len(projects), len(clonedProjectIndices), cxEcoPath)
 
 	if len(clonedProjectIndices) == 0 {
 		return projects
 	}
 
-	// Determine parent path from the first cloned repo.
-	// This assumes they are all in the same directory, which is the behavior of `cx repo clone`.
-	firstClonedProject := projects[clonedProjectIndices[0]]
-	clonedRepoRoot := filepath.Dir(firstClonedProject.Path)
-
-	// Update parent paths for all cloned repos (modifying the slice in-place is safe here).
+	// Set RootEcosystemPath for all cloned repos to the cx ecosystem path
 	for _, idx := range clonedProjectIndices {
-		projects[idx].ParentEcosystemPath = clonedRepoRoot
-		projects[idx].RootEcosystemPath = clonedRepoRoot
+		projects[idx].RootEcosystemPath = cxEcoPath
 	}
 
-	// Check if a node for the root path already exists (e.g., if ~/.grove is a search path).
+	// Check if a node for the cx ecosystem path already exists.
 	// If it does, we don't need to add a virtual one.
 	for i := range projects {
-		if projects[i].Path == clonedRepoRoot {
+		if projects[i].Path == cxEcoPath {
 			return projects
 		}
 	}
 
-	// Create the virtual ecosystem node.
+	// Create the virtual ecosystem node for cx-repos.
 	ecoNode := manager.SessionizeProject{
 		WorkspaceNode: &workspace.WorkspaceNode{
-			Name: "cx-repos",
-			Path: clonedRepoRoot,
-			Kind: workspace.KindEcosystemRoot,
+			Name:              "cx-repos",
+			Path:              cxEcoPath,
+			Kind:              workspace.KindEcosystemRoot,
+			RootEcosystemPath: cxEcoPath,
 		},
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
@@ -199,9 +200,16 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 	// Determine workspace icon based on project kind
 	icon := ""
+	// Get cx ecosystem path for bare repo detection
+	cxEcoPath, _ := repo.GetCxEcosystemPath()
+	isBareRepo := project.Kind == workspace.KindEcosystemSubProject && project.ParentEcosystemPath == cxEcoPath
+
 	// Special case for cx-repos virtual ecosystem
 	if project.Name == "cx-repos" && project.Kind == workspace.KindEcosystemRoot {
 		icon = core_theme.IconArchive
+	} else if isBareRepo {
+		// Bare repos under cx-repos use repo icon (color handled separately)
+		icon = core_theme.IconRepo
 	} else {
 		switch project.Kind {
 		case workspace.KindEcosystemRoot:
@@ -223,10 +231,17 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	sessionExists := m.runningSessions[sessionName]
 
 	var iconStyle lipgloss.Style
-	// Special styling for cx-repos virtual ecosystem
+	// Special styling for cx-repos virtual ecosystem and bare repos
 	if project.Name == "cx-repos" && project.Kind == workspace.KindEcosystemRoot {
 		// Use a distinct purple/violet color for cx-repos
 		iconStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+	} else if isBareRepo {
+		// Bare repos use purple when session is open, muted otherwise
+		if sessionExists {
+			iconStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+		} else {
+			iconStyle = core_theme.DefaultTheme.Muted
+		}
 	} else if sessionExists {
 		if sessionName == m.currentSession {
 			iconStyle = core_theme.DefaultTheme.Info // Current session - cyan
