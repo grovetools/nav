@@ -89,9 +89,20 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 		rulesState := make(map[string]grovecontext.RuleStatus)
 
 		for _, project := range projects {
-			// Check for alias rule first if this is part of an ecosystem
 			var status grovecontext.RuleStatus
-			if project.RootEcosystemPath != "" {
+
+			// Check for git alias rule first if this is a cx-repo managed project
+			if project.RepoShorthand != "" {
+				version := project.Version
+				if version == "" {
+					version = "main"
+				}
+				gitAliasRule := fmt.Sprintf("@a:git:%s@%s::default", project.RepoShorthand, version)
+				status = mgr.GetRuleStatus(gitAliasRule)
+			}
+
+			// Check for ecosystem alias rule if this is part of an ecosystem
+			if status == 0 && project.RootEcosystemPath != "" {
 				// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
 				ecosystemName := filepath.Base(project.RootEcosystemPath)
 				if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
@@ -127,11 +138,20 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string) tea.Cmd {
 		}
 		mgr := grovecontext.NewManager("")
 
-		// Construct alias rule using the project's ecosystem and workspace info
-		rule := filepath.Join(project.Path, "**")
+		var rule string
 
-		// If this is part of an ecosystem, construct an alias
-		if project.RootEcosystemPath != "" {
+		// Check if this is a cx-repo managed project (has RepoShorthand set)
+		if project.RepoShorthand != "" {
+			version := project.Version
+			if version == "" {
+				version = "main" // Sensible fallback
+			}
+			// For git aliases, we always use the 'default' ruleset,
+			// as it's a generic reference to an external repository.
+			ruleset := "default"
+			rule = fmt.Sprintf("@a:git:%s@%s::%s", project.RepoShorthand, version, ruleset)
+		} else if project.RootEcosystemPath != "" {
+			// If this is part of an ecosystem, construct an alias
 			// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
 			ecosystemName := filepath.Base(project.RootEcosystemPath)
 			if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
@@ -148,6 +168,9 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string) tea.Cmd {
 
 			// Construct alias: @a:ecosystem:workspace::rule
 			rule = fmt.Sprintf("@a:%s:%s::%s", ecosystemName, workspaceName, ruleName)
+		} else {
+			// Fallback to path-based rule
+			rule = filepath.Join(project.Path, "**")
 		}
 
 		if err := mgr.AppendRule(rule, action); err != nil {
