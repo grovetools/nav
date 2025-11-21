@@ -1257,6 +1257,13 @@ func (m *sessionizeModel) updateFiltered() {
 			mainEcosystems = append(mainEcosystems, eco)
 		}
 		sort.Slice(mainEcosystems, func(i, j int) bool {
+			// Always put cx-repos at the top in ecosystem picker
+			if mainEcosystems[i].Name == "cx-repos" {
+				return true
+			}
+			if mainEcosystems[j].Name == "cx-repos" {
+				return false
+			}
 			return strings.ToLower(mainEcosystems[i].Name) < strings.ToLower(mainEcosystems[j].Name)
 		})
 

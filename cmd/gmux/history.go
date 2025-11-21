@@ -52,6 +52,9 @@ var historyCmd = &cobra.Command{
 			projectMap[allProjects[i].Path] = &allProjects[i]
 		}
 
+		// Set parent ecosystem for cloned repos
+		setParentForClonedProjects(allProjects)
+
 		// Load and sort access history
 		history, err := mgr.GetAccessHistory()
 		if err != nil {
@@ -559,6 +562,29 @@ func formatRelativeTime(t time.Time) string {
 		return fmt.Sprintf("%dd ago", days)
 	}
 	return t.Format("2006-01-02")
+}
+
+// setParentForClonedProjects modifies a slice of projects in-place, setting the
+// parent ecosystem path for any projects cloned via `cx repo`.
+func setParentForClonedProjects(projects []manager.SessionizeProject) {
+	var clonedProjectIndices []int
+	for i := range projects {
+		if projects[i].Kind == workspace.KindNonGroveRepo {
+			clonedProjectIndices = append(clonedProjectIndices, i)
+		}
+	}
+
+	if len(clonedProjectIndices) == 0 {
+		return
+	}
+
+	firstClonedProject := projects[clonedProjectIndices[0]]
+	clonedRepoRoot := filepath.Dir(firstClonedProject.Path)
+
+	for _, idx := range clonedProjectIndices {
+		projects[idx].ParentEcosystemPath = clonedRepoRoot
+		projects[idx].RootEcosystemPath = clonedRepoRoot
+	}
 }
 
 func init() {

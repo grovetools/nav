@@ -10,6 +10,7 @@ import (
 
 	tablecomponent "github.com/mattsolo1/grove-core/tui/components/table"
 	"github.com/mattsolo1/grove-core/pkg/models"
+	"github.com/mattsolo1/grove-core/pkg/workspace"
 	core_theme "github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
@@ -377,6 +378,9 @@ var keyAddCmd = &cobra.Command{
 			return fmt.Errorf("failed to get available projects: %w", err)
 		}
 
+		// Set parent ecosystem for cloned repos
+		setParentForClonedProjectsInKeyAdd(projects)
+
 		if len(projects) == 0 {
 			fmt.Println("No projects found in search paths!")
 			fmt.Println("\nMake sure your search paths are configured in one of:")
@@ -621,6 +625,29 @@ var keyUnmapCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// setParentForClonedProjectsInKeyAdd modifies a slice of projects in-place, setting the
+// parent ecosystem path for any projects cloned via `cx repo`.
+func setParentForClonedProjectsInKeyAdd(projects []manager.DiscoveredProject) {
+	var clonedProjectIndices []int
+	for i := range projects {
+		if projects[i].Kind == workspace.KindNonGroveRepo {
+			clonedProjectIndices = append(clonedProjectIndices, i)
+		}
+	}
+
+	if len(clonedProjectIndices) == 0 {
+		return
+	}
+
+	firstClonedProject := projects[clonedProjectIndices[0]]
+	clonedRepoRoot := filepath.Dir(firstClonedProject.Path)
+
+	for _, idx := range clonedProjectIndices {
+		projects[idx].ParentEcosystemPath = clonedRepoRoot
+		projects[idx].RootEcosystemPath = clonedRepoRoot
+	}
 }
 
 func init() {

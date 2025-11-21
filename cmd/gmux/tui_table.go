@@ -199,18 +199,23 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 
 	// Determine workspace icon based on project kind
 	icon := ""
-	switch project.Kind {
-	case workspace.KindEcosystemRoot:
-		icon = core_theme.IconEcosystem
-	case workspace.KindEcosystemWorktree:
-		icon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
-	case workspace.KindStandaloneProjectWorktree,
-		workspace.KindEcosystemSubProjectWorktree,
-		workspace.KindEcosystemWorktreeSubProjectWorktree:
-		icon = core_theme.IconWorktree
-	default:
-		// Sub-projects and standalone projects
-		icon = core_theme.IconRepo
+	// Special case for cx-repos virtual ecosystem
+	if project.Name == "cx-repos" && project.Kind == workspace.KindEcosystemRoot {
+		icon = core_theme.IconArchive
+	} else {
+		switch project.Kind {
+		case workspace.KindEcosystemRoot:
+			icon = core_theme.IconEcosystem
+		case workspace.KindEcosystemWorktree:
+			icon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
+		case workspace.KindStandaloneProjectWorktree,
+			workspace.KindEcosystemSubProjectWorktree,
+			workspace.KindEcosystemWorktreeSubProjectWorktree:
+			icon = core_theme.IconWorktree
+		default:
+			// Sub-projects and standalone projects
+			icon = core_theme.IconRepo
+		}
 	}
 
 	// Determine icon color based on session status
@@ -218,7 +223,11 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	sessionExists := m.runningSessions[sessionName]
 
 	var iconStyle lipgloss.Style
-	if sessionExists {
+	// Special styling for cx-repos virtual ecosystem
+	if project.Name == "cx-repos" && project.Kind == workspace.KindEcosystemRoot {
+		// Use a distinct purple/violet color for cx-repos
+		iconStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+	} else if sessionExists {
 		if sessionName == m.currentSession {
 			iconStyle = core_theme.DefaultTheme.Info // Current session - cyan
 		} else {

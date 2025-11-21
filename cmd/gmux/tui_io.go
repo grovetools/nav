@@ -203,6 +203,9 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 			projects = manager.SortProjectsByAccess(history, projects)
 		}
 
+		// Group cloned repos under a virtual "Cloned Repos" ecosystem
+		projects = groupClonedProjectsAsEcosystem(projects)
+
 		// Convert to pointers
 		projectPtrs := make([]*manager.SessionizeProject, len(projects))
 		for i := range projects {
