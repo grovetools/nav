@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
@@ -83,22 +84,45 @@ type ruleToggleResultMsg struct {
 }
 
 // fetchRulesStateCmd loads the context rules and determines the status for each project path.
+// This uses version-aware matching via grove-context's MatchesGitRule.
 func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		mgr := grovecontext.NewManager("") // Use CWD
 		rulesState := make(map[string]grovecontext.RuleStatus)
 
+		// Fetch all Git rules upfront for version-aware matching
+		gitRules, _ := mgr.ListGitRules()
+
 		for _, project := range projects {
 			var status grovecontext.RuleStatus
 
-			// Check for git alias rule first if this is a cx-repo managed project
-			if project.RepoShorthand != "" {
-				version := project.Version
-				if version == "" {
-					version = "main"
+			// Check for git-based rule first if this is a cx-repo managed project
+			if project.RepoShorthand != "" && len(gitRules) > 0 {
+				// Construct the expected repo URL from the shorthand
+				expectedRepoURL := "https://github.com/" + project.RepoShorthand
+
+				// Get the project's current HEAD commit for comparison
+				projectHeadCommit, _ := git.GetHeadCommit(project.Path)
+
+				// Get the project's current version (branch or commit)
+				// Priority: GitStatus.Branch (actual checked out branch) > Name (for worktrees) > Version
+				projectVersion := project.Version
+				if project.GitStatus != nil && project.GitStatus.Branch != "" {
+					projectVersion = project.GitStatus.Branch
+				} else if project.IsWorktree() && project.Name != "" {
+					projectVersion = project.Name
 				}
-				gitAliasRule := fmt.Sprintf("@a:git:%s@%s::default", project.RepoShorthand, version)
-				status = mgr.GetRuleStatus(gitAliasRule)
+				if projectVersion == "" {
+					projectVersion = "main"
+				}
+
+				// Match against git rules using centralized matching logic
+				for _, rule := range gitRules {
+					if grovecontext.MatchesGitRule(rule, expectedRepoURL, projectVersion, projectHeadCommit, project.Path) {
+						status = rule.ContextType
+						break
+					}
+				}
 			}
 
 			// Check for ecosystem alias rule if this is part of an ecosystem

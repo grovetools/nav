@@ -430,7 +430,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.enrichmentLoading["git"] = false
-		return m, nil
+		// Re-fetch rules state now that we have accurate branch info from git status
+		return m, fetchRulesStateCmd(m.projects)
 
 	case claudeSessionMapMsg:
 		// Update Claude sessions - preserve existing data, only update what changed
