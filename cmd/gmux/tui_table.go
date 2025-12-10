@@ -234,11 +234,11 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	// Special styling for cx-repos virtual ecosystem and bare repos
 	if project.Name == "cx-repos" && project.Kind == workspace.KindEcosystemRoot {
 		// Use a distinct purple/violet color for cx-repos
-		iconStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+		iconStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
 	} else if isBareRepo {
 		// Bare repos use purple when session is open, muted otherwise
 		if sessionExists {
-			iconStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141")) // Purple
+			iconStyle = lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
 		} else {
 			iconStyle = core_theme.DefaultTheme.Muted
 		}
