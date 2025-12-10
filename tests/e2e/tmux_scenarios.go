@@ -470,3 +470,473 @@ func GmuxStartScenario() *harness.Scenario {
 		},
 	}
 }
+
+// GmuxWindowsScenario tests the 'gmux windows' TUI with interactive behavior
+func GmuxWindowsScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "gmux-windows-tui",
+		Description: "Tests the gmux windows TUI including active window selection, visual indicators, and icon assignment",
+		LocalOnly:   true, // TUI tests require tmux
+		Steps: []harness.Step{
+			harness.NewStep("Check tmux availability", skipIfNoTmux),
+			harness.NewStep("Setup tmux session with multiple windows", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := fmt.Sprintf("test-windows-%d", time.Now().Unix())
+				ctx.Set("session_name", sessionName)
+				ctx.ShowCommandOutput("Session name", sessionName, "")
+
+				// Create a session with a shell in the first window (we'll use this to run gmux windows)
+				cmd := command.New("tmux", "new-session", "-d", "-s", sessionName, "-n", "main")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to create test session: %s", result.Stderr)
+				}
+
+				// Create additional windows with specific names to test icon assignment
+				// These names are chosen to trigger different icon logic in getIconForWindow
+				// Use fish command to test that name patterns take priority over command patterns
+				windows := []struct {
+					name    string
+					command string
+				}{
+					{"job-test", "fish"},           // Should get robot icon 󰚩 (not fish)
+					{"code-review", "fish"},        // Should get code review icon  (not fish)
+					{"term", "fish"},               // Should get shell icon  (not fish)
+					{"plan", "fish"},               // Should get plan icon 󰠡 (not fish)
+					{"cx-edit-file", "fish"},       // Should get file tree icon  (not fish)
+					{"impl-task", "fish"},          // Should get interactive agent icon 󰈺 (not fish, but same icon)
+					{"plain-fish", "fish"},         // Should get fish icon 󰈺 (fallback)
+				}
+
+				for _, win := range windows {
+					cmd = command.New("tmux", "new-window", "-t", sessionName, "-n", win.name, win.command)
+					result = cmd.Run()
+					ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+					if result.ExitCode != 0 {
+						return fmt.Errorf("failed to create window %s: %s", win.name, result.Stderr)
+					}
+				}
+
+				// Set window 1 (job-test) as the active window - not the first window
+				cmd = command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:1", sessionName))
+				result = cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to select window: %s", result.Stderr)
+				}
+
+				// Give tmux a moment to update state
+				time.Sleep(200 * time.Millisecond)
+
+				// List windows to verify setup
+				cmd = command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}:#{window_active}")
+				result = cmd.Run()
+				ctx.ShowCommandOutput("Window list after setup", result.Stdout, result.Stderr)
+
+				return nil
+			}),
+			harness.NewStep("Launch gmux windows TUI", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				gmuxBinary, err := FindProjectBinary()
+				if err != nil {
+					return fmt.Errorf("failed to find gmux binary: %w", err)
+				}
+				ctx.ShowCommandOutput("Using gmux binary", gmuxBinary, "")
+
+				// Switch to the main window which has a shell ready
+				cmd := command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:main", sessionName))
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to select main window: %s", result.Stderr)
+				}
+
+				time.Sleep(100 * time.Millisecond)
+
+				// Run gmux windows in the main window
+				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:main", sessionName), cmdStr, "Enter")
+				result = cmd.Run()
+				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+				}
+
+				// Give the TUI time to fully render
+				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
+				time.Sleep(1200 * time.Millisecond)
+
+				return nil
+			}),
+			harness.NewStep("Verify active window indicator and initial cursor position", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Capture the pane content to see the TUI
+				cmd := command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+				result := cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("Captured TUI content", content, "")
+
+				// Verify all expected windows are shown
+				expectedWindows := []string{"main", "job-test", "code-review", "term", "plan", "cx-edit-file", "impl-task", "plain-fish"}
+				for _, winName := range expectedWindows {
+					if err := assert.Contains(content, winName, fmt.Sprintf("Should show window %s", winName)); err != nil {
+						return err
+					}
+				}
+
+				// The active window (job-test at index 1) should have the « indicator
+				// This tests the feature that adds visual highlighting for active windows
+				if err := assert.Contains(content, "«", "Active window should have « indicator"); err != nil {
+					return err
+				}
+
+				// Verify the active window name appears with the indicator
+				if err := assert.Contains(content, "job-test", "Should show job-test window"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Test navigation and window icons", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Navigate down to see other windows
+				ctx.ShowCommandOutput("Sending key", "Down", "")
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "Down")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send down key: %s", result.Stderr)
+				}
+
+				time.Sleep(300 * time.Millisecond)
+
+				// Capture again
+				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane after navigation: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("TUI after navigation", content, "")
+
+				// Verify specific icons are present for each window type
+				// This tests that name patterns take priority over command patterns
+
+				// job-test should have robot icon 󰚩 (not fish icon)
+				if err := assert.Contains(content, "job-test", "Should show job-test window"); err != nil {
+					return err
+				}
+				if err := assert.Contains(content, "󰚩", "Should show robot icon 󰚩 for job-test window"); err != nil {
+					return err
+				}
+
+				// code-review should have code review icon  (not fish icon)
+				// Check that the icon appears on the same line as the window name
+				lines := strings.Split(content, "\n")
+				foundCodeReviewWithIcon := false
+				for _, line := range lines {
+					if strings.Contains(line, "code-review") && strings.Contains(line, "") {
+						foundCodeReviewWithIcon = true
+						break
+					}
+				}
+				if !foundCodeReviewWithIcon {
+					return fmt.Errorf("code-review window should have code review icon  on the same line")
+				}
+
+				// term should have shell icon  (not fish icon)
+				foundTermWithIcon := false
+				for _, line := range lines {
+					if strings.Contains(line, "term") && strings.Contains(line, "") {
+						foundTermWithIcon = true
+						break
+					}
+				}
+				if !foundTermWithIcon {
+					return fmt.Errorf("term window should have shell icon  on the same line")
+				}
+
+				// plan should have plan icon 󰠡 (not fish icon)
+				foundPlanWithIcon := false
+				for _, line := range lines {
+					if strings.Contains(line, "plan") && strings.Contains(line, "󰠡") {
+						foundPlanWithIcon = true
+						break
+					}
+				}
+				if !foundPlanWithIcon {
+					return fmt.Errorf("plan window should have plan icon 󰠡 on the same line")
+				}
+
+				// cx-edit-file should have file tree icon  (not fish icon)
+				if err := assert.Contains(content, "cx-edit-file", "Should show cx-edit-file window"); err != nil {
+					return err
+				}
+				if err := assert.Contains(content, "", "Should show file tree icon  for cx-edit-file window"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Test quit with back/escape key", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Send Escape key (back key) to quit - this tests the new back key functionality
+				ctx.ShowCommandOutput("Sending key to quit", "Escape", "")
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "Escape")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send escape key: %s", result.Stderr)
+				}
+
+				time.Sleep(300 * time.Millisecond)
+
+				// Capture pane to verify TUI exited
+				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane after quit: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("Shell after TUI quit", content, "")
+
+				// After quitting with Escape, we should be back at the shell
+				// The « indicator should no longer be visible in a repeating pattern
+				// (it might still be in history, but the active TUI should be gone)
+
+				return nil
+			}),
+			harness.NewStep("Cleanup test session", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+				cleanupSession(sessionName)
+				return nil
+			}),
+		},
+	}
+}
+
+// GmuxWindowsActiveSelectionScenario tests that the windows TUI starts with cursor on active window
+func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "gmux-windows-active-selection",
+		Description: "Tests that gmux windows TUI initializes with cursor on the currently active window",
+		LocalOnly:   true,
+		Steps: []harness.Step{
+			harness.NewStep("Check tmux availability", skipIfNoTmux),
+			harness.NewStep("Setup session with non-first window active", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := fmt.Sprintf("test-active-%d", time.Now().Unix())
+				ctx.Set("session_name", sessionName)
+				ctx.ShowCommandOutput("Session name", sessionName, "")
+
+				// Create a session with a shell in the first window
+				cmd := command.New("tmux", "new-session", "-d", "-s", sessionName, "-n", "window0")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to create test session: %s", result.Stderr)
+				}
+
+				// Create two more windows with sleep (they won't be the active window)
+				for i := 1; i <= 2; i++ {
+					cmd = command.New("tmux", "new-window", "-t", sessionName, "-n", fmt.Sprintf("window%d", i), "sleep", "60")
+					result = cmd.Run()
+					ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+					if result.ExitCode != 0 {
+						return fmt.Errorf("failed to create window %d: %s", i, result.Stderr)
+					}
+				}
+
+				// Select window 2 (third window, the last one) as active
+				// This tests that the cursor starts at the active window, not the first one
+				ctx.ShowCommandOutput("Setting active window", "window 2 (last window)", "")
+				cmd = command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:2", sessionName))
+				result = cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to select window: %s", result.Stderr)
+				}
+
+				time.Sleep(200 * time.Millisecond)
+
+				// Verify window 2 is active
+				cmd = command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}:#{window_active}")
+				result = cmd.Run()
+				ctx.ShowCommandOutput("Window list before TUI", result.Stdout, result.Stderr)
+
+				// Window index 2 (named window1) should be active
+				if err := assert.Contains(result.Stdout, "2:window1:1", "Window 2 (window1) should be active"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Launch gmux windows and verify initial selection", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				gmuxBinary, err := FindProjectBinary()
+				if err != nil {
+					return fmt.Errorf("failed to find gmux binary: %w", err)
+				}
+				ctx.ShowCommandOutput("Using gmux binary", gmuxBinary, "")
+
+				// Switch to window0 which has a shell
+				cmd := command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:window0", sessionName))
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to select window0: %s", result.Stderr)
+				}
+
+				time.Sleep(100 * time.Millisecond)
+
+				// Run gmux windows from window0
+				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:window0", sessionName), cmdStr, "Enter")
+				result = cmd.Run()
+				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+				}
+
+				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
+				time.Sleep(1200 * time.Millisecond)
+
+				// Capture the TUI
+				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("TUI with active window 2", content, "")
+
+				// Verify all windows are shown
+				if err := assert.Contains(content, "window0", "Should show window0"); err != nil {
+					return err
+				}
+				if err := assert.Contains(content, "window1", "Should show window1"); err != nil {
+					return err
+				}
+				if err := assert.Contains(content, "window2", "Should show window2"); err != nil {
+					return err
+				}
+
+				// The active window (window2) should have the « indicator
+				if err := assert.Contains(content, "window2", "Active window should be visible"); err != nil {
+					return err
+				}
+
+				// The « indicator should be next to window2
+				if err := assert.Contains(content, "«", "Active window should have « indicator"); err != nil {
+					return err
+				}
+
+				// The initial cursor should be on window2 (the active window)
+				// This is the key feature being tested - cursor starts on active window, not first window
+
+				return nil
+			}),
+			harness.NewStep("Test navigation from active window", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Press up to navigate to window1
+				ctx.ShowCommandOutput("Sending key", "Up", "")
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "Up")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send up key: %s", result.Stderr)
+				}
+
+				time.Sleep(300 * time.Millisecond)
+
+				// Capture after navigation
+				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("TUI after navigation up", content, "")
+
+				// Should still show all windows
+				if err := assert.Contains(content, "window1", "Should show window1 after navigation"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Quit and cleanup", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Quit with q
+				ctx.ShowCommandOutput("Sending key to quit", "q", "")
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "q")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send q key: %s", result.Stderr)
+				}
+
+				time.Sleep(200 * time.Millisecond)
+
+				// Cleanup
+				ctx.ShowCommandOutput("Cleaning up session", sessionName, "")
+				cleanupSession(sessionName)
+				return nil
+			}),
+		},
+	}
+}

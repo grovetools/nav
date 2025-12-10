@@ -204,9 +204,18 @@ func (m windowsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.processCache = buildProcessCache(m.windows)
 		}
 		m.applyFilter()
-		// Fetch preview for first window
-		if len(m.filteredWindows) > 0 {
-			return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[0].Index)
+
+		// Set initial cursor to the active window
+		for i, win := range m.filteredWindows {
+			if win.IsActive {
+				m.cursor = i
+				break
+			}
+		}
+
+		// Fetch preview for the initially selected window
+		if len(m.filteredWindows) > 0 && m.cursor < len(m.filteredWindows) {
+			return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[m.cursor].Index)
 		}
 		return m, nil
 
@@ -262,7 +271,7 @@ func (m windowsModel) View() string {
 
 			name := win.Name
 			if win.IsActive {
-				name += "*"
+				name = core_theme.DefaultTheme.Highlight.Render(win.Name + " «")
 			}
 
 			line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
@@ -311,7 +320,7 @@ func (m windowsModel) View() string {
 
 		name := win.Name
 		if win.IsActive {
-			name += "*"
+			name = core_theme.DefaultTheme.Highlight.Render(win.Name + " «")
 		}
 
 		// Show process name in muted style
@@ -432,6 +441,9 @@ func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		m.quitting = true
 		return m, tea.Quit
+	case key.Matches(msg, m.keys.Back):
+		m.quitting = true
+		return m, tea.Quit
 	}
 
 	// Number keys for direct switching
@@ -535,12 +547,19 @@ func shouldShowCommand(cmd string) bool {
 }
 
 func getIconForWindow(w tmuxclient.Window) string {
-	// Check for impl jobs first (highest priority)
+	// Check for special window name patterns first (highest priority)
+	if strings.HasPrefix(w.Name, "job-") {
+		return core_theme.IconRobot
+	}
+	if strings.Contains(w.Name, "code-review") {
+		return core_theme.IconNoteReview
+	}
+	if strings.Contains(w.Name, "cx-edit") {
+		return core_theme.IconFileTree
+	}
 	if strings.Contains(w.Name, "impl") || strings.Contains(w.Command, "impl") {
 		return core_theme.IconInteractiveAgent
 	}
-
-	// Check for special window name patterns
 	if strings.Contains(w.Name, "editor") {
 		return core_theme.IconCode
 	}
@@ -552,6 +571,11 @@ func getIconForWindow(w tmuxclient.Window) string {
 	}
 	if strings.Contains(w.Name, "plan") {
 		return core_theme.IconPlan
+	}
+
+	// Check command as fallback (lower priority)
+	if w.Command == "fish" {
+		return core_theme.IconFish
 	}
 
 	return " "

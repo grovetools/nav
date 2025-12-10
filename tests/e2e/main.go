@@ -22,6 +22,8 @@ func main() {
 		GmuxLaunchScenario(),
 		GmuxWaitScenario(),
 		GmuxStartScenario(),
+		GmuxWindowsScenario(),
+		GmuxWindowsActiveSelectionScenario(),
 	}
 
 	if err := app.Execute(context.Background(), scenarios); err != nil {
