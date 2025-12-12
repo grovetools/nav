@@ -20,21 +20,19 @@ import (
 
 // EnrichmentOptions controls which data to fetch and for which projects
 type EnrichmentOptions struct {
-	FetchNoteCounts     bool
-	FetchClaudeSessions bool
-	FetchGitStatus      bool
-	FetchPlanStats      bool
-	GitStatusPaths      map[string]bool
+	FetchNoteCounts bool
+	FetchGitStatus  bool
+	FetchPlanStats  bool
+	GitStatusPaths  map[string]bool
 }
 
 // DefaultEnrichmentOptions returns options that fetch everything for all projects
 func DefaultEnrichmentOptions() *EnrichmentOptions {
 	return &EnrichmentOptions{
-		FetchNoteCounts:     true,
-		FetchClaudeSessions: true,
-		FetchGitStatus:      true,
-		FetchPlanStats:      true,
-		GitStatusPaths:      nil, // nil means all projects
+		FetchNoteCounts: true,
+		FetchGitStatus:  true,
+		FetchPlanStats:  true,
+		GitStatusPaths:  nil, // nil means all projects
 	}
 }
 
@@ -56,11 +54,6 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 		}
 	}
 
-	var claudeSessionMap map[string]*ClaudeSessionInfo
-	if opts.FetchClaudeSessions {
-		claudeSessionMap, _ = FetchClaudeSessionMap()
-	}
-
 	var planStatsMap map[string]*PlanStats
 	if opts.FetchPlanStats {
 		planStatsMap, _ = FetchPlanStatsMap()
@@ -73,12 +66,6 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 		if noteCountsMap != nil {
 			if counts, ok := noteCountsMap[project.Path]; ok {
 				project.NoteCounts = counts
-			}
-		}
-
-		if claudeSessionMap != nil {
-			if session, ok := claudeSessionMap[project.Path]; ok {
-				project.ClaudeSession = session
 			}
 		}
 
@@ -167,55 +154,6 @@ func parseNumstat(output string) (added, deleted int) {
 		}
 	}
 	return added, deleted
-}
-
-// claudeSessionRaw represents the raw JSON structure from grove-hooks
-type claudeSessionRaw struct {
-	ID               string `json:"id"`
-	Type             string `json:"type"`
-	PID              int    `json:"pid"`
-	Status           string `json:"status"`
-	WorkingDirectory string `json:"working_directory"`
-	StateDuration    string `json:"state_duration"`
-}
-
-// FetchClaudeSessionMap fetches all active Claude sessions.
-func FetchClaudeSessionMap() (map[string]*ClaudeSessionInfo, error) {
-	sessionMap := make(map[string]*ClaudeSessionInfo)
-	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
-	var cmd *exec.Cmd
-	if _, err := os.Stat(groveHooksPath); err == nil {
-		cmd = exec.Command(groveHooksPath, "sessions", "list", "--active", "--json")
-	} else {
-		cmd = exec.Command("grove-hooks", "sessions", "list", "--active", "--json")
-	}
-
-	output, err := cmd.Output()
-	if err != nil {
-		return sessionMap, err
-	}
-
-	var claudeSessions []claudeSessionRaw
-	if err := json.Unmarshal(output, &claudeSessions); err != nil {
-		return sessionMap, err
-	}
-
-	for _, session := range claudeSessions {
-		if session.Type == "claude_session" && session.WorkingDirectory != "" {
-			absPath, err := filepath.Abs(expandPath(session.WorkingDirectory))
-			if err != nil {
-				continue
-			}
-			cleanPath := filepath.Clean(absPath)
-			sessionMap[cleanPath] = &ClaudeSessionInfo{
-				ID:       session.ID,
-				PID:      session.PID,
-				Status:   session.Status,
-				Duration: session.StateDuration,
-			}
-		}
-	}
-	return sessionMap, nil
 }
 
 // FetchNoteCountsMap fetches note counts for all known workspaces.

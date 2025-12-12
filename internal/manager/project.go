@@ -12,14 +12,6 @@ type ExtendedGitStatus struct {
 	LinesDeleted int
 }
 
-// ClaudeSessionInfo holds information about a Claude session. This is now defined locally.
-type ClaudeSessionInfo struct {
-	ID       string
-	PID      int
-	Status   string
-	Duration string
-}
-
 // NoteCounts holds counts of notes. This is now defined locally.
 type NoteCounts struct {
 	Current    int
@@ -53,7 +45,6 @@ type SessionizeProject struct {
 
 	// Application-specific enrichment fields
 	GitStatus     *ExtendedGitStatus
-	ClaudeSession *ClaudeSessionInfo
 	NoteCounts    *NoteCounts
 	PlanStats     *PlanStats
 

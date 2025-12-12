@@ -17,7 +17,6 @@ type sessionizeKeyMap struct {
 	ToggleWorktrees   key.Binding
 	ToggleGitStatus   key.Binding
 	ToggleBranch      key.Binding
-	ToggleClaude      key.Binding
 	ToggleNoteCounts  key.Binding
 	TogglePlanStats   key.Binding
 	TogglePaths       key.Binding
@@ -69,7 +68,6 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
 			k.ToggleGitStatus,
 			k.ToggleBranch,
-			k.ToggleClaude,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
 			k.ToggleHold,
@@ -115,10 +113,6 @@ var sessionizeKeys = sessionizeKeyMap{
 	ToggleBranch: key.NewBinding(
 		key.WithKeys("b"),
 		key.WithHelp("b", "toggle branch names"),
-	),
-	ToggleClaude: key.NewBinding(
-		key.WithKeys("C"),
-		key.WithHelp("shift+c", "toggle claude sessions"),
 	),
 	ToggleNoteCounts: key.NewBinding(
 		key.WithKeys("n"),

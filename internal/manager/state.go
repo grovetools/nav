@@ -16,7 +16,6 @@ type SessionizerState struct {
 	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
 	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
 	ShowBranch           *bool  `yaml:"show_branch,omitempty"`
-	ShowClaudeSessions   *bool  `yaml:"show_claude_sessions,omitempty"`
 	ShowNoteCounts       *bool  `yaml:"show_note_counts,omitempty"`
 	ShowPlanStats        *bool  `yaml:"show_plan_stats,omitempty"`
 	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
@@ -29,7 +28,6 @@ type CachedProject struct {
 
 	// Enrichment data
 	GitStatus     *ExtendedGitStatus `json:"git_status,omitempty"`
-	ClaudeSession *ClaudeSessionInfo `json:"claude_session,omitempty"`
 	NoteCounts    *NoteCounts        `json:"note_counts,omitempty"`
 	PlanStats     *PlanStats         `json:"plan_stats,omitempty"`
 }
@@ -115,7 +113,6 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 		cachedProjects[i] = CachedProject{
 			WorkspaceNode: p.WorkspaceNode,
 			GitStatus:     p.GetExtendedGitStatus(),
-			ClaudeSession: p.ClaudeSession,
 			NoteCounts:    p.NoteCounts,
 			PlanStats:     p.PlanStats,
 		}
@@ -176,7 +173,6 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*Sessioniz
 		cachedProjects[path] = CachedProject{
 			WorkspaceNode: p.WorkspaceNode,
 			GitStatus:     p.GetExtendedGitStatus(),
-			ClaudeSession: p.ClaudeSession,
 			NoteCounts:    p.NoteCounts,
 			PlanStats:     p.PlanStats,
 		}

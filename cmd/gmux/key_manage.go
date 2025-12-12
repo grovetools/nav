@@ -12,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/models"
@@ -90,7 +89,6 @@ var keyManageCmd = &cobra.Command{
 					enrichedProjects[path] = &manager.SessionizeProject{
 						WorkspaceNode: cached.WorkspaceNode,
 						GitStatus:     cached.GitStatus,
-						ClaudeSession: cached.ClaudeSession,
 						NoteCounts:    cached.NoteCounts,
 						PlanStats:     cached.PlanStats,
 					}
@@ -389,14 +387,6 @@ func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) t
 	}
 }
 
-// fetchAllClaudeSessionsForKeyManageCmd returns a command that fetches all active Claude sessions.
-func fetchAllClaudeSessionsForKeyManageCmd() tea.Cmd {
-	return func() tea.Msg {
-		sessions, _ := manager.FetchClaudeSessionMap()
-		return claudeSessionMapMsg{sessions: sessions}
-	}
-}
-
 // fetchAllNoteCountsForKeyManageCmd returns a command to fetch all note counts.
 func fetchAllNoteCountsForKeyManageCmd() tea.Cmd {
 	return func() tea.Msg {
@@ -494,25 +484,6 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.enrichmentLoading["git"] = false
 		m.isLoading = false // Mark initial loading as done
-		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
-		return m, nil
-
-	case claudeSessionMapMsg:
-		// Clear old sessions first
-		for _, proj := range m.enrichedProjects {
-			proj.ClaudeSession = nil
-		}
-		for path, session := range msg.sessions {
-			if proj, ok := m.enrichedProjects[path]; ok {
-				proj.ClaudeSession = session
-			}
-			if parentPath := getWorktreeParent(path); parentPath != "" {
-				if proj, ok := m.enrichedProjects[parentPath]; ok {
-					proj.ClaudeSession = session
-				}
-			}
-		}
-		m.enrichmentLoading["claude"] = false
 		_ = manager.SaveKeyManageCache(configDir, m.enrichedProjects)
 		return m, nil
 
@@ -1522,39 +1493,6 @@ func min(a, b int) int {
 	return b
 }
 
-// formatClaudeStatus formats the Claude session status into a styled string
-func formatClaudeStatus(session *manager.ClaudeSessionInfo) string {
-	if session == nil {
-		return ""
-	}
-
-	statusSymbol := ""
-	var statusStyle lipgloss.Style
-	switch session.Status {
-	case "running":
-		statusSymbol = core_theme.IconRunning
-		statusStyle = core_theme.DefaultTheme.Success
-	case "idle":
-		statusSymbol = core_theme.IconStatusHold
-		statusStyle = core_theme.DefaultTheme.Warning
-	case "completed":
-		statusSymbol = core_theme.IconSuccess
-		statusStyle = core_theme.DefaultTheme.Info
-	case "failed", "error":
-		statusSymbol = core_theme.IconError
-		statusStyle = core_theme.DefaultTheme.Error
-	default:
-		return ""
-	}
-
-	statusStyled := statusStyle.Render(statusSymbol)
-
-	if session.Duration != "" {
-		return statusStyled + " " + session.Duration
-	}
-	return statusStyled
-}
-
 // formatPlanStatsForKeyManage formats plan stats into a styled string
 // Shows only job status icons and counts (e.g., "◐ 1 ○ 2 ● 5")
 func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
@@ -1628,32 +1566,6 @@ func formatGitStatusPlain(status *git.StatusInfo, extStatus *manager.ExtendedGit
 	}
 
 	return changesStr
-}
-
-// formatClaudeStatusPlain formats Claude status without ANSI codes for table display
-func formatClaudeStatusPlain(session *manager.ClaudeSessionInfo) string {
-	if session == nil {
-		return ""
-	}
-
-	statusSymbol := ""
-	switch session.Status {
-	case "running":
-		statusSymbol = core_theme.IconRunning
-	case "idle":
-		statusSymbol = core_theme.IconStatusHold
-	case "completed":
-		statusSymbol = core_theme.IconSuccess
-	case "failed", "error":
-		statusSymbol = core_theme.IconError
-	default:
-		return ""
-	}
-
-	if session.Duration != "" {
-		return statusSymbol + " " + session.Duration
-	}
-	return statusSymbol
 }
 
 // reloadTmuxConfig reloads the tmux configuration

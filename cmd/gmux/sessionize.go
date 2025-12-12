@@ -23,22 +23,20 @@ import (
 // For initial load, we disable enrichment to show the UI faster.
 func buildInitialEnrichmentOptions() *manager.EnrichmentOptions {
 	return &manager.EnrichmentOptions{
-		FetchClaudeSessions: false,
-		FetchGitStatus:      false,
-		FetchNoteCounts:     false,
-		FetchPlanStats:      false,
+		FetchGitStatus:  false,
+		FetchNoteCounts: false,
+		FetchPlanStats:  false,
 	}
 }
 
 // buildEnrichmentOptions creates options for enriching project data
 // This is used for periodic refreshes in the TUI
-func buildEnrichmentOptions(fetchGit, fetchClaude, fetchNotes, fetchPlans bool) *manager.EnrichmentOptions {
+func buildEnrichmentOptions(fetchGit, fetchNotes, fetchPlans bool) *manager.EnrichmentOptions {
 	return &manager.EnrichmentOptions{
-		FetchClaudeSessions: fetchClaude,
-		FetchGitStatus:      fetchGit,
-		FetchNoteCounts:     fetchNotes,
-		FetchPlanStats:      fetchPlans,
-		GitStatusPaths:      nil, // nil means fetch for all projects
+		FetchGitStatus:  fetchGit,
+		FetchNoteCounts: fetchNotes,
+		FetchPlanStats:  fetchPlans,
+		GitStatusPaths:  nil, // nil means fetch for all projects
 	}
 }
 
@@ -86,7 +84,6 @@ var sessionizeCmd = &cobra.Command{
 				projects[i] = manager.SessionizeProject{
 					WorkspaceNode: cached.WorkspaceNode,
 					GitStatus:     cached.GitStatus,
-					ClaudeSession: cached.ClaudeSession,
 					NoteCounts:    cached.NoteCounts,
 					PlanStats:     cached.PlanStats,
 				}

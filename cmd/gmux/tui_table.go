@@ -61,7 +61,7 @@ func (m sessionizeModel) renderTable() string {
 	}
 
 	// Define table headers based on what's enabled
-	headers := []string{"K", "S", "CX", "WORKSPACE"}
+	headers := []string{"K", "CX", "WORKSPACE"}
 
 	// Get spinner for animation
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -92,13 +92,6 @@ func (m sessionizeModel) renderTable() string {
 			plansHeader = core_theme.IconPlan + " PLANS " + spinner
 		}
 		headers = append(headers, plansHeader)
-	}
-	if m.showClaudeSessions {
-		claudeHeader := core_theme.IconInteractiveAgent + " CLAUDE"
-		if m.enrichmentLoading["claude"] {
-			claudeHeader = core_theme.IconInteractiveAgent + " CLAUDE " + spinner
-		}
-		headers = append(headers, claudeHeader)
 	}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "PATH")
@@ -299,14 +292,6 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 	// Leave keyMapping empty if no key is bound
 
-	// --- STATUS ---
-	statusIndicator := ""
-	if sessionExists {
-		statusIndicator = core_theme.DefaultTheme.Success.Render(core_theme.IconBullet)
-	} else {
-		statusIndicator = core_theme.DefaultTheme.Muted.Render("-")
-	}
-
 	// --- CONTEXT STATUS ---
 	cxStatus := ""
 	if status, ok := m.rulesState[project.Path]; ok {
@@ -448,106 +433,6 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 		}
 	}
 
-	// --- CLAUDE SESSION ---
-	claude := "-"
-	if m.showClaudeSessions {
-		if project.ClaudeSession != nil {
-			// This is a Claude session entry - use its own status
-			statusSymbol := ""
-			var statusStyle lipgloss.Style
-			switch project.ClaudeSession.Status {
-			case "running":
-				statusSymbol = core_theme.IconRunning
-				statusStyle = core_theme.DefaultTheme.Success
-			case "idle":
-				statusSymbol = core_theme.IconStatusHold
-				statusStyle = core_theme.DefaultTheme.Warning
-			case "completed":
-				statusSymbol = core_theme.IconSuccess
-				statusStyle = core_theme.DefaultTheme.Info
-			case "failed", "error":
-				statusSymbol = core_theme.IconError
-				statusStyle = core_theme.DefaultTheme.Error
-			default:
-				statusStyle = core_theme.DefaultTheme.Muted
-			}
-
-			statusStyled := statusStyle.Render(statusSymbol)
-			claude = fmt.Sprintf("%s %s", statusStyled, project.ClaudeSession.Duration)
-		} else if m.hasGroveHooks {
-			// Regular project - check if it has any Claude sessions
-			if status, found := m.claudeStatusMap[cleanPath]; found {
-				claudeStatus := status
-				claudeDuration := ""
-				if duration, foundDur := m.claudeDurationMap[cleanPath]; foundDur {
-					claudeDuration = duration
-				}
-
-				// Style the claude status
-				statusSymbol := ""
-				var statusStyle lipgloss.Style
-				switch claudeStatus {
-				case "running":
-					statusSymbol = core_theme.IconRunning
-					statusStyle = core_theme.DefaultTheme.Success
-				case "idle":
-					statusSymbol = core_theme.IconStatusHold
-					statusStyle = core_theme.DefaultTheme.Warning
-				case "completed":
-					statusSymbol = core_theme.IconSuccess
-					statusStyle = core_theme.DefaultTheme.Info
-				case "failed", "error":
-					statusSymbol = core_theme.IconError
-					statusStyle = core_theme.DefaultTheme.Error
-				default:
-					statusStyle = core_theme.DefaultTheme.Muted
-				}
-
-				if statusSymbol != "" {
-					statusStyled := statusStyle.Render(statusSymbol)
-					claude = fmt.Sprintf("%s %s", statusStyled, claudeDuration)
-				}
-			} else {
-				// Try normalized path match
-				for path, status := range m.claudeStatusMap {
-					normalizedPath, err := pathutil.NormalizeForLookup(path)
-					if err == nil && normalizedPath == normalizedCleanPath {
-						claudeStatus := status
-						claudeDuration := ""
-						if duration, foundDur := m.claudeDurationMap[path]; foundDur {
-							claudeDuration = duration
-						}
-
-						statusSymbol := ""
-						var statusStyle lipgloss.Style
-						switch claudeStatus {
-						case "running":
-							statusSymbol = core_theme.IconRunning
-							statusStyle = core_theme.DefaultTheme.Success
-						case "idle":
-							statusSymbol = core_theme.IconStatusHold
-							statusStyle = core_theme.DefaultTheme.Warning
-						case "completed":
-							statusSymbol = core_theme.IconSuccess
-							statusStyle = core_theme.DefaultTheme.Info
-						case "failed", "error":
-							statusSymbol = core_theme.IconError
-							statusStyle = core_theme.DefaultTheme.Error
-						default:
-							statusStyle = core_theme.DefaultTheme.Muted
-						}
-
-						if statusSymbol != "" {
-							statusStyled := statusStyle.Render(statusSymbol)
-							claude = fmt.Sprintf("%s %s", statusStyled, claudeDuration)
-						}
-						break
-					}
-				}
-			}
-		}
-	}
-
 	// --- PATH ---
 	pathDisplay := ""
 	if m.pathDisplayMode > 0 {
@@ -561,7 +446,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 
 	// Build row based on enabled columns
-	row := []string{keyMapping, statusIndicator, cxStatus, workspaceName}
+	row := []string{keyMapping, cxStatus, workspaceName}
 
 	if m.showBranch {
 		row = append(row, branch)
@@ -574,9 +459,6 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 	if m.showPlanStats {
 		row = append(row, plans)
-	}
-	if m.showClaudeSessions {
-		row = append(row, claude)
 	}
 	if m.pathDisplayMode > 0 {
 		row = append(row, pathDisplay)

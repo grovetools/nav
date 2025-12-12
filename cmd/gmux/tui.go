@@ -39,13 +39,9 @@ type sessionizeModel struct {
 	searchPaths              []string
 	manager                  *tmux.Manager
 	configDir                string            // configuration directory
-	keyMap                   map[string]string // path -> key mapping
-	runningSessions          map[string]bool   // map[sessionName] -> true
-	claudeStatusMap          map[string]string // path -> claude session status mapping
-	claudeDurationMap        map[string]string // path -> claude session state duration mapping
-	claudeDurationSecondsMap map[string]int    // path -> claude session state duration in seconds
-	hasGroveHooks            bool              // whether grove-hooks is available
-	currentSession           string            // name of the current tmux session
+	keyMap          map[string]string // path -> key mapping
+	runningSessions map[string]bool   // map[sessionName] -> true
+	currentSession  string            // name of the current tmux session
 	width                    int
 	height                   int
 	// Key editing mode
@@ -61,11 +57,10 @@ type sessionizeModel struct {
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
 
 	// View toggles
-	showGitStatus      bool // Whether to fetch and show Git status
-	showBranch         bool // Whether to show branch names
-	showClaudeSessions bool // Whether to fetch and show Claude sessions
-	showNoteCounts     bool // Whether to fetch and show note counts
-	showPlanStats      bool // Whether to show plan stats from grove-flow
+	showGitStatus  bool // Whether to fetch and show Git status
+	showBranch     bool // Whether to show branch names
+	showNoteCounts bool // Whether to fetch and show note counts
+	showPlanStats  bool // Whether to show plan stats from grove-flow
 	showOnHold         bool // Whether to show on-hold plans
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
 
@@ -126,19 +121,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	runningSessions := make(map[string]bool)
 	// Will be populated via commands
 
-	// Check if grove-hooks is available
-	hasGroveHooks := false
-	groveHooksPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "grove-hooks")
-	if _, err := os.Stat(groveHooksPath); err == nil {
-		hasGroveHooks = true
-	} else if _, err := exec.LookPath("grove-hooks"); err == nil {
-		hasGroveHooks = true
-	}
-
-	// Claude sessions will be fetched asynchronously
-	claudeStatusMap := make(map[string]string)
-	claudeDurationMap := make(map[string]string)
-	claudeDurationSecondsMap := make(map[string]int)
 
 	// Get current session name if we're in tmux
 	currentSession := ""
@@ -174,7 +156,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	// Set sensible defaults for toggles
 	showGitStatus := true
 	showBranch := true
-	showClaudeSessions := true
 	showNoteCounts := true
 	showPlanStats := true
 	pathDisplayMode := 1 // Default to compact paths (~)
@@ -204,9 +185,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		if state.ShowBranch != nil {
 			showBranch = *state.ShowBranch
 		}
-		if state.ShowClaudeSessions != nil {
-			showClaudeSessions = *state.ShowClaudeSessions
-		}
 		if state.ShowNoteCounts != nil {
 			showNoteCounts = *state.ShowNoteCounts
 		}
@@ -227,13 +205,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		searchPaths:              searchPaths,
 		manager:                  mgr,
 		configDir:                configDir,
-		keyMap:                   keyMap,
-		runningSessions:          runningSessions,
-		claudeStatusMap:          claudeStatusMap,
-		claudeDurationMap:        claudeDurationMap,
-		claudeDurationSecondsMap: claudeDurationSecondsMap,
-		hasGroveHooks:            hasGroveHooks,
-		currentSession:           currentSession,
+		keyMap:          keyMap,
+		runningSessions: runningSessions,
+		currentSession:  currentSession,
 		cursor:                   0,
 		editingKeys:              false,
 		keyCursor:                0,
@@ -244,7 +218,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		worktreesFolded:          worktreesFolded,
 		showGitStatus:            showGitStatus,
 		showBranch:               showBranch,
-		showClaudeSessions:       showClaudeSessions,
 		showNoteCounts:           showNoteCounts,
 		showPlanStats:            showPlanStats,
 		showOnHold:               false, // Default to hiding on-hold plans
@@ -263,7 +236,6 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		WorktreesFolded:      m.worktreesFolded,
 		ShowGitStatus:        boolPtr(m.showGitStatus),
 		ShowBranch:           boolPtr(m.showBranch),
-		ShowClaudeSessions:   boolPtr(m.showClaudeSessions),
 		ShowNoteCounts:       boolPtr(m.showNoteCounts),
 		ShowPlanStats:        boolPtr(m.showPlanStats),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
@@ -306,10 +278,6 @@ func (m sessionizeModel) Init() tea.Cmd {
 
 	// Fetch fresh enrichment data (will update cached data in background)
 	// Git status is fetched for visible projects only via enrichVisibleProjects()
-	if m.showClaudeSessions {
-		m.enrichmentLoading["claude"] = true
-		cmds = append(cmds, fetchAllClaudeSessionsCmd())
-	}
 	if m.showNoteCounts {
 		m.enrichmentLoading["notes"] = true
 		cmds = append(cmds, fetchAllNoteCountsCmd())
@@ -433,36 +401,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Re-fetch rules state now that we have accurate branch info from git status
 		return m, fetchRulesStateCmd(m.projects)
 
-	case claudeSessionMapMsg:
-		// Update Claude sessions - preserve existing data, only update what changed
-		// First, clear sessions that no longer exist
-		activePaths := make(map[string]bool)
-		for path := range msg.sessions {
-			activePaths[path] = true
-			if parentPath := getWorktreeParent(path); parentPath != "" {
-				activePaths[parentPath] = true
-			}
-		}
-		for _, proj := range m.projects {
-			if proj.ClaudeSession != nil && !activePaths[proj.Path] {
-				proj.ClaudeSession = nil
-			}
-		}
-		// Now update with new session data
-		for path, session := range msg.sessions {
-			if proj, ok := m.projectMap[path]; ok {
-				proj.ClaudeSession = session
-			}
-			// Also apply to parent project if it's a worktree
-			if parentPath := getWorktreeParent(path); parentPath != "" {
-				if proj, ok := m.projectMap[parentPath]; ok {
-					proj.ClaudeSession = session
-				}
-			}
-		}
-		m.enrichmentLoading["claude"] = false
-		return m, nil
-
 	case noteCountsMapMsg:
 		// Update note counts - only update projects that have counts
 		for _, proj := range m.projects {
@@ -583,11 +521,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enrichmentLoading["git"] = true
 			startedEnrichment = true
 			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
-		}
-		if m.showClaudeSessions {
-			m.enrichmentLoading["claude"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllClaudeSessionsCmd())
 		}
 		if m.showNoteCounts {
 			m.enrichmentLoading["notes"] = true
@@ -936,15 +869,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
 				return m, m.enrichVisibleProjects()
-			case "C":
-				// Toggle claude sessions
-				m.showClaudeSessions = !m.showClaudeSessions
-				_ = m.buildState().Save(m.configDir)
-				// Refetch claude sessions if toggled on
-				if m.showClaudeSessions {
-					return m, fetchAllClaudeSessionsCmd()
-				}
-				return m, nil
 			case "h": // Toggle hot context
 				if m.cursor < len(m.filtered) {
 					selected := m.filtered[m.cursor]
@@ -1894,13 +1818,6 @@ func (m sessionizeModel) View() string {
 		branchToggle += core_theme.DefaultTheme.Muted.Render("✗")
 	}
 
-	claudeToggle := " c:claude "
-	if m.showClaudeSessions {
-		claudeToggle += core_theme.DefaultTheme.Success.Render("✓")
-	} else {
-		claudeToggle += core_theme.DefaultTheme.Muted.Render("✗")
-	}
-
 	noteToggle := " n:notes "
 	if m.showNoteCounts {
 		noteToggle += core_theme.DefaultTheme.Success.Render("✓")
@@ -1925,7 +1842,7 @@ func (m sessionizeModel) View() string {
 		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
 	}
 
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s%s]", gitToggle, branchToggle, claudeToggle, noteToggle, planToggle, pathsToggle)
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle, pathsToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))

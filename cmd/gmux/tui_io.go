@@ -36,11 +36,6 @@ type gitStatusMapMsg struct {
 	statuses map[string]*manager.ExtendedGitStatus
 }
 
-// claudeSessionMapMsg is sent when all active Claude sessions are fetched.
-type claudeSessionMapMsg struct {
-	sessions map[string]*manager.ClaudeSessionInfo
-}
-
 // noteCountsMapMsg is sent when all note counts are fetched.
 type noteCountsMapMsg struct {
 	counts map[string]*manager.NoteCounts
@@ -229,14 +224,6 @@ func spinnerTickCmd() tea.Cmd {
 	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg {
 		return spinnerTickMsg(t)
 	})
-}
-
-// fetchAllClaudeSessionsCmd returns a command that fetches all active Claude sessions.
-func fetchAllClaudeSessionsCmd() tea.Cmd {
-	return func() tea.Msg {
-		sessions, _ := manager.FetchClaudeSessionMap()
-		return claudeSessionMapMsg{sessions: sessions}
-	}
 }
 
 // fetchProjectsCmd returns a command that re-scans configured search paths.
