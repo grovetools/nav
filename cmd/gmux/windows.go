@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -83,14 +84,18 @@ type windowsModel struct {
 	preview            string
 	processCache       map[int]string // Cache PID -> process name mapping
 	showChildProcesses bool           // Whether to detect child processes
+	originalWindows    []tmuxclient.Window // Original order when entering move mode
 }
 
 type windowsKeyMap struct {
 	keymap.Base
-	Switch key.Binding
-	Filter key.Binding
-	Rename key.Binding
-	Close  key.Binding
+	Switch   key.Binding
+	Filter   key.Binding
+	Rename   key.Binding
+	Close    key.Binding
+	MoveMode key.Binding
+	MoveUp   key.Binding
+	MoveDown key.Binding
 }
 
 func (k windowsKeyMap) ShortHelp() []key.Binding {
@@ -107,6 +112,11 @@ func (k windowsKeyMap) FullHelp() [][]key.Binding {
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
 			k.Switch, k.Filter, k.Rename, k.Close, k.Help, k.Quit,
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Reorder")),
+			k.MoveMode,
+			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
 		},
 	}
 }
@@ -128,6 +138,18 @@ var windowsKeys = windowsKeyMap{
 	Close: key.NewBinding(
 		key.WithKeys("X"),
 		key.WithHelp("X", "close"),
+	),
+	MoveMode: key.NewBinding(
+		key.WithKeys("m"),
+		key.WithHelp("m", "move window"),
+	),
+	MoveUp: key.NewBinding(
+		key.WithKeys("k"),
+		key.WithHelp("k", "move up"),
+	),
+	MoveDown: key.NewBinding(
+		key.WithKeys("j"),
+		key.WithHelp("j", "move down"),
 	),
 }
 
@@ -238,6 +260,8 @@ func (m windowsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateFilter(msg)
 		case "rename":
 			return m.updateRename(msg)
+		case "move":
+			return m.updateMove(msg)
 		default: // "normal"
 			return m.updateNormal(msg)
 		}
@@ -258,7 +282,11 @@ func (m windowsModel) View() string {
 	if m.width < 40 {
 		// Terminal too narrow for split view, just show list
 		var b strings.Builder
-		b.WriteString(core_theme.DefaultTheme.Header.Render("Window Selector"))
+		header := "Window Selector"
+		if m.mode == "move" {
+			header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+		}
+		b.WriteString(core_theme.DefaultTheme.Header.Render(header))
 		b.WriteString("\n\n")
 
 		for i, win := range m.filteredWindows {
@@ -275,7 +303,13 @@ func (m windowsModel) View() string {
 			}
 
 			line := fmt.Sprintf("%s %s %d: %s", cursor, icon, win.Index, name)
-			b.WriteString(line)
+
+			// Highlight the entire line when selected in move mode
+			if m.cursor == i && m.mode == "move" {
+				b.WriteString(core_theme.DefaultTheme.Selected.Render(line))
+			} else {
+				b.WriteString(line)
+			}
 			b.WriteString("\n")
 		}
 
@@ -307,7 +341,11 @@ func (m windowsModel) View() string {
 
 	// Build window list
 	var listBuilder strings.Builder
-	listBuilder.WriteString(core_theme.DefaultTheme.Header.Render("Window Selector"))
+	header := "Window Selector"
+	if m.mode == "move" {
+		header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+	}
+	listBuilder.WriteString(core_theme.DefaultTheme.Header.Render(header))
 	listBuilder.WriteString("\n\n")
 
 	for i, win := range m.filteredWindows {
@@ -338,7 +376,12 @@ func (m windowsModel) View() string {
 			line += " " + processStyle.Render(fmt.Sprintf("[%s]", processName))
 		}
 
-		listBuilder.WriteString(line)
+		// Highlight the entire line when selected in move mode
+		if m.cursor == i && m.mode == "move" {
+			listBuilder.WriteString(core_theme.DefaultTheme.Selected.Render(line))
+		} else {
+			listBuilder.WriteString(line)
+		}
 		listBuilder.WriteString("\n")
 	}
 
@@ -350,6 +393,8 @@ func (m windowsModel) View() string {
 		listBuilder.WriteString("Filter: " + m.filterInput.View())
 	case "rename":
 		listBuilder.WriteString("Rename: " + m.renameInput.View())
+	case "move":
+		listBuilder.WriteString(core_theme.DefaultTheme.Muted.Render("Use j/k to reorder • Enter/Esc/m to apply"))
 	default:
 		listBuilder.WriteString(m.help.View())
 	}
@@ -421,6 +466,12 @@ func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.renameInput.Focus()
 			return m, textinput.Blink
 		}
+	case key.Matches(msg, m.keys.MoveMode):
+		m.mode = "move"
+		// Save original window order so we can apply changes on exit
+		m.originalWindows = make([]tmuxclient.Window, len(m.filteredWindows))
+		copy(m.originalWindows, m.filteredWindows)
+		return m, nil
 	case key.Matches(msg, m.keys.Close):
 		if m.cursor < len(m.filteredWindows) {
 			target := fmt.Sprintf("%s:%d", m.sessionName, m.filteredWindows[m.cursor].Index)
@@ -503,6 +554,69 @@ func (m windowsModel) updateRename(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.renameInput, cmd = m.renameInput.Update(msg)
 	}
 	return m, cmd
+}
+
+func (m windowsModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	// Exit move mode - apply all changes to tmux
+	case key.Matches(msg, m.keys.MoveMode), msg.Type == tea.KeyEsc, msg.Type == tea.KeyEnter:
+		m.mode = "normal"
+
+		// Only apply reordering if we have original windows saved
+		if len(m.originalWindows) > 0 {
+			// Find the base index (minimum index from original windows)
+			baseIndex := m.originalWindows[0].Index
+			for _, win := range m.originalWindows {
+				if win.Index < baseIndex {
+					baseIndex = win.Index
+				}
+			}
+
+			// First, move all windows to temporary high indices to avoid conflicts
+			tempBase := 9000
+			for i, win := range m.filteredWindows {
+				srcTarget := fmt.Sprintf("%s:%d", m.sessionName, win.Index)
+				tempTarget := fmt.Sprintf("%s:%d", m.sessionName, tempBase+i)
+
+				cmd := exec.Command("tmux", "move-window", "-s", srcTarget, "-t", tempTarget)
+				cmd.Run() // Best effort
+			}
+
+			// Now move them from temp indices to final positions
+			for i := 0; i < len(m.filteredWindows); i++ {
+				srcTarget := fmt.Sprintf("%s:%d", m.sessionName, tempBase+i)
+				finalTarget := fmt.Sprintf("%s:%d", m.sessionName, baseIndex+i)
+
+				cmd := exec.Command("tmux", "move-window", "-s", srcTarget, "-t", finalTarget)
+				cmd.Run() // Best effort
+			}
+
+			// Clear original windows
+			m.originalWindows = nil
+		}
+
+		// Refresh to get actual tmux state
+		return m, fetchWindowsCmd(m.client, m.sessionName)
+
+	// Move window up (visual only, no tmux changes yet)
+	case key.Matches(msg, m.keys.Up):
+		if m.cursor > 0 {
+			// Just swap in the local list for instant visual feedback
+			m.filteredWindows[m.cursor], m.filteredWindows[m.cursor-1] = m.filteredWindows[m.cursor-1], m.filteredWindows[m.cursor]
+			m.cursor--
+			return m, nil
+		}
+
+	// Move window down (visual only, no tmux changes yet)
+	case key.Matches(msg, m.keys.Down):
+		if m.cursor < len(m.filteredWindows)-1 {
+			// Just swap in the local list for instant visual feedback
+			m.filteredWindows[m.cursor], m.filteredWindows[m.cursor+1] = m.filteredWindows[m.cursor+1], m.filteredWindows[m.cursor]
+			m.cursor++
+			return m, nil
+		}
+	}
+	return m, nil
 }
 
 func (m *windowsModel) applyFilter() {

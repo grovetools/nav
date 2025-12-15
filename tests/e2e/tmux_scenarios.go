@@ -940,3 +940,300 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 		},
 	}
 }
+
+// GmuxWindowsMoveScenario tests the move window functionality in the windows TUI
+func GmuxWindowsMoveScenario() *harness.Scenario {
+	return &harness.Scenario{
+		Name:        "gmux-windows-move",
+		Description: "Tests the move window feature that allows reordering windows with m key and j/k navigation",
+		LocalOnly:   true,
+		Steps: []harness.Step{
+			harness.NewStep("Check tmux availability", skipIfNoTmux),
+			harness.NewStep("Setup test session with multiple windows", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := fmt.Sprintf("test-move-%d", time.Now().Unix())
+				ctx.Set("session_name", sessionName)
+				ctx.ShowCommandOutput("Session name", sessionName, "")
+
+				// Create session with a default shell window (will be used to launch gmux)
+				cmd := command.New("tmux", "new-session", "-d", "-s", sessionName, "-n", "shell")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to create test session: %s", result.Stderr)
+				}
+
+				// Create three more windows with sleep to have enough to test reordering
+				windows := []string{"alpha", "beta", "gamma"}
+				for _, winName := range windows {
+					cmd = command.New("tmux", "new-window", "-t", sessionName, "-n", winName, "sleep", "60")
+					result = cmd.Run()
+					ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+					if result.ExitCode != 0 {
+						return fmt.Errorf("failed to create window %s: %s", winName, result.Stderr)
+					}
+				}
+
+				// Give windows time to initialize
+				time.Sleep(200 * time.Millisecond)
+
+				// Verify window order
+				cmd = command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}")
+				result = cmd.Run()
+				ctx.ShowCommandOutput("Initial window order", result.Stdout, result.Stderr)
+
+				return nil
+			}),
+			harness.NewStep("Launch gmux windows TUI", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				gmuxBinary, err := FindProjectBinary()
+				if err != nil {
+					return fmt.Errorf("failed to find gmux binary: %w", err)
+				}
+
+				// Switch to shell window
+				cmd := command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:shell", sessionName))
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to select shell window: %s", result.Stderr)
+				}
+
+				time.Sleep(100 * time.Millisecond)
+
+				// Launch gmux windows
+				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:shell", sessionName), cmdStr, "Enter")
+				result = cmd.Run()
+				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+				}
+
+				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
+				time.Sleep(1200 * time.Millisecond)
+
+				return nil
+			}),
+			harness.NewStep("Navigate to beta window", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Navigate down to beta window (second window in list after shell)
+				// Windows are: shell, alpha, beta, gamma
+				// So we need to go down twice to get to beta
+				for i := 0; i < 2; i++ {
+					cmd := command.New("tmux", "send-keys", "-t", sessionName, "Down")
+					result := cmd.Run()
+					if result.ExitCode != 0 {
+						return fmt.Errorf("failed to send down key: %s", result.Stderr)
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
+
+				// Give the TUI time to update after navigation
+				time.Sleep(300 * time.Millisecond)
+
+				// Capture to verify cursor position
+				cmd := command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+				result := cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("TUI at beta window", content, "")
+
+				// Verify beta is shown
+				if err := assert.Contains(content, "beta", "Should show beta window"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Enter move mode with m key", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Press m to enter move mode
+				ctx.ShowCommandOutput("Entering move mode", "m key", "")
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "m")
+				result := cmd.Run()
+				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send m key: %s", result.Stderr)
+				}
+
+				time.Sleep(300 * time.Millisecond)
+
+				// Capture pane to verify move mode indicator
+				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
+				}
+
+				content := result.Stdout
+				ctx.ShowCommandOutput("TUI in move mode", content, "")
+
+				// Should show [MOVE MODE] indicator
+				if err := assert.Contains(content, "[MOVE MODE]", "Should display move mode indicator"); err != nil {
+					return err
+				}
+
+				// The selected window line should be highlighted
+				// Since we're on beta, verify it's still visible
+				if err := assert.Contains(content, "beta", "Should show beta window in move mode"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Move beta window up multiple times and apply changes", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Press k twice to move window up 2 positions (from position 2 to position 0)
+				// This tests that multi-position moves work correctly
+				ctx.ShowCommandOutput("Moving window up twice", "k k", "")
+				for i := 0; i < 2; i++ {
+					cmd := command.New("tmux", "send-keys", "-t", sessionName, "k")
+					result := cmd.Run()
+					ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
+					if result.ExitCode != 0 {
+						return fmt.Errorf("failed to send k key: %s", result.Stderr)
+					}
+					time.Sleep(150 * time.Millisecond)
+				}
+
+				time.Sleep(300 * time.Millisecond)
+
+				// Verify the visual order hasn't been applied to tmux yet
+				cmd := command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}")
+				result := cmd.Run()
+				ctx.ShowCommandOutput("Window order before exit (should be unchanged)", result.Stdout, result.Stderr)
+
+				// Now exit move mode with Enter to apply the changes
+				ctx.ShowCommandOutput("Applying changes with Enter", "Enter key", "")
+				cmd = command.New("tmux", "send-keys", "-t", sessionName, "Enter")
+				result = cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send Enter key: %s", result.Stderr)
+				}
+
+				time.Sleep(2000 * time.Millisecond)
+
+				// Now verify the window order changed in tmux
+				cmd = command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}")
+				result = cmd.Run()
+				ctx.ShowCommandOutput("Window order after applying move", result.Stdout, result.Stderr)
+
+				// beta should now be at the first position (moved up 2 times from position 2)
+				// Expected order: beta, shell, alpha, gamma
+				// Parse the window order by window index
+				windowsByIndex := make(map[int]string)
+				for _, line := range strings.Split(strings.TrimSpace(result.Stdout), "\n") {
+					parts := strings.Split(line, ":")
+					if len(parts) == 2 {
+						var idx int
+						fmt.Sscanf(parts[0], "%d", &idx)
+						windowsByIndex[idx] = parts[1]
+					}
+				}
+
+				// Find indices of all windows
+				betaIdx := -1
+				shellIdx := -1
+				alphaIdx := -1
+				for idx, name := range windowsByIndex {
+					if name == "beta" {
+						betaIdx = idx
+					}
+					if name == "shell" {
+						shellIdx = idx
+					}
+					if name == "alpha" {
+						alphaIdx = idx
+					}
+				}
+
+				if betaIdx == -1 || shellIdx == -1 || alphaIdx == -1 {
+					return fmt.Errorf("could not find all windows in window list")
+				}
+
+				// Beta should be before both shell and alpha (moved up 2 positions)
+				if betaIdx >= shellIdx {
+					return fmt.Errorf("beta should be before shell after moving up twice, but beta is at index %d and shell is at index %d", betaIdx, shellIdx)
+				}
+				if betaIdx >= alphaIdx {
+					return fmt.Errorf("beta should be before alpha after moving up twice, but beta is at index %d and alpha is at index %d", betaIdx, alphaIdx)
+				}
+
+				ctx.ShowCommandOutput("Move successful", fmt.Sprintf("beta at %d, shell at %d, alpha at %d", betaIdx, shellIdx, alphaIdx), "")
+
+				return nil
+			}),
+			harness.NewStep("Verify windows reordered successfully", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Verify the final window order persists in tmux
+				cmd := command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}")
+				result := cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to list windows: %s", result.Stderr)
+				}
+
+				ctx.ShowCommandOutput("Final window order in tmux", result.Stdout, result.Stderr)
+
+				// Just verify beta is in the list (reordering already verified in previous step)
+				if err := assert.Contains(result.Stdout, "beta", "Windows should still exist"); err != nil {
+					return err
+				}
+
+				return nil
+			}),
+			harness.NewStep("Exit TUI and cleanup", func(ctx *harness.Context) error {
+				if shouldSkipTmuxTest(ctx) {
+					return nil
+				}
+
+				sessionName := ctx.GetString("session_name")
+
+				// Exit TUI with q
+				cmd := command.New("tmux", "send-keys", "-t", sessionName, "q")
+				result := cmd.Run()
+				if result.ExitCode != 0 {
+					return fmt.Errorf("failed to send q key: %s", result.Stderr)
+				}
+
+				time.Sleep(200 * time.Millisecond)
+
+				// Cleanup session
+				ctx.ShowCommandOutput("Cleaning up session", sessionName, "")
+				cleanupSession(sessionName)
+				return nil
+			}),
+		},
+	}
+}
