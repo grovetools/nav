@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -27,9 +28,9 @@ type CachedProject struct {
 	*workspace.WorkspaceNode
 
 	// Enrichment data
-	GitStatus     *ExtendedGitStatus `json:"git_status,omitempty"`
-	NoteCounts    *NoteCounts        `json:"note_counts,omitempty"`
-	PlanStats     *PlanStats         `json:"plan_stats,omitempty"`
+	GitStatus     *git.ExtendedGitStatus `json:"git_status,omitempty"`
+	NoteCounts    *NoteCounts            `json:"note_counts,omitempty"`
+	PlanStats     *PlanStats             `json:"plan_stats,omitempty"`
 }
 
 // ProjectCache holds cached project data for fast startup

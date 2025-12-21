@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -84,7 +83,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 					semaphore <- struct{}{}
 					defer func() { <-semaphore }()
 
-					if extStatus, err := FetchGitStatusForPath(p.Path); err == nil {
+					if extStatus, err := git.GetExtendedStatus(p.Path); err == nil {
 						p.GitStatus = extStatus
 					}
 				}(project)
@@ -94,67 +93,6 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 	wg.Wait()
 }
 
-// FetchGitStatusForPath fetches extended git status for a single repository path.
-func FetchGitStatusForPath(path string) (*ExtendedGitStatus, error) {
-	cleanPath := filepath.Clean(path)
-	if !git.IsGitRepo(cleanPath) {
-		return nil, nil
-	}
-
-	status, err := git.GetStatus(cleanPath)
-	if err != nil {
-		return nil, err
-	}
-
-	extStatus := &ExtendedGitStatus{StatusInfo: status}
-
-	if status.Branch != "main" && status.Branch != "master" {
-		ahead, behind := git.GetCommitsDivergenceFromMain(cleanPath, status.Branch)
-		status.AheadMainCount = ahead
-		status.BehindMainCount = behind
-	}
-
-	cmd := exec.Command("git", "diff", "--numstat")
-	cmd.Dir = cleanPath
-	output, err := cmd.Output()
-	if err == nil {
-		extStatus.LinesAdded, extStatus.LinesDeleted = parseNumstat(string(output))
-	}
-
-	cmd = exec.Command("git", "diff", "--cached", "--numstat")
-	cmd.Dir = cleanPath
-	output, err = cmd.Output()
-	if err == nil {
-		stagedAdded, stagedDeleted := parseNumstat(string(output))
-		extStatus.LinesAdded += stagedAdded
-		extStatus.LinesDeleted += stagedDeleted
-	}
-
-	return extStatus, nil
-}
-
-func parseNumstat(output string) (added, deleted int) {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) >= 2 {
-			if fields[0] != "-" {
-				if a, err := strconv.Atoi(fields[0]); err == nil {
-					added += a
-				}
-			}
-			if fields[1] != "-" {
-				if d, err := strconv.Atoi(fields[1]); err == nil {
-					deleted += d
-				}
-			}
-		}
-	}
-	return added, deleted
-}
 
 // FetchNoteCountsMap fetches note counts for all known workspaces.
 // Note: This function returns counts indexed by workspace name (not path).

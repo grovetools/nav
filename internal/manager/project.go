@@ -5,12 +5,6 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 )
 
-// ExtendedGitStatus holds git status including line changes. This is now defined locally.
-type ExtendedGitStatus struct {
-	*git.StatusInfo
-	LinesAdded   int
-	LinesDeleted int
-}
 
 // NoteCounts holds counts of notes. This is now defined locally.
 type NoteCounts struct {
@@ -44,7 +38,7 @@ type SessionizeProject struct {
 	*workspace.WorkspaceNode
 
 	// Application-specific enrichment fields
-	GitStatus     *ExtendedGitStatus
+	GitStatus     *git.ExtendedGitStatus
 	NoteCounts    *NoteCounts
 	PlanStats     *PlanStats
 
@@ -64,7 +58,7 @@ func (p *SessionizeProject) GetGitStatus() *git.StatusInfo {
 }
 
 // GetExtendedGitStatus returns the extended git status with line changes
-func (p *SessionizeProject) GetExtendedGitStatus() *ExtendedGitStatus {
+func (p *SessionizeProject) GetExtendedGitStatus() *git.ExtendedGitStatus {
 	return p.GitStatus
 }
 

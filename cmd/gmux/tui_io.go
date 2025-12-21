@@ -22,7 +22,7 @@ import (
 // gitStatusMsg is sent when git status for a single project is fetched.
 type gitStatusMsg struct {
 	path   string
-	status *manager.ExtendedGitStatus
+	status *git.ExtendedGitStatus
 }
 
 // initialProjectsEnrichedMsg is sent after initial project data is loaded from session paths.
@@ -33,7 +33,7 @@ type initialProjectsEnrichedMsg struct {
 
 // gitStatusMapMsg is sent when git statuses for multiple projects are fetched.
 type gitStatusMapMsg struct {
-	statuses map[string]*manager.ExtendedGitStatus
+	statuses map[string]*git.ExtendedGitStatus
 }
 
 // noteCountsMapMsg is sent when all note counts are fetched.
@@ -256,7 +256,7 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 // fetchGitStatusCmd returns a command to fetch git status for a single path.
 func fetchGitStatusCmd(path string) tea.Cmd {
 	return func() tea.Msg {
-		status, _ := manager.FetchGitStatusForPath(path)
+		status, _ := git.GetExtendedStatus(path)
 		return gitStatusMsg{path: path, status: status}
 	}
 }
@@ -266,7 +266,7 @@ func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
-		statuses := make(map[string]*manager.ExtendedGitStatus)
+		statuses := make(map[string]*git.ExtendedGitStatus)
 		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
 
 		for _, p := range projects {
@@ -276,7 +276,7 @@ func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 
-				status, err := manager.FetchGitStatusForPath(proj.Path)
+				status, err := git.GetExtendedStatus(proj.Path)
 				if err == nil {
 					mu.Lock()
 					statuses[proj.Path] = status

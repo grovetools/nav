@@ -363,7 +363,7 @@ func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) t
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
-		statuses := make(map[string]*manager.ExtendedGitStatus)
+		statuses := make(map[string]*git.ExtendedGitStatus)
 		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
 
 		for _, p := range projects {
@@ -373,7 +373,7 @@ func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) t
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 
-				status, err := manager.FetchGitStatusForPath(proj.Path)
+				status, err := git.GetExtendedStatus(proj.Path)
 				if err == nil {
 					mu.Lock()
 					statuses[proj.Path] = status
@@ -1518,7 +1518,7 @@ func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
 }
 
 // formatGitStatusPlain formats Git status without ANSI codes for table display
-func formatGitStatusPlain(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus) string {
+func formatGitStatusPlain(status *git.StatusInfo, extStatus *git.ExtendedGitStatus) string {
 	if status == nil {
 		return ""
 	}

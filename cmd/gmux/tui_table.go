@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
+	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/table"
@@ -472,7 +473,7 @@ func hasGitStatus(gitStatus interface{}) bool {
 	if gitStatus == nil {
 		return false
 	}
-	if extStatus, ok := gitStatus.(*manager.ExtendedGitStatus); ok && extStatus != nil && extStatus.StatusInfo != nil {
+	if extStatus, ok := gitStatus.(*git.ExtendedGitStatus); ok && extStatus != nil && extStatus.StatusInfo != nil {
 		return true
 	}
 	return false

@@ -36,7 +36,7 @@ func highlightMatch(text, filter string) string {
 }
 
 // formatChanges formats the git status into a styled string.
-func formatChanges(status *git.StatusInfo, extStatus *manager.ExtendedGitStatus) string {
+func formatChanges(status *git.StatusInfo, extStatus *git.ExtendedGitStatus) string {
 	if status == nil {
 		return ""
 	}
