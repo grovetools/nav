@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
+
+var ulogLaunch = grovelogging.NewUnifiedLogger("gmux.launch")
 
 var (
 	launchWindowName string
@@ -19,17 +23,17 @@ var launchCmd = &cobra.Command{
 	Use:   "launch <session-name>",
 	Short: "Launch a new tmux session with optional panes",
 	Long: `Launch a new tmux session with support for multiple panes.
-	
+
 Examples:
   # Simple session
   gmux launch dev-session
-  
+
   # Session with window name and working directory
   gmux launch dev-session --window-name coding --working-dir /path/to/project
-  
+
   # Session with multiple panes
   gmux launch dev-session --pane "vim main.go" --pane "go test -v" --pane "htop"
-  
+
   # Complex panes with working directories (format: command[@workdir])
   gmux launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
 	Args: cobra.ExactArgs(1),
@@ -70,11 +74,15 @@ Examples:
 			return fmt.Errorf("failed to launch session: %w", err)
 		}
 
-		fmt.Printf("Session '%s' launched successfully\n", sessionName)
-
-		// Show how to attach
-		fmt.Printf("\nTo attach to this session, run:\n")
-		fmt.Printf("  tmux attach-session -t %s\n", sessionName)
+		ulogLaunch.Success("Session launched").
+			Field("session", sessionName).
+			Field("window_name", launchWindowName).
+			Field("working_dir", launchWorkingDir).
+			Field("pane_count", len(paneOpts)).
+			Pretty(fmt.Sprintf("%s Session '%s' launched successfully\n\nTo attach to this session, run:\n  tmux attach-session -t %s",
+				theme.IconSuccess, sessionName, sessionName)).
+			PrettyOnly().
+			Log(ctx)
 
 		return nil
 	},

@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
+
+var ulogSession = grovelogging.NewUnifiedLogger("gmux.session")
 
 var sessionCmd = &cobra.Command{
 	Use:   "session",
@@ -34,10 +38,18 @@ var sessionExistsCmd = &cobra.Command{
 		}
 
 		if exists {
-			fmt.Printf("Session '%s' exists\n", sessionName)
+			ulogSession.Info("Session exists").
+				Field("session", sessionName).
+				Pretty(fmt.Sprintf("%s Session '%s' exists", theme.IconSuccess, sessionName)).
+				PrettyOnly().
+				Log(ctx)
 			return nil
 		} else {
-			fmt.Printf("Session '%s' does not exist\n", sessionName)
+			ulogSession.Info("Session does not exist").
+				Field("session", sessionName).
+				Pretty(fmt.Sprintf("%s Session '%s' does not exist", theme.IconError, sessionName)).
+				PrettyOnly().
+				Log(ctx)
 			os.Exit(1)
 		}
 		return nil
@@ -62,7 +74,11 @@ var sessionKillCmd = &cobra.Command{
 			return fmt.Errorf("failed to kill session: %w", err)
 		}
 
-		fmt.Printf("Session '%s' killed\n", sessionName)
+		ulogSession.Success("Session killed").
+			Field("session", sessionName).
+			Pretty(fmt.Sprintf("%s Session '%s' killed", theme.IconSuccess, sessionName)).
+			PrettyOnly().
+			Log(ctx)
 		return nil
 	},
 }

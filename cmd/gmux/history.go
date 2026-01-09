@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-core/tui/components/help"
@@ -22,6 +24,8 @@ import (
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
+
+var ulogHistory = grovelogging.NewUnifiedLogger("gmux.history")
 
 const mutedThreshold = 7 * 24 * time.Hour // 1 week
 
@@ -81,7 +85,11 @@ var historyCmd = &cobra.Command{
 		}
 
 		if len(items) == 0 {
-			fmt.Println("No session history found.")
+			ctx := context.Background()
+			ulogHistory.Info("No session history").
+				Pretty(core_theme.IconInfo + " No session history found.").
+				PrettyOnly().
+				Log(ctx)
 			return nil
 		}
 

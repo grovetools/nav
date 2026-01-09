@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/spf13/cobra"
 )
+
+var ulogWait = grovelogging.NewUnifiedLogger("gmux.wait")
 
 var (
 	waitPollInterval string
@@ -50,7 +54,11 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
 
-		fmt.Printf("Waiting for session '%s' to close...\n", sessionName)
+		ulogWait.Progress("Waiting for session").
+			Field("session", sessionName).
+			Pretty(fmt.Sprintf("%s Waiting for session '%s' to close...", theme.IconRunning, sessionName)).
+			PrettyOnly().
+			Log(ctx)
 
 		err = client.WaitForSessionClose(ctx, sessionName, pollInterval)
 		if err != nil {
@@ -60,7 +68,11 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			return fmt.Errorf("error waiting for session: %w", err)
 		}
 
-		fmt.Printf("Session '%s' has closed\n", sessionName)
+		ulogWait.Success("Session closed").
+			Field("session", sessionName).
+			Pretty(fmt.Sprintf("%s Session '%s' has closed", theme.IconSuccess, sessionName)).
+			PrettyOnly().
+			Log(ctx)
 		return nil
 	},
 }

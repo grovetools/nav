@@ -10,14 +10,17 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mattsolo1/grove-core/logging"
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/repo"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
+
+var ulogSessionize = grovelogging.NewUnifiedLogger("gmux.sessionize")
 
 // buildInitialEnrichmentOptions creates options for enriching project data.
 // For initial load, we disable enrichment to show the UI faster.
@@ -123,10 +126,11 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		if len(projects) == 0 {
-			fmt.Println("No projects found in search paths!")
-			fmt.Println("\nYour grove.yml file needs to have 'groves' configured for project discovery.")
-			fmt.Println("Run the setup wizard to configure your project directories interactively.")
-			fmt.Print("\nRun setup now? [Y/n]: ")
+			ctx := context.Background()
+			ulogSessionize.Info("No projects found").
+				Pretty("No projects found in search paths!\n\nYour grove.yml file needs to have 'groves' configured for project discovery.\nRun the setup wizard to configure your project directories interactively.\n\nRun setup now? [Y/n]: ").
+				PrettyOnly().
+				Log(ctx)
 
 			reader := bufio.NewReader(os.Stdin)
 			response, _ := reader.ReadString('\n')
@@ -253,11 +257,12 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	return nil
 }
 func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
+	ctx := context.Background()
 	// Welcome message
-	fmt.Println("Welcome to gmux sessionizer!")
-	fmt.Println("It looks like this is your first time running, or your configuration is missing.")
-	fmt.Println("Let's set up your project directories in your main grove.yml file.")
-	fmt.Println()
+	ulogSessionize.Info("First run setup").
+		Pretty("Welcome to gmux sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
+		PrettyOnly().
+		Log(ctx)
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -268,12 +273,17 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 		description string
 	}
 
-	fmt.Println("Enter your project directories (press Enter with empty input when done):")
-	fmt.Println("Example: ~/Projects, ~/Work, ~/Code")
-	fmt.Println()
+	ulogSessionize.Info("Project directory prompt").
+		Pretty("Enter your project directories (press Enter with empty input when done):\nExample: ~/Projects, ~/Work, ~/Code\n").
+		PrettyOnly().
+		Log(ctx)
 
 	for i := 1; ; i++ {
-		fmt.Printf("Project directory %d (or press Enter to finish): ", i)
+		ulogSessionize.Info("Directory input prompt").
+			Field("directory_number", i).
+			Pretty(fmt.Sprintf("Project directory %d (or press Enter to finish): ", i)).
+			PrettyOnly().
+			Log(ctx)
 
 		pathInput, err := reader.ReadString('\n')
 		if err != nil {
@@ -288,25 +298,45 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 		// Expand the path to check if it exists
 		expandedPath := expandPath(pathInput)
 		if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
-			fmt.Printf("⚠️  Warning: Directory %s doesn't exist. Create it? [Y/n]: ", pathInput)
+			ulogSessionize.Warn("Directory does not exist").
+				Field("path", pathInput).
+				Pretty(fmt.Sprintf("%s  Warning: Directory %s doesn't exist. Create it? [Y/n]: ", theme.IconWarning, pathInput)).
+				PrettyOnly().
+				Log(ctx)
 			createResponse, _ := reader.ReadString('\n')
 			createResponse = strings.TrimSpace(strings.ToLower(createResponse))
 
 			if createResponse == "" || createResponse == "y" || createResponse == "yes" {
 				if err := os.MkdirAll(expandedPath, 0755); err != nil {
-					fmt.Printf("❌ Failed to create directory: %v\n", err)
-					fmt.Println("Skipping this directory...")
+					ulogSessionize.Error("Failed to create directory").
+						Field("path", pathInput).
+						Err(err).
+						Pretty(fmt.Sprintf("%s Failed to create directory: %v\n%s Skipping this directory...", theme.IconError, err, theme.IconInfo)).
+						PrettyOnly().
+						Log(ctx)
 					continue
 				}
-				fmt.Println("✅ Directory created!")
+				ulogSessionize.Success("Directory created").
+					Field("path", pathInput).
+					Pretty(theme.IconSuccess + " Directory created!").
+					PrettyOnly().
+					Log(ctx)
 			} else {
-				fmt.Println("Skipping non-existent directory...")
+				ulogSessionize.Info("Skipping directory").
+					Field("path", pathInput).
+					Pretty(theme.IconInfo + " Skipping non-existent directory...").
+					PrettyOnly().
+					Log(ctx)
 				continue
 			}
 		}
 
 		// Ask for a description
-		fmt.Printf("Description for %s (optional): ", pathInput)
+		ulogSessionize.Info("Description prompt").
+			Field("path", pathInput).
+			Pretty(fmt.Sprintf("Description for %s (optional): ", pathInput)).
+			PrettyOnly().
+			Log(ctx)
 		descInput, _ := reader.ReadString('\n')
 		descInput = strings.TrimSpace(descInput)
 
@@ -337,15 +367,21 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 			description: descInput,
 		})
 
-		fmt.Printf("✅ Added %s\n\n", pathInput)
+		ulogSessionize.Success("Added project directory").
+			Field("path", pathInput).
+			Field("key", key).
+			Field("description", descInput).
+			Pretty(fmt.Sprintf("%s Added %s\n", theme.IconSuccess, pathInput)).
+			PrettyOnly().
+			Log(ctx)
 	}
 
 	// Check if user added any paths
 	if len(searchPaths) == 0 {
-		fmt.Println("\nNo directories added. To set up manually, edit your grove.yml file:")
-		fmt.Println("  ~/.config/grove/grove.yml")
-		fmt.Println("\nAnd add a 'tmux' section like this:")
-		fmt.Println(getDefaultTmuxConfigContent())
+		ulogSessionize.Info("No directories added").
+			Pretty("\nNo directories added. To set up manually, edit your grove.yml file:\n  ~/.config/grove/grove.yml\n\nAnd add a 'tmux' section like this:\n" + getDefaultTmuxConfigContent()).
+			PrettyOnly().
+			Log(ctx)
 		return nil
 	}
 
@@ -378,11 +414,16 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	}
 
 	configPath := tempMgr.GetConfigPath()
-	fmt.Printf("\n✅ Configuration saved to: %s\n", configPath)
-	fmt.Printf("✅ Added %d project director%s\n", len(searchPaths),
-		map[bool]string{true: "ies", false: "y"}[len(searchPaths) != 1])
-
-	fmt.Println("\n✅ Setup complete! Run 'gmux sz' to start using the sessionizer.")
+	directorySuffix := map[bool]string{true: "ies", false: "y"}[len(searchPaths) != 1]
+	ulogSessionize.Success("Configuration saved").
+		Field("config_path", configPath).
+		Field("directory_count", len(searchPaths)).
+		Pretty(fmt.Sprintf("\n%s Configuration saved to: %s\n%s Added %d project director%s\n\n%s Setup complete! Run 'gmux sz' to start using the sessionizer.",
+			theme.IconSuccess, configPath,
+			theme.IconSuccess, len(searchPaths), directorySuffix,
+			theme.IconSuccess)).
+		PrettyOnly().
+		Log(ctx)
 	return nil
 }
 
@@ -555,7 +596,7 @@ explicit_projects:
 // ParentEcosystemPath pointing to the cx ecosystem path (~/.grove/cx).
 // This function adds a virtual ecosystem node if one doesn't already exist.
 func groupClonedProjectsAsEcosystem(projects []manager.SessionizeProject) []manager.SessionizeProject {
-	logger := logging.NewLogger("gmux-sessionize")
+	logger := grovelogging.NewLogger("gmux-sessionize")
 
 	// Get the cx ecosystem path to identify cloned repos
 	cxEcoPath, err := repo.GetCxEcosystemPath()

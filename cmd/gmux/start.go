@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"path/filepath"
 
+	grovelogging "github.com/mattsolo1/grove-core/logging"
 	"github.com/mattsolo1/grove-core/pkg/models"
 	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	"github.com/mattsolo1/grove-core/tui/theme"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
 	"github.com/spf13/cobra"
 )
+
+var ulogStart = grovelogging.NewUnifiedLogger("gmux.start")
 
 var startCmd = &cobra.Command{
 	Use:   "start <key>",
 	Short: "Start a pre-configured tmux session",
 	Long: `Start a tmux session using configuration from tmux-sessions.yaml.
-	
+
 The session will be created with the name 'grove-<key>' and will automatically
 change to the configured directory for that session.`,
 	Args: cobra.ExactArgs(1),
@@ -61,9 +65,13 @@ change to the configured directory for that session.`,
 		}
 
 		if exists {
-			fmt.Printf("Session '%s' already exists. Attaching...\n", sessionName)
-			fmt.Printf("\nTo attach manually, run:\n")
-			fmt.Printf("  tmux attach-session -t %s\n", sessionName)
+			ulogStart.Info("Session already exists").
+				Field("session", sessionName).
+				Field("key", key).
+				Pretty(fmt.Sprintf("%s Session '%s' already exists. Attaching...\n\nTo attach manually, run:\n  tmux attach-session -t %s",
+					theme.IconInfo, sessionName, sessionName)).
+				PrettyOnly().
+				Log(ctx)
 			return nil
 		}
 
@@ -87,13 +95,20 @@ change to the configured directory for that session.`,
 			return fmt.Errorf("failed to launch session: %w", err)
 		}
 
-		fmt.Printf("Session '%s' started for %s\n", sessionName, session.Description)
+		prettyMsg := fmt.Sprintf("%s Session '%s' started for %s", theme.IconSuccess, sessionName, session.Description)
 		if workDir != "" {
-			fmt.Printf("Working directory: %s\n", workDir)
+			prettyMsg += fmt.Sprintf("\nWorking directory: %s", workDir)
 		}
+		prettyMsg += fmt.Sprintf("\n\nTo attach to this session, run:\n  tmux attach-session -t %s", sessionName)
 
-		fmt.Printf("\nTo attach to this session, run:\n")
-		fmt.Printf("  tmux attach-session -t %s\n", sessionName)
+		ulogStart.Success("Session started").
+			Field("session", sessionName).
+			Field("key", key).
+			Field("working_dir", workDir).
+			Field("description", session.Description).
+			Pretty(prettyMsg).
+			PrettyOnly().
+			Log(ctx)
 
 		return nil
 	},
