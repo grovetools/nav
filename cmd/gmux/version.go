@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
@@ -16,7 +15,6 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version information for this binary",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		info := version.GetInfo()
 
@@ -30,14 +28,14 @@ var versionCmd = &cobra.Command{
 				Field("version", info.Version).
 				Pretty(string(jsonData)).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 		} else {
 			ulogVersion.Info("Version output").
 				Field("format", "text").
 				Field("version", info.Version).
 				Pretty(info.String()).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 		}
 		return nil
 	},

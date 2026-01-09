@@ -38,8 +38,8 @@ Examples:
   gmux launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		sessionName := args[0]
+		ctx := context.Background()
 
 		client, err := tmuxclient.NewClient()
 		if err != nil {
@@ -82,7 +82,7 @@ Examples:
 			Pretty(fmt.Sprintf("%s Session '%s' launched successfully\n\nTo attach to this session, run:\n  tmux attach-session -t %s",
 				theme.IconSuccess, sessionName, sessionName)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		return nil
 	},

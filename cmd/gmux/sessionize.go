@@ -126,11 +126,10 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		if len(projects) == 0 {
-			ctx := context.Background()
 			ulogSessionize.Info("No projects found").
 				Pretty("No projects found in search paths!\n\nYour grove.yml file needs to have 'groves' configured for project discovery.\nRun the setup wizard to configure your project directories interactively.\n\nRun setup now? [Y/n]: ").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 
 			reader := bufio.NewReader(os.Stdin)
 			response, _ := reader.ReadString('\n')
@@ -221,12 +220,11 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	}
 
 	// We're in tmux, use the tmux client
+	ctx := context.Background()
 	client, err := tmuxclient.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create tmux client: %w", err)
 	}
-
-	ctx := context.Background()
 
 	// Check if session exists
 	exists, err := client.SessionExists(ctx, sessionName)
@@ -257,12 +255,11 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	return nil
 }
 func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
-	ctx := context.Background()
 	// Welcome message
 	ulogSessionize.Info("First run setup").
 		Pretty("Welcome to gmux sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
 		PrettyOnly().
-		Log(ctx)
+		Emit()
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -276,14 +273,14 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	ulogSessionize.Info("Project directory prompt").
 		Pretty("Enter your project directories (press Enter with empty input when done):\nExample: ~/Projects, ~/Work, ~/Code\n").
 		PrettyOnly().
-		Log(ctx)
+		Emit()
 
 	for i := 1; ; i++ {
 		ulogSessionize.Info("Directory input prompt").
 			Field("directory_number", i).
 			Pretty(fmt.Sprintf("Project directory %d (or press Enter to finish): ", i)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		pathInput, err := reader.ReadString('\n')
 		if err != nil {
@@ -302,7 +299,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 				Field("path", pathInput).
 				Pretty(fmt.Sprintf("%s  Warning: Directory %s doesn't exist. Create it? [Y/n]: ", theme.IconWarning, pathInput)).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			createResponse, _ := reader.ReadString('\n')
 			createResponse = strings.TrimSpace(strings.ToLower(createResponse))
 
@@ -313,20 +310,20 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 						Err(err).
 						Pretty(fmt.Sprintf("%s Failed to create directory: %v\n%s Skipping this directory...", theme.IconError, err, theme.IconInfo)).
 						PrettyOnly().
-						Log(ctx)
+						Emit()
 					continue
 				}
 				ulogSessionize.Success("Directory created").
 					Field("path", pathInput).
 					Pretty(theme.IconSuccess + " Directory created!").
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 			} else {
 				ulogSessionize.Info("Skipping directory").
 					Field("path", pathInput).
 					Pretty(theme.IconInfo + " Skipping non-existent directory...").
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 				continue
 			}
 		}
@@ -336,7 +333,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 			Field("path", pathInput).
 			Pretty(fmt.Sprintf("Description for %s (optional): ", pathInput)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		descInput, _ := reader.ReadString('\n')
 		descInput = strings.TrimSpace(descInput)
 
@@ -373,7 +370,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 			Field("description", descInput).
 			Pretty(fmt.Sprintf("%s Added %s\n", theme.IconSuccess, pathInput)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 	}
 
 	// Check if user added any paths
@@ -381,7 +378,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 		ulogSessionize.Info("No directories added").
 			Pretty("\nNo directories added. To set up manually, edit your grove.yml file:\n  ~/.config/grove/grove.yml\n\nAnd add a 'tmux' section like this:\n" + getDefaultTmuxConfigContent()).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		return nil
 	}
 
@@ -423,7 +420,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 			theme.IconSuccess, len(searchPaths), directorySuffix,
 			theme.IconSuccess)).
 		PrettyOnly().
-		Log(ctx)
+		Emit()
 	return nil
 }
 

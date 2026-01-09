@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,7 +30,6 @@ var keyCmd = &cobra.Command{
 
 // displaySessionsTable shows sessions in a styled table and returns true if any sessions have paths
 func displaySessionsTable(sessions []models.TmuxSession) bool {
-	ctx := context.Background()
 	// Define styles
 	keyStyle := core_theme.DefaultTheme.Highlight
 	repoStyle := core_theme.DefaultTheme.Info
@@ -70,7 +68,7 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 		Field("session_count", len(sessions)).
 		Pretty(t.String()).
 		PrettyOnly().
-		Log(ctx)
+		Emit()
 	return hasConfiguredSessions
 }
 
@@ -79,7 +77,6 @@ var keyListCmd = &cobra.Command{
 	Short: "List all configured session keys",
 	// The new RunE function handles both styles
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
@@ -93,7 +90,7 @@ var keyListCmd = &cobra.Command{
 			ulogKey.Info("No sessions configured").
 				Pretty("No sessions configured").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -116,7 +113,7 @@ var keyListCmd = &cobra.Command{
 				Field("style", "compact").
 				Pretty(strings.Join(outputLines, "\n")).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 		} else {
 			// Default to the existing table display
 			displaySessionsTable(sessions)
@@ -130,7 +127,6 @@ var keyUpdateCmd = &cobra.Command{
 	Short: "Update the key binding for a tmux session",
 	Long:  `Update the key binding for an existing tmux session. If no key is provided, shows all sessions for selection.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
@@ -144,7 +140,7 @@ var keyUpdateCmd = &cobra.Command{
 			ulogKey.Info("No sessions configured").
 				Pretty("No sessions configured").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -156,12 +152,12 @@ var keyUpdateCmd = &cobra.Command{
 			ulogKey.Info("Session selection prompt").
 				Pretty("Available sessions:\n").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			displaySessionsTable(sessions)
 			ulogKey.Info("Key input prompt").
 				Pretty("\nEnter the key of the session to update: ").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
@@ -196,7 +192,7 @@ var keyUpdateCmd = &cobra.Command{
 			Field("path", targetSession.Path).
 			Pretty(fmt.Sprintf("\nCurrent session: %s -> %s (%s)\n", targetSession.Key, repo, targetSession.Path)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Get available keys
 		availableKeys := mgr.GetAvailableKeys()
@@ -218,7 +214,7 @@ var keyUpdateCmd = &cobra.Command{
 			Field("free_keys", freeKeys).
 			Pretty(fmt.Sprintf("\nAvailable keys:\n  %s\n\nEnter new key (or press Enter to cancel): ", strings.Join(freeKeys, ", "))).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		reader := bufio.NewReader(os.Stdin)
 		newKey, err := reader.ReadString('\n')
@@ -231,7 +227,7 @@ var keyUpdateCmd = &cobra.Command{
 			ulogKey.Info("Update cancelled").
 				Pretty("Update cancelled").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -262,13 +258,13 @@ var keyUpdateCmd = &cobra.Command{
 			Field("new_key", newKey).
 			Pretty(fmt.Sprintf("\n%s Session key updated: %s -> %s\n", core_theme.IconSuccess, targetKey, newKey)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Regenerate bindings
 		ulogKey.Progress("Regenerating bindings").
 			Pretty(core_theme.IconRunning + " Regenerating tmux bindings...").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		if err := mgr.RegenerateBindings(); err != nil {
 			return fmt.Errorf("failed to regenerate bindings: %w", err)
 		}
@@ -276,7 +272,7 @@ var keyUpdateCmd = &cobra.Command{
 		ulogKey.Success("Bindings regenerated").
 			Pretty(core_theme.IconSuccess + " Done! Remember to reload your tmux configuration.").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		return nil
 	},
 }
@@ -286,7 +282,6 @@ var keyEditCmd = &cobra.Command{
 	Short: "Edit the details of a tmux session (path, repository, description)",
 	Long:  `Edit the path, repository name, and description for an existing tmux session. If no key is provided, shows all sessions for selection.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
@@ -300,7 +295,7 @@ var keyEditCmd = &cobra.Command{
 			ulogKey.Info("No sessions configured").
 				Pretty("No sessions configured").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -312,12 +307,12 @@ var keyEditCmd = &cobra.Command{
 			ulogKey.Info("Session selection prompt").
 				Pretty("Available sessions:\n").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			displaySessionsTable(sessions)
 			ulogKey.Info("Key input prompt").
 				Pretty("\nEnter the key of the session to edit: ").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
@@ -352,7 +347,7 @@ var keyEditCmd = &cobra.Command{
 			Field("path", targetSession.Path).
 			Pretty(prettyOutput).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		reader := bufio.NewReader(os.Stdin)
 
@@ -360,7 +355,7 @@ var keyEditCmd = &cobra.Command{
 		ulogKey.Info("Path input prompt").
 			Pretty("Enter new path (press Enter to keep current): ").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		newPath, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read input: %w", err)
@@ -389,21 +384,21 @@ var keyEditCmd = &cobra.Command{
 			Field("new_path", newPath).
 			Pretty(fmt.Sprintf("\n%s Session '%s' updated successfully!\n", core_theme.IconSuccess, targetKey)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Regenerate bindings if path changed
 		if newPath != targetSession.Path {
 			ulogKey.Progress("Regenerating bindings").
 				Pretty(core_theme.IconRunning + " Regenerating tmux bindings...").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			if err := mgr.RegenerateBindings(); err != nil {
 				return fmt.Errorf("failed to regenerate bindings: %w", err)
 			}
 			ulogKey.Success("Bindings regenerated").
 				Pretty(core_theme.IconSuccess + " Done! Remember to reload your tmux configuration.").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 		}
 
 		return nil
@@ -415,7 +410,6 @@ var keyAddCmd = &cobra.Command{
 	Short: "Add a new session from available projects in search paths",
 	Long:  `Discover projects from configured search paths and quickly map them to available keys.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
@@ -448,7 +442,7 @@ var keyAddCmd = &cobra.Command{
 			ulogKey.Warn("No available keys").
 				Pretty(core_theme.IconWarning + " No available keys! All keys are already mapped to sessions.").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -465,7 +459,7 @@ var keyAddCmd = &cobra.Command{
 			ulogKey.Warn("No projects found").
 				Pretty(core_theme.IconWarning + " No projects found in search paths!\n\nMake sure your search paths are configured in one of:\n  ~/.config/tmux/project-search-paths.yaml\n  ~/.config/grove/project-search-paths.yaml").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -490,7 +484,7 @@ var keyAddCmd = &cobra.Command{
 			ulogKey.Info("All projects mapped").
 				Pretty(core_theme.IconInfo + " All discovered projects are already mapped to keys!").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -499,7 +493,7 @@ var keyAddCmd = &cobra.Command{
 			Field("project_count", len(availableProjects)).
 			Pretty("Available projects from search paths:\n").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Build project table
 		indexStyle := core_theme.DefaultTheme.Warning
@@ -521,14 +515,14 @@ var keyAddCmd = &cobra.Command{
 		ulogKey.Info("Projects table").
 			Pretty(t.String() + "\n").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Get project selection
 		reader := bufio.NewReader(os.Stdin)
 		ulogKey.Info("Project selection prompt").
 			Pretty("Select project number (or press Enter to cancel): ").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read input: %w", err)
@@ -539,7 +533,7 @@ var keyAddCmd = &cobra.Command{
 			ulogKey.Info("Selection cancelled").
 				Pretty("Cancelled").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -557,7 +551,7 @@ var keyAddCmd = &cobra.Command{
 			Pretty(fmt.Sprintf("\nSelected project: %s\nAvailable keys: %s\n\nEnter key to assign (or press Enter to cancel): ",
 				selectedProject.Name, strings.Join(freeKeys, ", "))).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		keyInput, err := reader.ReadString('\n')
 		if err != nil {
@@ -569,7 +563,7 @@ var keyAddCmd = &cobra.Command{
 			ulogKey.Info("Selection cancelled").
 				Pretty("Cancelled").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -606,13 +600,13 @@ var keyAddCmd = &cobra.Command{
 			Pretty(fmt.Sprintf("\n%s Successfully added session:\n  Key: %s\n  Project: %s\n  Path: %s\n",
 				core_theme.IconSuccess, keyInput, selectedProject.Name, selectedProject.Path)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		// Regenerate bindings
 		ulogKey.Progress("Regenerating bindings").
 			Pretty("\n" + core_theme.IconRunning + " Regenerating tmux bindings...").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		if err := mgr.RegenerateBindings(); err != nil {
 			return fmt.Errorf("failed to regenerate bindings: %w", err)
 		}
@@ -620,7 +614,7 @@ var keyAddCmd = &cobra.Command{
 		ulogKey.Success("Bindings regenerated").
 			Pretty(core_theme.IconSuccess + " Done! Remember to reload your tmux configuration.").
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		return nil
 	},
 }
@@ -641,7 +635,6 @@ var keyUnmapCmd = &cobra.Command{
 	Short: "Unmap a session from its key binding",
 	Long:  `Remove the mapping for a specific key, making it available for future use.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
@@ -659,7 +652,7 @@ var keyUnmapCmd = &cobra.Command{
 			ulogKey.Info("Mapped sessions display").
 				Pretty("Mapped sessions:\n").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 
 			var mappedSessions []models.TmuxSession
 			for _, s := range sessions {
@@ -672,7 +665,7 @@ var keyUnmapCmd = &cobra.Command{
 				ulogKey.Info("No sessions mapped").
 					Pretty("No sessions are currently mapped").
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 				return nil
 			}
 
@@ -680,7 +673,7 @@ var keyUnmapCmd = &cobra.Command{
 			ulogKey.Info("Key input prompt").
 				Pretty("\nEnter the key to unmap (or press Enter to cancel): ").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 
 			reader := bufio.NewReader(os.Stdin)
 			input, err := reader.ReadString('\n')
@@ -693,7 +686,7 @@ var keyUnmapCmd = &cobra.Command{
 				ulogKey.Info("Unmap cancelled").
 					Pretty("Cancelled").
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 				return nil
 			}
 		}
@@ -722,13 +715,13 @@ var keyUnmapCmd = &cobra.Command{
 					Field("key", targetKey).
 					Pretty(fmt.Sprintf("%s Unmapped key '%s'\n", core_theme.IconSuccess, targetKey)).
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 
 				// Regenerate bindings
 				ulogKey.Progress("Regenerating bindings").
 					Pretty(core_theme.IconRunning + " Regenerating tmux bindings...").
 					PrettyOnly().
-					Log(ctx)
+					Emit()
 				if err := mgr.RegenerateBindings(); err != nil {
 					return fmt.Errorf("failed to regenerate bindings: %w", err)
 				}
@@ -740,18 +733,18 @@ var keyUnmapCmd = &cobra.Command{
 						ulogKey.Success("Tmux config reloaded").
 							Pretty(core_theme.IconSuccess + " Done! Tmux configuration reloaded.").
 							PrettyOnly().
-							Log(ctx)
+							Emit()
 					} else {
 						ulogKey.Success("Bindings regenerated").
 							Pretty(core_theme.IconSuccess + " Done! Remember to reload your tmux configuration.").
 							PrettyOnly().
-							Log(ctx)
+							Emit()
 					}
 				} else {
 					ulogKey.Success("Bindings regenerated").
 						Pretty(core_theme.IconSuccess + " Done! Remember to reload your tmux configuration.").
 						PrettyOnly().
-						Log(ctx)
+						Emit()
 				}
 				break
 			}

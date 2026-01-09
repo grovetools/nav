@@ -58,7 +58,7 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			Field("session", sessionName).
 			Pretty(fmt.Sprintf("%s Waiting for session '%s' to close...", theme.IconRunning, sessionName)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		err = client.WaitForSessionClose(ctx, sessionName, pollInterval)
 		if err != nil {
@@ -72,7 +72,7 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			Field("session", sessionName).
 			Pretty(fmt.Sprintf("%s Session '%s' has closed", theme.IconSuccess, sessionName)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		return nil
 	},
 }

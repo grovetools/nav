@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -85,11 +84,10 @@ var historyCmd = &cobra.Command{
 		}
 
 		if len(items) == 0 {
-			ctx := context.Background()
 			ulogHistory.Info("No session history").
 				Pretty(core_theme.IconInfo + " No session history found.").
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 

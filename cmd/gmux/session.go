@@ -24,8 +24,8 @@ var sessionExistsCmd = &cobra.Command{
 	Short: "Check if a tmux session exists",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		sessionName := args[0]
+		ctx := context.Background()
 
 		client, err := tmuxclient.NewClient()
 		if err != nil {
@@ -42,14 +42,14 @@ var sessionExistsCmd = &cobra.Command{
 				Field("session", sessionName).
 				Pretty(fmt.Sprintf("%s Session '%s' exists", theme.IconSuccess, sessionName)).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		} else {
 			ulogSession.Info("Session does not exist").
 				Field("session", sessionName).
 				Pretty(fmt.Sprintf("%s Session '%s' does not exist", theme.IconError, sessionName)).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			os.Exit(1)
 		}
 		return nil
@@ -61,8 +61,8 @@ var sessionKillCmd = &cobra.Command{
 	Short: "Kill a tmux session",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		sessionName := args[0]
+		ctx := context.Background()
 
 		client, err := tmuxclient.NewClient()
 		if err != nil {
@@ -78,7 +78,7 @@ var sessionKillCmd = &cobra.Command{
 			Field("session", sessionName).
 			Pretty(fmt.Sprintf("%s Session '%s' killed", theme.IconSuccess, sessionName)).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 		return nil
 	},
 }

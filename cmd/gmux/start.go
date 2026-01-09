@@ -24,7 +24,6 @@ The session will be created with the name 'grove-<key>' and will automatically
 change to the configured directory for that session.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := context.Background()
 		key := args[0]
 
 		mgr, err := tmux.NewManager(configDir)
@@ -50,6 +49,7 @@ change to the configured directory for that session.`,
 		}
 
 		// Create tmux client
+		ctx := context.Background()
 		client, err := tmuxclient.NewClient()
 		if err != nil {
 			return fmt.Errorf("failed to create tmux client: %w", err)
@@ -71,7 +71,7 @@ change to the configured directory for that session.`,
 				Pretty(fmt.Sprintf("%s Session '%s' already exists. Attaching...\n\nTo attach manually, run:\n  tmux attach-session -t %s",
 					theme.IconInfo, sessionName, sessionName)).
 				PrettyOnly().
-				Log(ctx)
+				Emit()
 			return nil
 		}
 
@@ -108,7 +108,7 @@ change to the configured directory for that session.`,
 			Field("description", session.Description).
 			Pretty(prettyMsg).
 			PrettyOnly().
-			Log(ctx)
+			Emit()
 
 		return nil
 	},
