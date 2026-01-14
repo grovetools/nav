@@ -13,6 +13,7 @@ import (
 	coreconfig "github.com/mattsolo1/grove-core/config"
 	"github.com/mattsolo1/grove-core/git"
 	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/mattsolo1/grove-core/util/delegation"
 	"github.com/mattsolo1/grove-flow/pkg/orchestration"
 	"github.com/sirupsen/logrus"
 )
@@ -104,7 +105,7 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 	if _, err := os.Stat(nbPath); err == nil {
 		cmd = exec.Command(nbPath, "list", "--workspaces", "--json")
 	} else {
-		cmd = exec.Command("grove", "nb", "list", "--workspaces", "--json")
+		cmd = delegation.Command("nb", "list", "--workspaces", "--json")
 	}
 
 	output, err := cmd.Output()
