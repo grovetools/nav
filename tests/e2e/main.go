@@ -25,6 +25,13 @@ func main() {
 		GmuxWindowsScenario(),
 		GmuxWindowsActiveSelectionScenario(),
 		GmuxWindowsMoveScenario(),
+
+		// gmux sz column refactoring tests
+		GmuxSzColsDefaultViewScenario(),
+		GmuxSzColsKeysMappedScenario(),
+		GmuxSzColsContextAppliedScenario(),
+		GmuxSzColsCombinedViewScenario(),
+		GmuxSzColsFilterHidesCxScenario(),
 	}
 
 	if err := app.Execute(context.Background(), scenarios); err != nil {

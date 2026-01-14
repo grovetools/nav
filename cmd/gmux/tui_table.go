@@ -61,8 +61,13 @@ func (m sessionizeModel) renderTable() string {
 		}
 	}
 
+	showCxColumn := m.hasVisibleContextData()
+
 	// Define table headers based on what's enabled
-	headers := []string{"K", "CX", "WORKSPACE"}
+	headers := []string{"WORKSPACE"}
+	if showCxColumn {
+		headers = append(headers, "CX")
+	}
 
 	// Get spinner for animation
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -102,7 +107,7 @@ func (m sessionizeModel) renderTable() string {
 	visibleProjects := m.filtered[start:end]
 	rows := make([][]string, len(visibleProjects))
 	for i, project := range visibleProjects {
-		rows[i] = m.formatProjectRow(project)
+		rows[i] = m.formatProjectRow(project, showCxColumn)
 	}
 
 	// Adjust cursor to be relative to visible window
@@ -121,7 +126,7 @@ func (m sessionizeModel) renderTable() string {
 }
 
 // formatProjectRow formats a single project into a table row
-func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []string {
+func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, showCxColumn bool) []string {
 	// --- WORKSPACE ---
 	workspaceName := project.Name
 
@@ -291,7 +296,13 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 			}
 		}
 	}
-	// Leave keyMapping empty if no key is bound
+
+	// Append key to workspace name if it exists
+	if keyMapping != "" {
+		keyStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Blue).Italic(true)
+		styledKey := keyStyle.Render(" (" + keyMapping + ")")
+		workspaceName += styledKey
+	}
 
 	// --- CONTEXT STATUS ---
 	cxStatus := ""
@@ -447,7 +458,10 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject) []
 	}
 
 	// Build row based on enabled columns
-	row := []string{keyMapping, cxStatus, workspaceName}
+	row := []string{workspaceName}
+	if showCxColumn {
+		row = append(row, cxStatus)
+	}
 
 	if m.showBranch {
 		row = append(row, branch)

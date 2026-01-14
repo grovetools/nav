@@ -2038,6 +2038,18 @@ func (m *sessionizeModel) enrichVisibleProjects() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// hasVisibleContextData checks if any filtered projects have a context rule applied.
+func (m sessionizeModel) hasVisibleContextData() bool {
+	for _, project := range m.filtered {
+		if status, ok := m.rulesState[project.Path]; ok {
+			if status == grovecontext.RuleHot || status == grovecontext.RuleCold || status == grovecontext.RuleExcluded {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // getVisibleRange calculates the start and end indices of visible projects.
 func (m *sessionizeModel) getVisibleRange() (int, int) {
 	visibleHeight := m.height - 10
