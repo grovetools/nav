@@ -403,8 +403,8 @@ func (m *Manager) GetGitStatus(path, repo string) models.GitStatus {
 	return models.GitStatus{
 		Repository: repo,
 		Status:     status,
-		HasChanges: status != "✓",
-		IsClean:    status == "✓",
+		HasChanges: status != "*",
+		IsClean:    status == "*",
 	}
 }
 
@@ -513,7 +513,7 @@ func (m *Manager) buildGitStatus(path string) string {
 	}
 
 	if len(statusParts) == 0 {
-		return "✓"
+		return "*"
 	}
 
 	return strings.Join(statusParts, " ")

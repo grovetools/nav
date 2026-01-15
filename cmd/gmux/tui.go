@@ -1910,30 +1910,30 @@ func (m sessionizeModel) View() string {
 	// Build toggle indicators
 	gitToggle := "s:git status "
 	if m.showGitStatus {
-		gitToggle += core_theme.DefaultTheme.Success.Render("✓")
+		gitToggle += core_theme.DefaultTheme.Success.Render("*")
 	} else {
-		gitToggle += core_theme.DefaultTheme.Muted.Render("✗")
+		gitToggle += core_theme.DefaultTheme.Muted.Render("x")
 	}
 
 	branchToggle := " b:branch "
 	if m.showBranch {
-		branchToggle += core_theme.DefaultTheme.Success.Render("✓")
+		branchToggle += core_theme.DefaultTheme.Success.Render("*")
 	} else {
-		branchToggle += core_theme.DefaultTheme.Muted.Render("✗")
+		branchToggle += core_theme.DefaultTheme.Muted.Render("x")
 	}
 
 	noteToggle := " n:notes "
 	if m.showNoteCounts {
-		noteToggle += core_theme.DefaultTheme.Success.Render("✓")
+		noteToggle += core_theme.DefaultTheme.Success.Render("*")
 	} else {
-		noteToggle += core_theme.DefaultTheme.Muted.Render("✗")
+		noteToggle += core_theme.DefaultTheme.Muted.Render("x")
 	}
 
 	planToggle := " f:plans "
 	if m.showPlanStats {
-		planToggle += core_theme.DefaultTheme.Success.Render("✓")
+		planToggle += core_theme.DefaultTheme.Success.Render("*")
 	} else {
-		planToggle += core_theme.DefaultTheme.Muted.Render("✗")
+		planToggle += core_theme.DefaultTheme.Muted.Render("x")
 	}
 
 	pathsToggle := " p:paths "
