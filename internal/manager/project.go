@@ -32,6 +32,25 @@ type PlanStats struct {
 	PlanStatus string `json:"plan_status,omitempty"` // Status of the plan itself (e.g., "hold", "finished")
 }
 
+// ReleaseInfo holds release tag and commit information.
+type ReleaseInfo struct {
+	LatestTag    string `json:"latest_tag"`
+	CommitsAhead int    `json:"commits_ahead"`
+}
+
+// BinaryStatus holds the active status of a project's binary.
+type BinaryStatus struct {
+	IsDevActive bool   `json:"is_dev_active"`
+	LinkName    string `json:"link_name"`
+}
+
+// CxStats holds token counts from grove-context.
+type CxStats struct {
+	Files  int   `json:"total_files"`
+	Tokens int   `json:"total_tokens"`
+	Size   int64 `json:"total_size"`
+}
+
 // SessionizeProject is an enriched WorkspaceNode for the sessionize TUI.
 // It embeds the core WorkspaceNode type and adds application-specific enrichment fields.
 type SessionizeProject struct {
@@ -41,6 +60,10 @@ type SessionizeProject struct {
 	GitStatus     *git.ExtendedGitStatus
 	NoteCounts    *NoteCounts
 	PlanStats     *PlanStats
+	ReleaseInfo   *ReleaseInfo
+	ActiveBinary  *BinaryStatus
+	CxStats       *CxStats
+	GitRemoteURL  string
 
 	// EnrichmentStatus tracks the loading state of different data types (e.g., "git:loading", "git:done")
 	EnrichmentStatus map[string]string `json:"-"` // Don't save in cache

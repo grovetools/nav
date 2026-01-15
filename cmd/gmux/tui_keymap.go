@@ -26,6 +26,9 @@ type sessionizeKeyMap struct {
 	ToggleColdContext key.Binding
 	ToggleExclude     key.Binding
 	ToggleHold        key.Binding
+	ToggleRelease     key.Binding
+	ToggleBinary      key.Binding
+	ToggleLink        key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -72,6 +75,9 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.TogglePlanStats,
 			k.ToggleHold,
 			k.TogglePaths,
+			k.ToggleRelease,
+			k.ToggleBinary,
+			k.ToggleLink,
 		},
 	}
 }
@@ -149,5 +155,17 @@ var sessionizeKeys = sessionizeKeyMap{
 	ToggleHold: key.NewBinding(
 		key.WithKeys("H"),
 		key.WithHelp("H", "toggle on-hold"),
+	),
+	ToggleRelease: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "toggle release"),
+	),
+	ToggleBinary: key.NewBinding(
+		key.WithKeys("y"),
+		key.WithHelp("y", "toggle binary"),
+	),
+	ToggleLink: key.NewBinding(
+		key.WithKeys("l"),
+		key.WithHelp("l", "toggle link"),
 	),
 }

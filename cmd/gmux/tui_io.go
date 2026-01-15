@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/mattsolo1/grove-core/pkg/workspace"
 	"github.com/mattsolo1/grove-tmux/internal/manager"
 	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	"gopkg.in/yaml.v3"
 )
 
 // gitStatusMsg is sent when git status for a single project is fetched.
@@ -45,6 +48,12 @@ type noteCountsMapMsg struct {
 type planStatsMapMsg struct {
 	stats map[string]*manager.PlanStats
 }
+
+// New message types for additional column data
+type releaseInfoMapMsg struct{ releases map[string]*manager.ReleaseInfo }
+type binaryStatusMapMsg struct{ statuses map[string]*manager.BinaryStatus }
+type cxStatsMapMsg struct{ stats map[string]*manager.CxStats }
+type remoteURLMapMsg struct{ urls map[string]string }
 
 // tickMsg is sent periodically to refresh git status
 type tickMsg time.Time
@@ -303,6 +312,161 @@ func fetchAllPlanStatsCmd() tea.Cmd {
 	return func() tea.Msg {
 		stats, _ := manager.FetchPlanStatsMap()
 		return planStatsMapMsg{stats: stats}
+	}
+}
+
+// fetchAllReleaseInfoCmd fetches release info for all projects concurrently.
+func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		releases := make(map[string]*manager.ReleaseInfo)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		semaphore := make(chan struct{}, 10)
+
+		for _, p := range projects {
+			wg.Add(1)
+			go func(proj *manager.SessionizeProject) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				execCmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
+				execCmd.Dir = proj.Path
+				tagOutput, err := execCmd.Output()
+				if err != nil {
+					return // No tags found, skip
+				}
+				latestTag := strings.TrimSpace(string(tagOutput))
+
+				execCmd = exec.Command("git", "rev-list", "--count", latestTag+"..HEAD")
+				execCmd.Dir = proj.Path
+				countOutput, err := execCmd.Output()
+				commitsAhead := 0
+				if err == nil {
+					fmt.Sscanf(strings.TrimSpace(string(countOutput)), "%d", &commitsAhead)
+				}
+
+				mu.Lock()
+				releases[proj.Path] = &manager.ReleaseInfo{
+					LatestTag:    latestTag,
+					CommitsAhead: commitsAhead,
+				}
+				mu.Unlock()
+			}(p)
+		}
+		wg.Wait()
+		return releaseInfoMapMsg{releases: releases}
+	}
+}
+
+// devlinksConfig structure for local parsing
+type devlinksConfig struct {
+	Binaries map[string]*struct {
+		Current string `json:"current"`
+	} `json:"binaries"`
+}
+
+// projectBinaryConfig represents the binary config in grove.yml
+type projectBinaryConfig struct {
+	Binary struct {
+		Name string `yaml:"name"`
+	} `yaml:"binary"`
+}
+
+// fetchAllBinaryStatusCmd fetches active binary status for all projects.
+func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		statuses := make(map[string]*manager.BinaryStatus)
+
+		// Load devlinks config once
+		home, _ := os.UserHomeDir()
+		devlinksPath := filepath.Join(home, ".grove", "devlinks.json")
+		var devlinksCfg devlinksConfig
+		if data, err := os.ReadFile(devlinksPath); err == nil {
+			_ = json.Unmarshal(data, &devlinksCfg)
+		}
+
+		for _, p := range projects {
+			// Read binary name from project's grove.yml
+			groveYmlPath := filepath.Join(p.Path, "grove.yml")
+			data, err := os.ReadFile(groveYmlPath)
+			if err != nil {
+				continue
+			}
+			var projCfg projectBinaryConfig
+			if err := yaml.Unmarshal(data, &projCfg); err != nil || projCfg.Binary.Name == "" {
+				continue
+			}
+			binaryName := projCfg.Binary.Name
+
+			// Check devlinks status
+			isDev := false
+			linkName := "release"
+			if devlinksCfg.Binaries != nil {
+				if binaryInfo, ok := devlinksCfg.Binaries[binaryName]; ok && binaryInfo.Current != "" {
+					isDev = true
+					linkName = binaryInfo.Current
+				}
+			}
+			statuses[p.Path] = &manager.BinaryStatus{
+				IsDevActive: isDev,
+				LinkName:    linkName,
+			}
+		}
+		return binaryStatusMapMsg{statuses: statuses}
+	}
+}
+
+// fetchAllCxStatsCmd fetches context stats for all projects.
+func fetchAllCxStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		stats := make(map[string]*manager.CxStats)
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		semaphore := make(chan struct{}, 10)
+
+		for _, p := range projects {
+			wg.Add(1)
+			go func(proj *manager.SessionizeProject) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				cmd := exec.Command("cx", "stats", "--json")
+				cmd.Dir = proj.Path
+				output, err := cmd.Output()
+				if err != nil || len(output) == 0 {
+					return
+				}
+
+				trimmed := strings.TrimSpace(string(output))
+				if strings.HasPrefix(trimmed, "[") {
+					var statsArray []manager.CxStats
+					if json.Unmarshal([]byte(trimmed), &statsArray) == nil && len(statsArray) > 0 {
+						mu.Lock()
+						stats[proj.Path] = &statsArray[0]
+						mu.Unlock()
+					}
+				}
+			}(p)
+		}
+		wg.Wait()
+		return cxStatsMapMsg{stats: stats}
+	}
+}
+
+// fetchAllRemoteURLsCmd fetches the git remote URL for all projects.
+func fetchAllRemoteURLsCmd(projects []*manager.SessionizeProject) tea.Cmd {
+	return func() tea.Msg {
+		urls := make(map[string]string)
+		for _, p := range projects {
+			cmd := exec.Command("git", "remote", "get-url", "origin")
+			cmd.Dir = p.Path
+			if output, err := cmd.Output(); err == nil {
+				urls[p.Path] = strings.TrimSpace(string(output))
+			}
+		}
+		return remoteURLMapMsg{urls: urls}
 	}
 }
 

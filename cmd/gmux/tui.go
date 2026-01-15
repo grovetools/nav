@@ -63,6 +63,9 @@ type sessionizeModel struct {
 	showPlanStats  bool // Whether to show plan stats from grove-flow
 	showOnHold         bool // Whether to show on-hold plans
 	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
+	showRelease    bool // Whether to show release info column
+	showBinary     bool // Whether to show active binary column
+	showLink       bool // Whether to show repository link column
 
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
@@ -159,6 +162,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showNoteCounts := true
 	showPlanStats := true
 	pathDisplayMode := 1 // Default to compact paths (~)
+	showRelease := false // Default off - expensive operation
+	showBinary := false  // Default off - expensive operation
+	showLink := false    // Default off - takes space
 	if state, err := manager.LoadState(configDir); err == nil {
 		// Prioritize CWD focus path over saved state
 		if cwdFocusPath != "" {
@@ -194,6 +200,15 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		if state.PathDisplayMode != nil {
 			pathDisplayMode = *state.PathDisplayMode
 		}
+		if state.ShowRelease != nil {
+			showRelease = *state.ShowRelease
+		}
+		if state.ShowBinary != nil {
+			showBinary = *state.ShowBinary
+		}
+		if state.ShowLink != nil {
+			showLink = *state.ShowLink
+		}
 	}
 
 	return sessionizeModel{
@@ -222,6 +237,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showPlanStats:            showPlanStats,
 		showOnHold:               false, // Default to hiding on-hold plans
 		pathDisplayMode:          pathDisplayMode,
+		showRelease:              showRelease,
+		showBinary:               showBinary,
+		showLink:                 showLink,
 		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
@@ -239,6 +257,9 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		ShowNoteCounts:       boolPtr(m.showNoteCounts),
 		ShowPlanStats:        boolPtr(m.showPlanStats),
 		PathDisplayMode:      intPtr(m.pathDisplayMode),
+		ShowRelease:          boolPtr(m.showRelease),
+		ShowBinary:           boolPtr(m.showBinary),
+		ShowLink:             boolPtr(m.showLink),
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
@@ -291,6 +312,21 @@ func (m sessionizeModel) Init() tea.Cmd {
 		m.enrichmentLoading["git"] = true
 		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
 	}
+	if m.showRelease {
+		m.enrichmentLoading["release"] = true
+		cmds = append(cmds, fetchAllReleaseInfoCmd(m.projects))
+	}
+	if m.showBinary {
+		m.enrichmentLoading["binary"] = true
+		cmds = append(cmds, fetchAllBinaryStatusCmd(m.projects))
+	}
+	if m.showLink {
+		m.enrichmentLoading["link"] = true
+		cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
+	}
+	// Always fetch CX stats in the background to augment the CX column
+	m.enrichmentLoading["cxstats"] = true
+	cmds = append(cmds, fetchAllCxStatsCmd(m.projects))
 
 	// Start spinner animation if loading or if any enrichment is loading
 	anyEnrichmentLoading := m.isLoading
@@ -421,6 +457,42 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.enrichmentLoading["plans"] = false
 		return m, nil
 
+	case releaseInfoMapMsg:
+		for path, info := range msg.releases {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.ReleaseInfo = info
+			}
+		}
+		m.enrichmentLoading["release"] = false
+		return m, nil
+
+	case binaryStatusMapMsg:
+		for path, status := range msg.statuses {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.ActiveBinary = status
+			}
+		}
+		m.enrichmentLoading["binary"] = false
+		return m, nil
+
+	case cxStatsMapMsg:
+		for path, stats := range msg.stats {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.CxStats = stats
+			}
+		}
+		m.enrichmentLoading["cxstats"] = false
+		return m, nil
+
+	case remoteURLMapMsg:
+		for path, url := range msg.urls {
+			if proj, ok := m.projectMap[path]; ok {
+				proj.GitRemoteURL = url
+			}
+		}
+		m.enrichmentLoading["link"] = false
+		return m, nil
+
 	case projectsUpdateMsg:
 		// Save the current selected project path
 		selectedPath := ""
@@ -532,6 +604,25 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			startedEnrichment = true
 			cmds = append(cmds, fetchAllPlanStatsCmd())
 		}
+		if m.showRelease {
+			m.enrichmentLoading["release"] = true
+			startedEnrichment = true
+			cmds = append(cmds, fetchAllReleaseInfoCmd(m.projects))
+		}
+		if m.showBinary {
+			m.enrichmentLoading["binary"] = true
+			startedEnrichment = true
+			cmds = append(cmds, fetchAllBinaryStatusCmd(m.projects))
+		}
+		if m.showLink {
+			m.enrichmentLoading["link"] = true
+			startedEnrichment = true
+			cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
+		}
+		// Always refresh CX stats
+		m.enrichmentLoading["cxstats"] = true
+		startedEnrichment = true
+		cmds = append(cmds, fetchAllCxStatsCmd(m.projects))
 
 		// Start spinner if we kicked off any enrichment
 		if startedEnrichment {
@@ -906,6 +997,33 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Toggle paths display mode
 				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
 				_ = m.buildState().Save(m.configDir)
+				return m, nil
+			case "r":
+				// Toggle release column
+				m.showRelease = !m.showRelease
+				_ = m.buildState().Save(m.configDir)
+				if m.showRelease {
+					m.enrichmentLoading["release"] = true
+					return m, tea.Batch(spinnerTickCmd(), fetchAllReleaseInfoCmd(m.projects))
+				}
+				return m, nil
+			case "y":
+				// Toggle binary column
+				m.showBinary = !m.showBinary
+				_ = m.buildState().Save(m.configDir)
+				if m.showBinary {
+					m.enrichmentLoading["binary"] = true
+					return m, tea.Batch(spinnerTickCmd(), fetchAllBinaryStatusCmd(m.projects))
+				}
+				return m, nil
+			case "l":
+				// Toggle link column
+				m.showLink = !m.showLink
+				_ = m.buildState().Save(m.configDir)
+				if m.showLink {
+					m.enrichmentLoading["link"] = true
+					return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.projects))
+				}
 				return m, nil
 			}
 		case tea.KeyTab:
@@ -1842,7 +1960,28 @@ func (m sessionizeModel) View() string {
 		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
 	}
 
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle, pathsToggle)
+	releaseToggle := " r:release "
+	if m.showRelease {
+		releaseToggle += core_theme.DefaultTheme.Success.Render("✓")
+	} else {
+		releaseToggle += core_theme.DefaultTheme.Muted.Render("✗")
+	}
+
+	binaryToggle := " y:binary "
+	if m.showBinary {
+		binaryToggle += core_theme.DefaultTheme.Success.Render("✓")
+	} else {
+		binaryToggle += core_theme.DefaultTheme.Muted.Render("✗")
+	}
+
+	linkToggle := " l:link "
+	if m.showLink {
+		linkToggle += core_theme.DefaultTheme.Success.Render("✓")
+	} else {
+		linkToggle += core_theme.DefaultTheme.Muted.Render("✗")
+	}
+
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s][%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle, pathsToggle, releaseToggle, binaryToggle, linkToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
@@ -2038,13 +2177,16 @@ func (m *sessionizeModel) enrichVisibleProjects() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// hasVisibleContextData checks if any filtered projects have a context rule applied.
+// hasVisibleContextData checks if any filtered projects have a context rule applied or cx stats.
 func (m sessionizeModel) hasVisibleContextData() bool {
 	for _, project := range m.filtered {
 		if status, ok := m.rulesState[project.Path]; ok {
 			if status == grovecontext.RuleHot || status == grovecontext.RuleCold || status == grovecontext.RuleExcluded {
 				return true
 			}
+		}
+		if project.CxStats != nil && project.CxStats.Tokens > 0 {
+			return true
 		}
 	}
 	return false

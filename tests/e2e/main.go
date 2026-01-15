@@ -32,6 +32,7 @@ func main() {
 		GmuxSzColsContextAppliedScenario(),
 		GmuxSzColsCombinedViewScenario(),
 		GmuxSzColsFilterHidesCxScenario(),
+
 	}
 
 	if err := app.Execute(context.Background(), scenarios); err != nil {

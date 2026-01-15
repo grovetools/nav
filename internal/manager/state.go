@@ -20,6 +20,9 @@ type SessionizerState struct {
 	ShowNoteCounts       *bool  `yaml:"show_note_counts,omitempty"`
 	ShowPlanStats        *bool  `yaml:"show_plan_stats,omitempty"`
 	PathDisplayMode      *int   `yaml:"path_display_mode,omitempty"` // 0=no paths, 1=compact (~), 2=full paths
+	ShowRelease          *bool  `yaml:"show_release,omitempty"`
+	ShowBinary           *bool  `yaml:"show_binary,omitempty"`
+	ShowLink             *bool  `yaml:"show_link,omitempty"`
 }
 
 // CachedProject holds project data with explicit types for proper JSON serialization
@@ -31,6 +34,10 @@ type CachedProject struct {
 	GitStatus     *git.ExtendedGitStatus `json:"git_status,omitempty"`
 	NoteCounts    *NoteCounts            `json:"note_counts,omitempty"`
 	PlanStats     *PlanStats             `json:"plan_stats,omitempty"`
+	ReleaseInfo   *ReleaseInfo           `json:"release_info,omitempty"`
+	ActiveBinary  *BinaryStatus          `json:"active_binary,omitempty"`
+	CxStats       *CxStats               `json:"cx_stats,omitempty"`
+	GitRemoteURL  string                 `json:"git_remote_url,omitempty"`
 }
 
 // ProjectCache holds cached project data for fast startup
@@ -116,6 +123,10 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 			GitStatus:     p.GetExtendedGitStatus(),
 			NoteCounts:    p.NoteCounts,
 			PlanStats:     p.PlanStats,
+			ReleaseInfo:   p.ReleaseInfo,
+			ActiveBinary:  p.ActiveBinary,
+			CxStats:       p.CxStats,
+			GitRemoteURL:  p.GitRemoteURL,
 		}
 	}
 
@@ -176,6 +187,10 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*Sessioniz
 			GitStatus:     p.GetExtendedGitStatus(),
 			NoteCounts:    p.NoteCounts,
 			PlanStats:     p.PlanStats,
+			ReleaseInfo:   p.ReleaseInfo,
+			ActiveBinary:  p.ActiveBinary,
+			CxStats:       p.CxStats,
+			GitRemoteURL:  p.GitRemoteURL,
 		}
 	}
 

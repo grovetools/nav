@@ -99,6 +99,27 @@ func (m sessionizeModel) renderTable() string {
 		}
 		headers = append(headers, plansHeader)
 	}
+	if m.showRelease {
+		releaseHeader := "RELEASE"
+		if m.enrichmentLoading["release"] {
+			releaseHeader = "RELEASE " + spinner
+		}
+		headers = append(headers, releaseHeader)
+	}
+	if m.showBinary {
+		binaryHeader := "BINARY"
+		if m.enrichmentLoading["binary"] {
+			binaryHeader = "BINARY " + spinner
+		}
+		headers = append(headers, binaryHeader)
+	}
+	if m.showLink {
+		linkHeader := "LINK"
+		if m.enrichmentLoading["link"] {
+			linkHeader = "LINK " + spinner
+		}
+		headers = append(headers, linkHeader)
+	}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "PATH")
 	}
@@ -317,6 +338,14 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		}
 	}
 
+	// Append token count if available
+	if project.CxStats != nil && project.CxStats.Tokens > 0 {
+		if cxStatus != "" {
+			cxStatus += " "
+		}
+		cxStatus += core_theme.DefaultTheme.Muted.Render(formatTokens(project.CxStats.Tokens))
+	}
+
 	// --- BRANCH, GIT STATUS, CHANGES ---
 	branch := "-"
 	gitStatus := "-"
@@ -445,6 +474,24 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		}
 	}
 
+	// --- RELEASE ---
+	release := "-"
+	if m.showRelease && project.ReleaseInfo != nil {
+		release = formatReleaseInfo(project.ReleaseInfo)
+	}
+
+	// --- BINARY ---
+	binary := "-"
+	if m.showBinary && project.ActiveBinary != nil {
+		binary = formatBinaryStatus(project.ActiveBinary)
+	}
+
+	// --- LINK ---
+	link := "-"
+	if m.showLink && project.GitRemoteURL != "" {
+		link = formatLink(project.GitRemoteURL)
+	}
+
 	// --- PATH ---
 	pathDisplay := ""
 	if m.pathDisplayMode > 0 {
@@ -474,6 +521,15 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 	}
 	if m.showPlanStats {
 		row = append(row, plans)
+	}
+	if m.showRelease {
+		row = append(row, release)
+	}
+	if m.showBinary {
+		row = append(row, binary)
+	}
+	if m.showLink {
+		row = append(row, link)
 	}
 	if m.pathDisplayMode > 0 {
 		row = append(row, pathDisplay)

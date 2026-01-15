@@ -147,3 +147,62 @@ func formatPlanStats(stats *manager.PlanStats) string {
 
 	return strings.Join(parts, " ")
 }
+
+// formatTokens formats a token count in a human-readable way
+func formatTokens(tokens int) string {
+	if tokens < 1000 {
+		return fmt.Sprintf("%d", tokens)
+	} else if tokens < 1000000 {
+		return fmt.Sprintf("~%.1fk", float64(tokens)/1000)
+	}
+	return fmt.Sprintf("~%.1fM", float64(tokens)/1000000)
+}
+
+// formatReleaseInfo formats release info for display
+func formatReleaseInfo(info *manager.ReleaseInfo) string {
+	if info == nil || info.LatestTag == "" {
+		return "-"
+	}
+	result := info.LatestTag
+	if info.CommitsAhead > 0 {
+		result = fmt.Sprintf("%s (%s%d)", info.LatestTag, core_theme.IconArrowUp, info.CommitsAhead)
+		// Style based on how many commits ahead
+		if info.CommitsAhead > 20 {
+			result = core_theme.DefaultTheme.Error.Render(result)
+		} else if info.CommitsAhead > 10 {
+			result = core_theme.DefaultTheme.Warning.Render(result)
+		} else {
+			result = core_theme.DefaultTheme.Info.Render(result)
+		}
+	} else {
+		result = core_theme.DefaultTheme.Success.Render(result)
+	}
+	return result
+}
+
+// formatBinaryStatus formats binary status for display
+func formatBinaryStatus(status *manager.BinaryStatus) string {
+	if status == nil {
+		return "n/a"
+	}
+	if status.IsDevActive {
+		return core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("dev (%s)", status.LinkName))
+	}
+	return core_theme.DefaultTheme.Success.Render("release")
+}
+
+// formatLink converts a git URL to a clean https link
+func formatLink(gitURL string) string {
+	if gitURL == "" {
+		return "-"
+	}
+	// Convert SSH URLs to HTTPS
+	if strings.HasPrefix(gitURL, "git@") {
+		// git@github.com:user/repo.git -> https://github.com/user/repo
+		gitURL = strings.Replace(gitURL, ":", "/", 1)
+		gitURL = strings.Replace(gitURL, "git@", "https://", 1)
+	}
+	// Remove .git suffix
+	gitURL = strings.TrimSuffix(gitURL, ".git")
+	return core_theme.DefaultTheme.Muted.Render(gitURL)
+}
