@@ -374,9 +374,10 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 					}
 
 					isMainBranch := status.Branch == "main" || status.Branch == "master"
-					hasMainDivergence := !isMainBranch && (status.AheadMainCount > 0 || status.BehindMainCount > 0)
+					hasMainDivergence := status.AheadMainCount > 0 || status.BehindMainCount > 0
 
-					if hasMainDivergence {
+					if hasMainDivergence && !isMainBranch {
+						// Show divergence from local main for feature branches
 						if status.AheadMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 						}
@@ -384,11 +385,20 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 						}
 					} else if status.HasUpstream {
+						// Show divergence from upstream when configured
 						if status.AheadCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 						}
 						if status.BehindCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
+						}
+					} else if hasMainDivergence && isMainBranch {
+						// Show divergence from origin/main when on main without upstream
+						if status.AheadMainCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+						}
+						if status.BehindMainCount > 0 {
+							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 						}
 					}
 

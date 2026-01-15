@@ -433,7 +433,7 @@ func (m *Manager) buildGitStatus(path string) string {
 	}
 
 	// Get upstream tracking status (ahead/behind remote)
-	upstream := m.runGitCommand(path, "for-each-ref", "--format=%(upstream:short)", "@{u}")
+	upstream := m.runGitCommand(path, "rev-parse", "--abbrev-ref", "@{u}")
 	if upstream != "" {
 		counts := m.runGitCommand(path, "rev-list", "--left-right", "--count", "HEAD...@{u}")
 		if counts != "" {
@@ -462,7 +462,29 @@ func (m *Manager) buildGitStatus(path string) string {
 		mainBranch = "master"
 	}
 
-	// If we're not on main/master and it exists, show ahead/behind
+	// If we're on main/master and no upstream is set, compare against origin/main or origin/master
+	if mainBranch != "" && currentBranch == mainBranch && upstream == "" {
+		// Check if origin/main or origin/master exists
+		remoteRef := fmt.Sprintf("origin/%s", mainBranch)
+		if m.runGitCommand(path, "show-ref", "--verify", "--quiet", fmt.Sprintf("refs/remotes/%s", remoteRef)) == "" {
+			counts := m.runGitCommand(path, "rev-list", "--left-right", "--count", fmt.Sprintf("HEAD...%s", remoteRef))
+			if counts != "" {
+				parts := strings.Fields(counts)
+				if len(parts) == 2 {
+					ahead, _ := strconv.Atoi(parts[0])
+					behind, _ := strconv.Atoi(parts[1])
+					if ahead > 0 {
+						statusParts = append(statusParts, fmt.Sprintf("⇡%d", ahead))
+					}
+					if behind > 0 {
+						statusParts = append(statusParts, fmt.Sprintf("⇣%d", behind))
+					}
+				}
+			}
+		}
+	}
+
+	// If we're not on main/master and it exists, show ahead/behind main
 	if mainBranch != "" && currentBranch != mainBranch && currentBranch != "" {
 		counts := m.runGitCommand(path, "rev-list", "--left-right", "--count", fmt.Sprintf("HEAD...%s", mainBranch))
 		if counts != "" {
