@@ -627,6 +627,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 									m.message = fmt.Sprintf("Failed to switch to session: %v", err)
 								} else {
+									// Record project access for history
+									_ = m.manager.RecordProjectAccess(session.Path)
 									// Exit the manager after switching
 									m.message = fmt.Sprintf("Switching to %s...", sessionName)
 									m.quitting = true
@@ -923,6 +925,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 							m.message = fmt.Sprintf("Failed to switch to session: %v", err)
 						} else {
+							// Record project access for history
+							_ = m.manager.RecordProjectAccess(session.Path)
 							// Exit the manager after switching
 							m.message = fmt.Sprintf("Switching to %s...", sessionName)
 							m.quitting = true
