@@ -315,55 +315,48 @@ func fetchAllPlanStatsCmd() tea.Cmd {
 	}
 }
 
-// fetchAllReleaseInfoCmd fetches release info for all projects concurrently.
+// fetchAllReleaseInfoCmd fetches release info using `grove list --json`.
 func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		releases := make(map[string]*manager.ReleaseInfo)
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		semaphore := make(chan struct{}, 10)
+
+		// Run `grove list --json` once to get all release info
+		toolsByRepo := make(map[string]*groveListEntry)
+		cmd := exec.Command("grove", "list", "--json")
+		if output, err := cmd.Output(); err == nil {
+			var tools []groveListEntry
+			if json.Unmarshal(output, &tools) == nil {
+				for i := range tools {
+					toolsByRepo[tools[i].RepoName] = &tools[i]
+				}
+			}
+		}
 
 		for _, p := range projects {
-			wg.Add(1)
-			go func(proj *manager.SessionizeProject) {
-				defer wg.Done()
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
+			// Match project to tool by repo name
+			repoName := filepath.Base(p.Path)
+			if p.IsWorktree() && p.ParentProjectPath != "" {
+				repoName = filepath.Base(p.ParentProjectPath)
+			}
 
-				execCmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
-				execCmd.Dir = proj.Path
-				tagOutput, err := execCmd.Output()
-				if err != nil {
-					return // No tags found, skip
+			if tool, ok := toolsByRepo[repoName]; ok && tool.LatestRelease != "" {
+				releases[p.Path] = &manager.ReleaseInfo{
+					LatestTag:    tool.LatestRelease,
+					CommitsAhead: 0, // grove list doesn't provide this, but it's less important
 				}
-				latestTag := strings.TrimSpace(string(tagOutput))
-
-				execCmd = exec.Command("git", "rev-list", "--count", latestTag+"..HEAD")
-				execCmd.Dir = proj.Path
-				countOutput, err := execCmd.Output()
-				commitsAhead := 0
-				if err == nil {
-					fmt.Sscanf(strings.TrimSpace(string(countOutput)), "%d", &commitsAhead)
-				}
-
-				mu.Lock()
-				releases[proj.Path] = &manager.ReleaseInfo{
-					LatestTag:    latestTag,
-					CommitsAhead: commitsAhead,
-				}
-				mu.Unlock()
-			}(p)
+			}
 		}
-		wg.Wait()
 		return releaseInfoMapMsg{releases: releases}
 	}
 }
 
-// devlinksConfig structure for local parsing
-type devlinksConfig struct {
-	Binaries map[string]*struct {
-		Current string `json:"current"`
-	} `json:"binaries"`
+// groveListEntry represents a single tool from `grove list --json`
+type groveListEntry struct {
+	Name          string `json:"name"`
+	RepoName      string `json:"repo_name"`
+	Status        string `json:"status"`
+	ActiveVersion string `json:"active_version"`
+	LatestRelease string `json:"latest_release"`
 }
 
 // projectBinaryConfig represents the binary config in grove.yml
@@ -374,16 +367,21 @@ type projectBinaryConfig struct {
 }
 
 // fetchAllBinaryStatusCmd fetches active binary status for all projects.
+// Uses `grove list --json` to get tool info efficiently in one call.
 func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		statuses := make(map[string]*manager.BinaryStatus)
 
-		// Load devlinks config once
-		home, _ := os.UserHomeDir()
-		devlinksPath := filepath.Join(home, ".grove", "devlinks.json")
-		var devlinksCfg devlinksConfig
-		if data, err := os.ReadFile(devlinksPath); err == nil {
-			_ = json.Unmarshal(data, &devlinksCfg)
+		// Run `grove list --json` once to get all tool info
+		toolsByRepo := make(map[string]*groveListEntry)
+		cmd := exec.Command("grove", "list", "--json")
+		if output, err := cmd.Output(); err == nil {
+			var tools []groveListEntry
+			if json.Unmarshal(output, &tools) == nil {
+				for i := range tools {
+					toolsByRepo[tools[i].RepoName] = &tools[i]
+				}
+			}
 		}
 
 		for _, p := range projects {
@@ -399,18 +397,25 @@ func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 			}
 			binaryName := projCfg.Binary.Name
 
-			// Check devlinks status
-			isDev := false
-			linkName := "release"
-			if devlinksCfg.Binaries != nil {
-				if binaryInfo, ok := devlinksCfg.Binaries[binaryName]; ok && binaryInfo.Current != "" {
-					isDev = true
-					linkName = binaryInfo.Current
-				}
+			// Look up tool info from grove list output by repo name
+			repoName := filepath.Base(p.Path)
+			// Handle worktrees: strip worktree suffix to get base repo name
+			if p.IsWorktree() && p.ParentProjectPath != "" {
+				repoName = filepath.Base(p.ParentProjectPath)
 			}
+
+			isDev := false
+			currentVersion := ""
+			if tool, ok := toolsByRepo[repoName]; ok {
+				isDev = tool.Status == "dev"
+				currentVersion = tool.ActiveVersion
+			}
+
 			statuses[p.Path] = &manager.BinaryStatus{
-				IsDevActive: isDev,
-				LinkName:    linkName,
+				ToolName:       binaryName,
+				IsDevActive:    isDev,
+				LinkName:       "", // Not needed with this approach
+				CurrentVersion: currentVersion,
 			}
 		}
 		return binaryStatusMapMsg{statuses: statuses}

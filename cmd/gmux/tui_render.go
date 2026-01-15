@@ -180,15 +180,20 @@ func formatReleaseInfo(info *manager.ReleaseInfo) string {
 	return result
 }
 
-// formatBinaryStatus formats binary status for display
-func formatBinaryStatus(status *manager.BinaryStatus) string {
-	if status == nil {
-		return "n/a"
+// formatToolName formats the tool name for display
+func formatToolName(status *manager.BinaryStatus) string {
+	if status == nil || status.ToolName == "" {
+		return "-"
 	}
-	if status.IsDevActive {
-		return core_theme.DefaultTheme.Warning.Render(fmt.Sprintf("dev (%s)", status.LinkName))
+	return status.ToolName
+}
+
+// formatCurrentVersion formats the current version for display
+func formatCurrentVersion(status *manager.BinaryStatus) string {
+	if status == nil || status.CurrentVersion == "" {
+		return "-"
 	}
-	return core_theme.DefaultTheme.Success.Render("release")
+	return status.CurrentVersion
 }
 
 // formatLink converts a git URL to a clean https link

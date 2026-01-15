@@ -107,18 +107,20 @@ func (m sessionizeModel) renderTable() string {
 		headers = append(headers, releaseHeader)
 	}
 	if m.showBinary {
-		binaryHeader := "BINARY"
+		toolHeader := "TOOL"
+		currentHeader := "CURRENT"
 		if m.enrichmentLoading["binary"] {
-			binaryHeader = "BINARY " + spinner
+			toolHeader = "TOOL " + spinner
+			currentHeader = "CURRENT " + spinner
 		}
-		headers = append(headers, binaryHeader)
+		headers = append(headers, toolHeader, currentHeader)
 	}
 	if m.showLink {
-		linkHeader := "LINK"
+		remoteHeader := "REMOTE"
 		if m.enrichmentLoading["link"] {
-			linkHeader = "LINK " + spinner
+			remoteHeader = "REMOTE " + spinner
 		}
-		headers = append(headers, linkHeader)
+		headers = append(headers, remoteHeader)
 	}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "PATH")
@@ -480,10 +482,12 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		release = formatReleaseInfo(project.ReleaseInfo)
 	}
 
-	// --- BINARY ---
-	binary := "-"
+	// --- TOOL & CURRENT ---
+	tool := "-"
+	current := "-"
 	if m.showBinary && project.ActiveBinary != nil {
-		binary = formatBinaryStatus(project.ActiveBinary)
+		tool = formatToolName(project.ActiveBinary)
+		current = formatCurrentVersion(project.ActiveBinary)
 	}
 
 	// --- LINK ---
@@ -526,7 +530,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		row = append(row, release)
 	}
 	if m.showBinary {
-		row = append(row, binary)
+		row = append(row, tool, current)
 	}
 	if m.showLink {
 		row = append(row, link)

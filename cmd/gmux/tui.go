@@ -589,6 +589,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Track if we're starting any enrichment
 		startedEnrichment := false
 
+		// Only refresh fast/dynamic data on tick.
+		// Expensive/static data (release, binary, link, cxstats) only refresh on toggle or manual refresh.
 		if m.showGitStatus {
 			m.enrichmentLoading["git"] = true
 			startedEnrichment = true
@@ -604,25 +606,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			startedEnrichment = true
 			cmds = append(cmds, fetchAllPlanStatsCmd())
 		}
-		if m.showRelease {
-			m.enrichmentLoading["release"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllReleaseInfoCmd(m.projects))
-		}
-		if m.showBinary {
-			m.enrichmentLoading["binary"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllBinaryStatusCmd(m.projects))
-		}
-		if m.showLink {
-			m.enrichmentLoading["link"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
-		}
-		// Always refresh CX stats
-		m.enrichmentLoading["cxstats"] = true
-		startedEnrichment = true
-		cmds = append(cmds, fetchAllCxStatsCmd(m.projects))
+		// NOTE: release, binary, link, and cxstats are NOT refreshed on tick.
+		// They spawn many processes and contain relatively static data.
+		// Users can press ctrl+r to force a full refresh.
 
 		// Start spinner if we kicked off any enrichment
 		if startedEnrichment {
@@ -1008,7 +994,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "y":
-				// Toggle binary column
+				// Toggle tool/version columns
 				m.showBinary = !m.showBinary
 				_ = m.buildState().Save(m.configDir)
 				if m.showBinary {
@@ -1960,28 +1946,8 @@ func (m sessionizeModel) View() string {
 		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
 	}
 
-	releaseToggle := " r:release "
-	if m.showRelease {
-		releaseToggle += core_theme.DefaultTheme.Success.Render("✓")
-	} else {
-		releaseToggle += core_theme.DefaultTheme.Muted.Render("✗")
-	}
-
-	binaryToggle := " y:binary "
-	if m.showBinary {
-		binaryToggle += core_theme.DefaultTheme.Success.Render("✓")
-	} else {
-		binaryToggle += core_theme.DefaultTheme.Muted.Render("✗")
-	}
-
-	linkToggle := " l:link "
-	if m.showLink {
-		linkToggle += core_theme.DefaultTheme.Success.Render("✓")
-	} else {
-		linkToggle += core_theme.DefaultTheme.Muted.Render("✗")
-	}
-
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s%s][%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle, pathsToggle, releaseToggle, binaryToggle, linkToggle)
+	// Note: paths (p), release (r), tool (y), and remote (l) toggles are available but only shown in full help (?)
+	togglesDisplay := fmt.Sprintf("[%s%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle)
 
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))

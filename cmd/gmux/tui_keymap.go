@@ -162,10 +162,10 @@ var sessionizeKeys = sessionizeKeyMap{
 	),
 	ToggleBinary: key.NewBinding(
 		key.WithKeys("y"),
-		key.WithHelp("y", "toggle binary"),
+		key.WithHelp("y", "toggle tool/version"),
 	),
 	ToggleLink: key.NewBinding(
 		key.WithKeys("l"),
-		key.WithHelp("l", "toggle link"),
+		key.WithHelp("l", "toggle remote"),
 	),
 }
