@@ -12,13 +12,13 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/git"
-	"github.com/mattsolo1/grove-core/pkg/models"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	grovecontext "github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/models"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/tmux"
 	"gopkg.in/yaml.v3"
 )
 

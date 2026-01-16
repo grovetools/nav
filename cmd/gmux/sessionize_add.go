@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	grovelogging "github.com/mattsolo1/grove-core/logging"
-	"github.com/mattsolo1/grove-core/tui/theme"
+	grovelogging "github.com/grovetools/core/logging"
+	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 )
 

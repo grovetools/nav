@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/grovetools/core/pkg/workspace"
 )
 
 // SortProjectsByAccess sorts projects by last access time (most recent first)

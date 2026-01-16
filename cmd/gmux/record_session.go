@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 

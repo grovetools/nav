@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	grovelogging "github.com/mattsolo1/grove-core/logging"
-	"github.com/mattsolo1/grove-core/pkg/models"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	grovelogging "github.com/grovetools/core/logging"
+	"github.com/grovetools/core/pkg/models"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 

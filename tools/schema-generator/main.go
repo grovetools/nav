@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/invopop/jsonschema"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
+	"github.com/grovetools/nav/internal/manager"
 )
 
 func main() {

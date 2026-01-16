@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	core_config "github.com/mattsolo1/grove-core/config"
-	"github.com/mattsolo1/grove-core/pkg/models"
-	"github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
+	core_config "github.com/grovetools/core/config"
+	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/workspace"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )

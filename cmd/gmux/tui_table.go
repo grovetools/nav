@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
-	"github.com/mattsolo1/grove-core/git"
-	"github.com/mattsolo1/grove-core/pkg/repo"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-core/tui/components/table"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-core/util/pathutil"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
+	grovecontext "github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/repo"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/tui/components/table"
+	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/core/util/pathutil"
+	"github.com/grovetools/nav/internal/manager"
 )
 
 // renderTable renders the table view for projects

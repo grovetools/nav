@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mattsolo1/grove-core/git"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
+	"github.com/grovetools/core/git"
+	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/nav/internal/manager"
 )
 
 // highlightMatch highlights the matched portion of text with a yellow background

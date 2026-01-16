@@ -10,13 +10,13 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	grovelogging "github.com/mattsolo1/grove-core/logging"
-	"github.com/mattsolo1/grove-core/pkg/repo"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	grovelogging "github.com/grovetools/core/logging"
+	"github.com/grovetools/core/pkg/repo"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 

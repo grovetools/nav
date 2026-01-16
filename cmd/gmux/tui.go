@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	grovecontext "github.com/mattsolo1/grove-context/pkg/context"
+	grovecontext "github.com/grovetools/cx/pkg/context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,14 +16,14 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattsolo1/grove-core/pkg/models"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-core/tui/components/help"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-core/util/pathutil"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	"github.com/grovetools/core/pkg/models"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/tui/components/help"
+	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/core/util/pathutil"
+	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 var pageStyle = lipgloss.NewStyle().Padding(1, 2)

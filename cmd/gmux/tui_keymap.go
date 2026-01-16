@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/mattsolo1/grove-core/tui/keymap"
+	"github.com/grovetools/core/tui/keymap"
 )
 
 // sessionizeKeyMap defines the key bindings for the sessionize TUI

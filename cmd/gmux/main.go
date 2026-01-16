@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mattsolo1/grove-core/cli"
-	core_theme "github.com/mattsolo1/grove-core/tui/theme"
-	"github.com/mattsolo1/grove-core/version"
-	"github.com/mattsolo1/grove-tmux/pkg/tmux"
+	"github.com/grovetools/core/cli"
+	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/grovetools/core/version"
+	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 

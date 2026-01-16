@@ -1,4 +1,4 @@
-module github.com/mattsolo1/grove-tmux
+module github.com/grovetools/nav
 
 go 1.24.4
 
@@ -7,10 +7,10 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/invopop/jsonschema v0.13.0
-	github.com/mattsolo1/grove-context v0.5.0
-	github.com/mattsolo1/grove-core v0.5.0
-	github.com/mattsolo1/grove-flow v0.3.0
-	github.com/mattsolo1/grove-tend v0.4.0
+	github.com/grovetools/cx v0.0.1
+	github.com/grovetools/core v0.0.1
+	github.com/grovetools/flow v0.0.1
+	github.com/grovetools/tend v0.0.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.9.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -43,7 +43,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/mattsolo1/grove-gemini v0.2.0 // indirect
+	github.com/grovetools/grove-gemini v0.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect

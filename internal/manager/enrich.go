@@ -10,11 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	coreconfig "github.com/mattsolo1/grove-core/config"
-	"github.com/mattsolo1/grove-core/git"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-core/util/delegation"
-	"github.com/mattsolo1/grove-flow/pkg/orchestration"
+	coreconfig "github.com/grovetools/core/config"
+	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/util/delegation"
+	"github.com/grovetools/flow/pkg/orchestration"
 	"github.com/sirupsen/logrus"
 )
 

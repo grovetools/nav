@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
 )
 
 // buildProcessCache builds a map of PID -> actual process name for all windows

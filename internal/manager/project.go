@@ -1,8 +1,8 @@
 package manager
 
 import (
-	"github.com/mattsolo1/grove-core/git"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
+	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/workspace"
 )
 
 

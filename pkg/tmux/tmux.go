@@ -1,9 +1,9 @@
 package tmux
 
 import (
-	"github.com/mattsolo1/grove-core/pkg/models"
-	"github.com/mattsolo1/grove-core/pkg/workspace"
-	"github.com/mattsolo1/grove-tmux/internal/manager"
+	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/nav/internal/manager"
 )
 
 // Manager manages tmux sessions and configurations

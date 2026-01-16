@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	grovelogging "github.com/mattsolo1/grove-core/logging"
-	tmuxclient "github.com/mattsolo1/grove-core/pkg/tmux"
-	"github.com/mattsolo1/grove-core/tui/theme"
+	grovelogging "github.com/grovetools/core/logging"
+	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 )
 
