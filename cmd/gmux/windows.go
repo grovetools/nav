@@ -599,7 +599,7 @@ func (m windowsModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, fetchWindowsCmd(m.client, m.sessionName)
 
 	// Move window up (visual only, no tmux changes yet)
-	case key.Matches(msg, m.keys.Up):
+	case key.Matches(msg, m.keys.Up), key.Matches(msg, m.keys.MoveUp):
 		if m.cursor > 0 {
 			// Just swap in the local list for instant visual feedback
 			m.filteredWindows[m.cursor], m.filteredWindows[m.cursor-1] = m.filteredWindows[m.cursor-1], m.filteredWindows[m.cursor]
@@ -608,7 +608,7 @@ func (m windowsModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	// Move window down (visual only, no tmux changes yet)
-	case key.Matches(msg, m.keys.Down):
+	case key.Matches(msg, m.keys.Down), key.Matches(msg, m.keys.MoveDown):
 		if m.cursor < len(m.filteredWindows)-1 {
 			// Just swap in the local list for instant visual feedback
 			m.filteredWindows[m.cursor], m.filteredWindows[m.cursor+1] = m.filteredWindows[m.cursor+1], m.filteredWindows[m.cursor]

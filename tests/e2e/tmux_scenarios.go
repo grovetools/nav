@@ -571,9 +571,17 @@ func GmuxWindowsScenario() *harness.Scenario {
 					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
 				}
 
-				// Give the TUI time to fully render
-				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
-				time.Sleep(1200 * time.Millisecond)
+				// Wait for TUI to render by polling for "Window Selector" in the pane content
+				ctx.ShowCommandOutput("Waiting for TUI to render", "waiting for Window Selector", "")
+				maxRetries := 10
+				for i := 0; i < maxRetries; i++ {
+					time.Sleep(200 * time.Millisecond)
+					cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+					result = cmd.Run()
+					if result.ExitCode == 0 && strings.Contains(result.Stdout, "Window Selector") {
+						break
+					}
+				}
 
 				return nil
 			}),
@@ -784,10 +792,11 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 					}
 				}
 
-				// Select window 2 (third window, the last one) as active
+				// Select the last window (window2) as active
 				// This tests that the cursor starts at the active window, not the first one
-				ctx.ShowCommandOutput("Setting active window", "window 2 (last window)", "")
-				cmd = command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:2", sessionName))
+				// Note: tmux starts window indexing at 1 by default, so window2 is at index 3
+				ctx.ShowCommandOutput("Setting active window", "window2 (last window)", "")
+				cmd = command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:window2", sessionName))
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 				if result.ExitCode != 0 {
@@ -796,13 +805,13 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 
 				time.Sleep(200 * time.Millisecond)
 
-				// Verify window 2 is active
+				// Verify window2 is active
 				cmd = command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}:#{window_active}")
 				result = cmd.Run()
 				ctx.ShowCommandOutput("Window list before TUI", result.Stdout, result.Stderr)
 
-				// Window index 2 (named window1) should be active
-				if err := assert.Contains(result.Stdout, "2:window1:1", "Window 2 (window1) should be active"); err != nil {
+				// window2 should be the active window (indicated by :1 at the end)
+				if err := assert.Contains(result.Stdout, "window2:1", "window2 should be active"); err != nil {
 					return err
 				}
 
@@ -840,18 +849,32 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
 				}
 
-				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
-				time.Sleep(1200 * time.Millisecond)
+				ctx.ShowCommandOutput("Waiting for TUI to render", "waiting for Window Selector", "")
 
-				// Capture the TUI
+				// Wait for TUI to render by polling for "Window Selector" in the pane content
+				var content string
+				maxRetries := 10
+				for i := 0; i < maxRetries; i++ {
+					time.Sleep(200 * time.Millisecond)
+					cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+					result = cmd.Run()
+					if result.ExitCode != 0 {
+						continue
+					}
+					content = result.Stdout
+					if strings.Contains(content, "Window Selector") {
+						break
+					}
+				}
+
+				// Final capture with ANSI codes
 				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
 				result = cmd.Run()
 				if result.ExitCode != 0 {
 					return fmt.Errorf("failed to capture pane: %s", result.Stderr)
 				}
-
-				content := result.Stdout
-				ctx.ShowCommandOutput("TUI with active window 2", content, "")
+				content = result.Stdout
+				ctx.ShowCommandOutput("TUI with active window", content, "")
 
 				// Verify all windows are shown
 				if err := assert.Contains(content, "window0", "Should show window0"); err != nil {
@@ -1018,8 +1041,17 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
 				}
 
-				ctx.ShowCommandOutput("Waiting for TUI to render", "1200ms", "")
-				time.Sleep(1200 * time.Millisecond)
+				// Wait for TUI to render by polling for "Window Selector" in the pane content
+				ctx.ShowCommandOutput("Waiting for TUI to render", "waiting for Window Selector", "")
+				maxRetries := 10
+				for i := 0; i < maxRetries; i++ {
+					time.Sleep(200 * time.Millisecond)
+					cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+					result = cmd.Run()
+					if result.ExitCode == 0 && strings.Contains(result.Stdout, "Window Selector") {
+						break
+					}
+				}
 
 				return nil
 			}),
@@ -1078,7 +1110,7 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 					return fmt.Errorf("failed to send m key: %s", result.Stderr)
 				}
 
-				time.Sleep(300 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 
 				// Capture pane to verify move mode indicator
 				cmd = command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
@@ -1120,10 +1152,10 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 					if result.ExitCode != 0 {
 						return fmt.Errorf("failed to send k key: %s", result.Stderr)
 					}
-					time.Sleep(150 * time.Millisecond)
+					time.Sleep(250 * time.Millisecond)
 				}
 
-				time.Sleep(300 * time.Millisecond)
+				time.Sleep(500 * time.Millisecond)
 
 				// Verify the visual order hasn't been applied to tmux yet
 				cmd := command.New("tmux", "list-windows", "-t", sessionName, "-F", "#{window_index}:#{window_name}")
