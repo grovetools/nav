@@ -1,8 +1,9 @@
-name: grove-tmux
+name: nav
 description: Tmux session management for Grove ecosystem
+managed: true
 binary:
-  name: gmux
-  path: ./bin/gmux
+  name: nav
+  path: ./bin/nav
 
 context:
   default_rules_path: .cx/dev-no-tests.rules

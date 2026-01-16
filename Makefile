@@ -1,6 +1,6 @@
-# Makefile for grove-tmux (gmux)
+# Makefile for nav
 
-BINARY_NAME=gmux
+BINARY_NAME=nav
 E2E_BINARY_NAME=tend
 BIN_DIR=bin
 VERSION_PKG=github.com/mattsolo1/grove-core/version
