@@ -1,5 +1,5 @@
 enabled: true
-title: Grove Tmux
+title: nav
 description: gmux is an interactive session manager for tmux, integrated with the Grove ecosystem. It transforms tmux into a context-aware development environment with live project, Git, and AI session status.
 category: Developer Tools
 settings:
