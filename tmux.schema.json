@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/mattsolo1/grove-tmux/internal/manager/tmux-config",
+  "$id": "https://github.com/grovetools/nav/internal/manager/tmux-config",
   "properties": {
     "available_keys": {
       "items": {
