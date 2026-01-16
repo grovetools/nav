@@ -1062,6 +1062,17 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 
 				sessionName := ctx.GetString("session_name")
 
+				// Ensure TUI is ready before sending keys
+				maxRetries := 10
+				for i := 0; i < maxRetries; i++ {
+					cmd := command.New("tmux", "capture-pane", "-t", sessionName, "-p", "-e")
+					result := cmd.Run()
+					if result.ExitCode == 0 && strings.Contains(result.Stdout, "Window Selector") {
+						break
+					}
+					time.Sleep(200 * time.Millisecond)
+				}
+
 				// Navigate down to beta window (second window in list after shell)
 				// Windows are: shell, alpha, beta, gamma
 				// So we need to go down twice to get to beta
@@ -1071,7 +1082,7 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 					if result.ExitCode != 0 {
 						return fmt.Errorf("failed to send down key: %s", result.Stderr)
 					}
-					time.Sleep(200 * time.Millisecond)
+					time.Sleep(250 * time.Millisecond)
 				}
 
 				// Give the TUI time to update after navigation
