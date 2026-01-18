@@ -1,22 +1,19 @@
 package tmux
 
 import (
-	"os"
 	"os/exec"
 
 	"github.com/grovetools/core/pkg/models"
+	coretmux "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/nav/internal/manager"
 )
 
 // Command creates an exec.Cmd for tmux that respects GROVE_TMUX_SOCKET.
 // This ensures all tmux operations use the same socket as the tmux client.
+// Re-exported from grove-core for consistency across the ecosystem.
 func Command(args ...string) *exec.Cmd {
-	if socket := os.Getenv("GROVE_TMUX_SOCKET"); socket != "" {
-		// Prepend -L <socket> to use the isolated tmux server
-		args = append([]string{"-L", socket}, args...)
-	}
-	return exec.Command("tmux", args...)
+	return coretmux.Command(args...)
 }
 
 // Manager manages tmux sessions and configurations
