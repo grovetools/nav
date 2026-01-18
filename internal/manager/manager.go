@@ -39,6 +39,16 @@ func expandPath(path string) string {
 	return path
 }
 
+// tmuxCommand creates an exec.Command for tmux that respects GROVE_TMUX_SOCKET.
+// This ensures all tmux operations use the same socket as the tmux client.
+func tmuxCommand(args ...string) *exec.Cmd {
+	if socket := os.Getenv("GROVE_TMUX_SOCKET"); socket != "" {
+		// Prepend -L <socket> to use the isolated tmux server
+		args = append([]string{"-L", socket}, args...)
+	}
+	return exec.Command("tmux", args...)
+}
+
 // Legacy types removed as discovery is now handled by grove-core's DiscoveryService.
 // SearchPathConfig, ExplicitProject, and ProjectSearchConfig are no longer needed.
 
@@ -576,7 +586,8 @@ func (m *Manager) Sessionize(path string) error {
 	// If tmux is not running and we're not in tmux, start new session
 	if !tmuxRunning && !inTmux {
 		// Need to use exec.Command directly for interactive session
-		cmd := exec.Command("tmux", "new-session", "-s", sessionName, "-c", expandedPath)
+		// Use tmuxCommand to respect GROVE_TMUX_SOCKET
+		cmd := tmuxCommand("new-session", "-s", sessionName, "-c", expandedPath)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -612,7 +623,8 @@ func (m *Manager) Sessionize(path string) error {
 
 	// Attach to the session if we're outside tmux
 	// Need to use exec.Command directly for interactive attach
-	cmd := exec.Command("tmux", "attach-session", "-t", sessionName)
+	// Use tmuxCommand to respect GROVE_TMUX_SOCKET
+	cmd := tmuxCommand("attach-session", "-t", sessionName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -19,6 +18,7 @@ import (
 	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -578,7 +578,8 @@ func (m windowsModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				srcTarget := fmt.Sprintf("%s:%d", m.sessionName, win.Index)
 				tempTarget := fmt.Sprintf("%s:%d", m.sessionName, tempBase+i)
 
-				cmd := exec.Command("tmux", "move-window", "-s", srcTarget, "-t", tempTarget)
+				// Use tmux.Command to respect GROVE_TMUX_SOCKET
+				cmd := tmux.Command("move-window", "-s", srcTarget, "-t", tempTarget)
 				cmd.Run() // Best effort
 			}
 
@@ -587,7 +588,8 @@ func (m windowsModel) updateMove(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				srcTarget := fmt.Sprintf("%s:%d", m.sessionName, tempBase+i)
 				finalTarget := fmt.Sprintf("%s:%d", m.sessionName, baseIndex+i)
 
-				cmd := exec.Command("tmux", "move-window", "-s", srcTarget, "-t", finalTarget)
+				// Use tmux.Command to respect GROVE_TMUX_SOCKET
+				cmd := tmux.Command("move-window", "-s", srcTarget, "-t", finalTarget)
 				cmd.Run() // Best effort
 			}
 

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -216,7 +215,8 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	// Check if we're in tmux
 	if os.Getenv("TMUX") == "" {
 		// Not in tmux, create new session
-		cmd := exec.Command("tmux", "new-session", "-s", sessionName, "-c", absPath)
+		// Use tmux.Command to respect GROVE_TMUX_SOCKET
+		cmd := tmux.Command("new-session", "-s", sessionName, "-c", absPath)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

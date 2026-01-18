@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -728,7 +727,8 @@ var keyUnmapCmd = &cobra.Command{
 
 				// Try to reload tmux config
 				if os.Getenv("TMUX") != "" {
-					cmd := exec.Command("tmux", "source-file", expandPath("~/.tmux.conf"))
+					// Use tmux.Command to respect GROVE_TMUX_SOCKET
+					cmd := tmux.Command("source-file", expandPath("~/.tmux.conf"))
 					if err := cmd.Run(); err == nil {
 						ulogKey.Success("Tmux config reloaded").
 							Pretty(core_theme.IconSuccess + " Done! Tmux configuration reloaded.").

@@ -1580,7 +1580,8 @@ func reloadTmuxConfig() error {
 	}
 
 	// Run tmux source-file command
-	cmd := exec.Command("tmux", "source-file", expandPath("~/.tmux.conf"))
+	// Use tmux.Command to respect GROVE_TMUX_SOCKET
+	cmd := tmux.Command("source-file", expandPath("~/.tmux.conf"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tmux reload failed: %s", string(output))
