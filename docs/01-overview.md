@@ -1,11 +1,5 @@
-# Grove Tmux
-
-<img src="./images/grove-tmux-readme.svg" width="60%" />
-`gmux` is an interactive session manager for `tmux`. It provides a terminal interface to discover and switch between projects, see `tmux` session status, and view Git repository information.
 
 <!-- placeholder for animated gif -->
-
-## Key Features
 
 *   **Session Interface (`gmux sz`)**: A terminal interface that lists projects discovered from configured search paths. The list displays active `tmux` sessions and Git status for those sessions, and refreshes its data sources periodically.
 *   **Key Mapping (`gmux key manage`)**: A terminal interface to map project paths to single-character keys. It includes a fuzzy finder to search for unmapped projects from the discovered list.
