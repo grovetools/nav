@@ -488,10 +488,6 @@ func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 
 		// Match each rule to a project
 		for _, lineStat := range perLineStats {
-			if lineStat.TotalTokens == 0 {
-				continue
-			}
-
 			// Parse alias patterns like @a:ecosystem:workspace::ruleset or @alias:ecosystem:workspace::ruleset
 			rule := lineStat.Rule
 			var matchKey string

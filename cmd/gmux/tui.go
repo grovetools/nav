@@ -483,6 +483,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case cxStatsMapMsg:
+		// First, clear all existing CxStats (projects removed from context won't be in the new stats)
+		for _, proj := range m.projects {
+			proj.CxStats = nil
+		}
+		// Then apply the new stats
 		for path, stats := range msg.stats {
 			if proj, ok := m.projectMap[path]; ok {
 				proj.CxStats = stats

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
@@ -60,7 +61,7 @@ func (m sessionizeModel) renderTable() string {
 		}
 	}
 
-	showCxColumn := m.showCx && m.hasVisibleContextData()
+	showCxColumn := m.showCx
 
 	// Get spinner for animation
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -332,12 +333,21 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 
 	// --- CONTEXT STATUS ---
 	// Show token count in green if project has tokens (meaning it's in context)
+	// Show "?" if project is in rules but has 0 tokens, or if added to hot context but no stats
 	// The token count comes from per-line stats of the active rules file
 	cxStatus := ""
-	if project.CxStats != nil && project.CxStats.Tokens > 0 {
-		tokenStr := formatTokens(project.CxStats.Tokens)
-		// If project has tokens from the rules file, it's in context - show green
-		cxStatus = core_theme.DefaultTheme.Success.Render(tokenStr)
+	if project.CxStats != nil {
+		if project.CxStats.Tokens > 0 {
+			tokenStr := formatTokens(project.CxStats.Tokens)
+			// If project has tokens from the rules file, it's in context - show green (non-bold)
+			cxStatus = core_theme.DefaultTheme.SuccessLight.Render(tokenStr)
+		} else {
+			// Project is in rules but has 0 tokens - show "?" in yellow (non-bold)
+			cxStatus = core_theme.DefaultTheme.WarningLight.Render("?")
+		}
+	} else if status, ok := m.rulesState[project.Path]; ok && status == grovecontext.RuleHot {
+		// Project is marked as hot but no CxStats yet (e.g., ruleset doesn't exist)
+		cxStatus = core_theme.DefaultTheme.WarningLight.Render("?")
 	}
 
 	// --- BRANCH, GIT STATUS, CHANGES ---
