@@ -66,6 +66,7 @@ type sessionizeModel struct {
 	showRelease    bool // Whether to show release info column
 	showBinary     bool // Whether to show active binary column
 	showLink       bool // Whether to show repository link column
+	showCx         bool // Whether to show CX (context) column
 
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
@@ -165,6 +166,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showRelease := false // Default off - expensive operation
 	showBinary := false  // Default off - expensive operation
 	showLink := false    // Default off - takes space
+	showCx := true       // Default on - show CX column when data available
 	if state, err := manager.LoadState(configDir); err == nil {
 		// Prioritize CWD focus path over saved state
 		if cwdFocusPath != "" {
@@ -209,6 +211,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		if state.ShowLink != nil {
 			showLink = *state.ShowLink
 		}
+		if state.ShowCx != nil {
+			showCx = *state.ShowCx
+		}
 	}
 
 	return sessionizeModel{
@@ -240,6 +245,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showRelease:              showRelease,
 		showBinary:               showBinary,
 		showLink:                 showLink,
+		showCx:                   showCx,
 		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
@@ -260,6 +266,7 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 		ShowRelease:          boolPtr(m.showRelease),
 		ShowBinary:           boolPtr(m.showBinary),
 		ShowLink:             boolPtr(m.showLink),
+		ShowCx:               boolPtr(m.showCx),
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
@@ -326,7 +333,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 	}
 	// Always fetch CX stats in the background to augment the CX column
 	m.enrichmentLoading["cxstats"] = true
-	cmds = append(cmds, fetchAllCxStatsCmd(m.projects))
+	cmds = append(cmds, fetchCxPerLineStatsCmd(m.projects))
 
 	// Start spinner animation if loading or if any enrichment is loading
 	anyEnrichmentLoading := m.isLoading
@@ -531,7 +538,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 		}
 
-		return m, tea.Batch(m.enrichVisibleProjects(), fetchRulesStateCmd(m.projects))
+		// Re-fetch CX stats after project refresh
+		m.enrichmentLoading["cxstats"] = true
+		return m, tea.Batch(
+			m.enrichVisibleProjects(),
+			fetchRulesStateCmd(m.projects),
+			fetchCxPerLineStatsCmd(m.projects),
+			spinnerTickCmd(),
+		)
 
 	case rulesStateUpdateMsg:
 		m.rulesState = msg.rulesState
@@ -545,8 +559,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.statusMessage = "Context rule updated!"
 		m.statusTimeout = time.Now().Add(2 * time.Second)
-		// Refresh rules state
-		return m, tea.Batch(clearStatusCmd(2*time.Second), fetchRulesStateCmd(m.projects))
+		// Refresh rules state and CX stats (rules file changed)
+		m.enrichmentLoading["cxstats"] = true
+		return m, tea.Batch(
+			clearStatusCmd(2*time.Second),
+			fetchRulesStateCmd(m.projects),
+			fetchCxPerLineStatsCmd(m.projects),
+			spinnerTickCmd(),
+		)
 
 	case runningSessionsUpdateMsg:
 		// Replace the running sessions map
@@ -946,20 +966,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showBranch = !m.showBranch
 				_ = m.buildState().Save(m.configDir)
 				return m, m.enrichVisibleProjects()
-			case "h": // Toggle hot context
+			case "C": // Toggle context (add/remove from hot context)
 				if m.cursor < len(m.filtered) {
 					selected := m.filtered[m.cursor]
-					return m, toggleRuleCmd(selected, "hot")
-				}
-			case "c": // Toggle cold context
-				if m.cursor < len(m.filtered) {
-					selected := m.filtered[m.cursor]
-					return m, toggleRuleCmd(selected, "cold")
-				}
-			case "x": // Toggle exclude
-				if m.cursor < len(m.filtered) {
-					selected := m.filtered[m.cursor]
-					return m, toggleRuleCmd(selected, "exclude")
+					currentStatus := m.rulesState[selected.Path]
+					return m, toggleRuleCmd(selected, "hot", currentStatus)
 				}
 			case "n":
 				// Toggle note counts
@@ -1010,6 +1021,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.enrichmentLoading["link"] = true
 					return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.projects))
 				}
+				return m, nil
+			case "c":
+				// Toggle CX column
+				m.showCx = !m.showCx
+				_ = m.buildState().Save(m.configDir)
 				return m, nil
 			}
 		case tea.KeyTab:
@@ -1946,7 +1962,7 @@ func (m sessionizeModel) View() string {
 		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
 	}
 
-	// Note: paths (p), release (r), tool (y), and remote (l) toggles are available but only shown in full help (?)
+	// Note: cx (C), paths (p), release (r), tool (y), and remote (l) toggles are available but only shown in full help (?)
 	togglesDisplay := fmt.Sprintf("[%s%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle)
 
 	if m.ecosystemPickerMode {

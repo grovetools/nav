@@ -53,6 +53,16 @@ type CxStats struct {
 	Size   int64 `json:"total_size"`
 }
 
+// CxPerLineStat holds per-line stats from cx stats --per-line output.
+type CxPerLineStat struct {
+	LineNumber  int      `json:"lineNumber"`
+	Rule        string   `json:"rule"`
+	FileCount   int      `json:"fileCount"`
+	TotalTokens int      `json:"totalTokens"`
+	TotalSize   int64    `json:"totalSize"`
+	SkipReason  string   `json:"skipReason,omitempty"`
+}
+
 // SessionizeProject is an enriched WorkspaceNode for the sessionize TUI.
 // It embeds the core WorkspaceNode type and adds application-specific enrichment fields.
 type SessionizeProject struct {

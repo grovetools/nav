@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
@@ -61,17 +60,21 @@ func (m sessionizeModel) renderTable() string {
 		}
 	}
 
-	showCxColumn := m.hasVisibleContextData()
-
-	// Define table headers based on what's enabled
-	headers := []string{"WORKSPACE"}
-	if showCxColumn {
-		headers = append(headers, "CX")
-	}
+	showCxColumn := m.showCx && m.hasVisibleContextData()
 
 	// Get spinner for animation
 	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+
+	// Define table headers based on what's enabled
+	headers := []string{"WORKSPACE"}
+	if showCxColumn {
+		cxHeader := "CX"
+		if m.enrichmentLoading["cxstats"] {
+			cxHeader = "CX " + spinner
+		}
+		headers = append(headers, cxHeader)
+	}
 
 	if m.showBranch {
 		headers = append(headers, core_theme.IconGitBranch+" BRANCH")
@@ -328,24 +331,13 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 	}
 
 	// --- CONTEXT STATUS ---
+	// Show token count in green if project has tokens (meaning it's in context)
+	// The token count comes from per-line stats of the active rules file
 	cxStatus := ""
-	if status, ok := m.rulesState[project.Path]; ok {
-		switch status {
-		case grovecontext.RuleHot:
-			cxStatus = core_theme.DefaultTheme.Success.Render("H")
-		case grovecontext.RuleCold:
-			cxStatus = core_theme.DefaultTheme.Info.Render("C")
-		case grovecontext.RuleExcluded:
-			cxStatus = core_theme.DefaultTheme.Error.Render("X")
-		}
-	}
-
-	// Append token count if available
 	if project.CxStats != nil && project.CxStats.Tokens > 0 {
-		if cxStatus != "" {
-			cxStatus += " "
-		}
-		cxStatus += core_theme.DefaultTheme.Muted.Render(formatTokens(project.CxStats.Tokens))
+		tokenStr := formatTokens(project.CxStats.Tokens)
+		// If project has tokens from the rules file, it's in context - show green
+		cxStatus = core_theme.DefaultTheme.Success.Render(tokenStr)
 	}
 
 	// --- BRANCH, GIT STATUS, CHANGES ---

@@ -22,13 +22,12 @@ type sessionizeKeyMap struct {
 	TogglePaths       key.Binding
 	FilterDirty       key.Binding
 	RefreshProjects   key.Binding
-	ToggleHotContext  key.Binding
-	ToggleColdContext key.Binding
-	ToggleExclude     key.Binding
+	ToggleHotContext key.Binding
 	ToggleHold        key.Binding
 	ToggleRelease     key.Binding
 	ToggleBinary      key.Binding
 	ToggleLink        key.Binding
+	ToggleCx          key.Binding
 }
 
 func (k sessionizeKeyMap) ShortHelp() []key.Binding {
@@ -66,9 +65,8 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.FilterDirty,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Context Management")),
 			k.ToggleHotContext,
-			k.ToggleColdContext,
-			k.ToggleExclude,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
+			k.ToggleCx,
 			k.ToggleGitStatus,
 			k.ToggleBranch,
 			k.ToggleNoteCounts,
@@ -141,16 +139,8 @@ var sessionizeKeys = sessionizeKeyMap{
 		key.WithHelp("ctrl+r", "refresh project list"),
 	),
 	ToggleHotContext: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "toggle hot context"),
-	),
-	ToggleColdContext: key.NewBinding(
-		key.WithKeys("c"),
-		key.WithHelp("c", "toggle cold context"),
-	),
-	ToggleExclude: key.NewBinding(
-		key.WithKeys("x"),
-		key.WithHelp("x", "toggle exclude"),
+		key.WithKeys("C"),
+		key.WithHelp("C", "toggle context"),
 	),
 	ToggleHold: key.NewBinding(
 		key.WithKeys("H"),
@@ -167,5 +157,9 @@ var sessionizeKeys = sessionizeKeyMap{
 	ToggleLink: key.NewBinding(
 		key.WithKeys("l"),
 		key.WithHelp("l", "toggle remote"),
+	),
+	ToggleCx: key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "toggle cx column"),
 	),
 }

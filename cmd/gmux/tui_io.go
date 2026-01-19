@@ -17,6 +17,7 @@ import (
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/util/delegation"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
 	"gopkg.in/yaml.v3"
@@ -159,7 +160,9 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 }
 
 // toggleRuleCmd adds or removes a context rule for a given project.
-func toggleRuleCmd(project *manager.SessionizeProject, action string) tea.Cmd {
+// If the project already has the requested status, the rule is removed.
+// Otherwise, any existing rule is removed first, then the new rule is added.
+func toggleRuleCmd(project *manager.SessionizeProject, action string, currentStatus grovecontext.RuleStatus) tea.Cmd {
 	return func() tea.Msg {
 		if project == nil {
 			return ruleToggleResultMsg{err: fmt.Errorf("no project selected")}
@@ -201,6 +204,26 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string) tea.Cmd {
 			rule = filepath.Join(project.Path, "**")
 		}
 
+		// Map action to expected RuleStatus
+		var targetStatus grovecontext.RuleStatus
+		switch action {
+		case "hot":
+			targetStatus = grovecontext.RuleHot
+		case "cold":
+			targetStatus = grovecontext.RuleCold
+		case "exclude":
+			targetStatus = grovecontext.RuleExcluded
+		}
+
+		// If already in the target state, remove the rule (toggle off)
+		if currentStatus == targetStatus {
+			if err := mgr.RemoveRule(rule); err != nil {
+				return ruleToggleResultMsg{err: err}
+			}
+			return ruleToggleResultMsg{err: nil}
+		}
+
+		// Otherwise, add the rule (AppendRule handles removing conflicting rules)
 		if err := mgr.AppendRule(rule, action); err != nil {
 			return ruleToggleResultMsg{err: err}
 		}
@@ -422,40 +445,96 @@ func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchAllCxStatsCmd fetches context stats for all projects.
-func fetchAllCxStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
+// fetchCxPerLineStatsCmd fetches context stats by running cx stats --per-line on the
+// active rules file, then maps the results to projects based on alias patterns.
+// This ensures token counts match what would actually be included in context.
+func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		stats := make(map[string]*manager.CxStats)
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		semaphore := make(chan struct{}, 10)
 
+		// Run cx stats --per-line .grove/rules --json in CWD
+		cmd := delegation.Command("cx", "stats", "--per-line", ".grove/rules", "--json")
+		output, err := cmd.Output()
+		if err != nil || len(output) == 0 {
+			return cxStatsMapMsg{stats: stats}
+		}
+
+		trimmed := strings.TrimSpace(string(output))
+		if !strings.HasPrefix(trimmed, "[") {
+			return cxStatsMapMsg{stats: stats}
+		}
+
+		var perLineStats []manager.CxPerLineStat
+		if err := json.Unmarshal([]byte(trimmed), &perLineStats); err != nil {
+			return cxStatsMapMsg{stats: stats}
+		}
+
+		// Build a map of "ecosystem:workspace" -> project for matching
+		// This avoids collisions when multiple projects have the same name
+		projectByKey := make(map[string]*manager.SessionizeProject)
 		for _, p := range projects {
-			wg.Add(1)
-			go func(proj *manager.SessionizeProject) {
-				defer wg.Done()
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
+			// Get ecosystem name from RootEcosystemPath
+			ecosystemName := ""
+			if p.RootEcosystemPath != "" {
+				ecosystemName = filepath.Base(p.RootEcosystemPath)
+			}
+			// Key is "ecosystem:workspace" or just "workspace" if no ecosystem
+			key := p.Name
+			if ecosystemName != "" {
+				key = ecosystemName + ":" + p.Name
+			}
+			projectByKey[key] = p
+		}
 
-				cmd := exec.Command("cx", "stats", "--json")
-				cmd.Dir = proj.Path
-				output, err := cmd.Output()
-				if err != nil || len(output) == 0 {
-					return
+		// Match each rule to a project
+		for _, lineStat := range perLineStats {
+			if lineStat.TotalTokens == 0 {
+				continue
+			}
+
+			// Parse alias patterns like @a:ecosystem:workspace::ruleset or @alias:ecosystem:workspace::ruleset
+			rule := lineStat.Rule
+			var matchKey string
+
+			if strings.HasPrefix(rule, "@a:") || strings.HasPrefix(rule, "@alias:") {
+				// Extract ecosystem:workspace from alias
+				// Format: @a:ecosystem:workspace::ruleset or @a:ecosystem:workspace @grep: "pattern"
+				prefix := "@a:"
+				if strings.HasPrefix(rule, "@alias:") {
+					prefix = "@alias:"
+				}
+				rest := strings.TrimPrefix(rule, prefix)
+
+				// Skip git aliases for now - they're external repos
+				if strings.HasPrefix(rest, "git:") {
+					continue
 				}
 
-				trimmed := strings.TrimSpace(string(output))
-				if strings.HasPrefix(trimmed, "[") {
-					var statsArray []manager.CxStats
-					if json.Unmarshal([]byte(trimmed), &statsArray) == nil && len(statsArray) > 0 {
-						mu.Lock()
-						stats[proj.Path] = &statsArray[0]
-						mu.Unlock()
+				// Strip any modifiers like @grep:, @find:, etc. (they start with " @")
+				if idx := strings.Index(rest, " @"); idx != -1 {
+					rest = rest[:idx]
+				}
+
+				// Parse ecosystem:workspace::ruleset
+				parts := strings.SplitN(rest, "::", 2)
+				if len(parts) >= 1 {
+					// parts[0] is "ecosystem:workspace"
+					matchKey = parts[0]
+				}
+			}
+
+			// Find matching project by ecosystem:workspace key
+			if matchKey != "" {
+				if proj, ok := projectByKey[matchKey]; ok {
+					stats[proj.Path] = &manager.CxStats{
+						Files:  lineStat.FileCount,
+						Tokens: lineStat.TotalTokens,
+						Size:   lineStat.TotalSize,
 					}
 				}
-			}(p)
+			}
 		}
-		wg.Wait()
+
 		return cxStatsMapMsg{stats: stats}
 	}
 }

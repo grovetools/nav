@@ -89,6 +89,10 @@ var sessionizeCmd = &cobra.Command{
 					GitStatus:     cached.GitStatus,
 					NoteCounts:    cached.NoteCounts,
 					PlanStats:     cached.PlanStats,
+					ReleaseInfo:   cached.ReleaseInfo,
+					ActiveBinary:  cached.ActiveBinary,
+					CxStats:       cached.CxStats,
+					GitRemoteURL:  cached.GitRemoteURL,
 				}
 			}
 			usedCache = true
