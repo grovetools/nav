@@ -14,8 +14,9 @@ import (
 
 // setupMockTmuxConfig creates a mock config directory with grove.yml and sessions.yml
 func setupMockTmuxConfig(ctx *harness.Context) error {
-	configDir := ctx.NewDir("config")
-	ctx.Set("config_dir", configDir)
+	// Use XDG config directory for grove.yml
+	groveConfigDir := filepath.Join(ctx.ConfigDir(), "grove")
+	ctx.Set("config_dir", groveConfigDir)
 
 	// Create a mock git repo
 	repoDir := ctx.NewDir("repo")
@@ -38,14 +39,17 @@ tmux:
   available_keys: [a, b, c]
 `
 
-	if err := fs.WriteString(filepath.Join(configDir, "grove.yml"), groveYAML); err != nil {
+	if err := fs.CreateDir(groveConfigDir); err != nil {
+		return fmt.Errorf("failed to create grove config directory: %w", err)
+	}
+	if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveYAML); err != nil {
 		return fmt.Errorf("failed to write grove.yml: %w", err)
 	}
 
-	// Create gmux directory
-	gmuxDir := filepath.Join(configDir, "gmux")
-	if err := fs.CreateDir(gmuxDir); err != nil {
-		return fmt.Errorf("failed to create gmux directory: %w", err)
+	// Create nav state directory for sessions.yml
+	navStateDir := filepath.Join(ctx.StateDir(), "grove", "nav")
+	if err := fs.CreateDir(navStateDir); err != nil {
+		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
 	// Create sessions.yml with session mappings
@@ -63,7 +67,7 @@ tmux:
     description: Test repository C (path not set)
 `, repoDir)
 
-	if err := fs.WriteString(filepath.Join(gmuxDir, "sessions.yml"), sessionsYAML); err != nil {
+	if err := fs.WriteString(filepath.Join(navStateDir, "sessions.yml"), sessionsYAML); err != nil {
 		return fmt.Errorf("failed to write sessions.yml: %w", err)
 	}
 
@@ -82,8 +86,9 @@ func GmuxListScenario() *harness.Scenario {
 					return err
 				}
 
+				// Use ctx.Command to get sandboxed environment (XDG_STATE_HOME, etc.)
 				configDir := ctx.GetString("config_dir")
-				cmd := command.New(gmuxBinary, "list", "--config-dir", configDir)
+				cmd := ctx.Command(gmuxBinary, "list", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -148,8 +153,9 @@ func GmuxStatusScenario() *harness.Scenario {
 					return err
 				}
 
+				// Use ctx.Command to get sandboxed environment (XDG_STATE_HOME, etc.)
 				configDir := ctx.GetString("config_dir")
-				cmd := command.New(gmuxBinary, "status", "--config-dir", configDir)
+				cmd := ctx.Command(gmuxBinary, "status", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 

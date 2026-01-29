@@ -62,7 +62,7 @@ func setupSzColsTestEnv(ctx *harness.Context, setupOpts *szColsSetupOptions) err
 
 	// Create grove.yml with groves configuration
 	// grove-core loads global config from $XDG_CONFIG_HOME/grove/grove.yml
-	// while gmux stores session mappings in $HOME/.grove/gmux/sessions.yml
+	// while nav stores session mappings in $XDG_STATE_HOME/grove/nav/sessions.yml
 	groveYAML := fmt.Sprintf(`version: "1.0"
 groves:
   test_projects:
@@ -73,21 +73,21 @@ tmux:
 `, projectsDir)
 
 	// Global config goes to $XDG_CONFIG_HOME/grove/grove.yml
+	// The harness sets XDG_CONFIG_HOME to ctx.ConfigDir() for spawned processes
 	xdgConfigDir := ctx.ConfigDir()
-	xdgGroveDir := filepath.Join(xdgConfigDir, "grove")
-	if err := fs.CreateDir(xdgGroveDir); err != nil {
-		return fmt.Errorf("failed to create XDG grove config directory: %w", err)
+	groveConfigDir := filepath.Join(xdgConfigDir, "grove")
+	if err := fs.CreateDir(groveConfigDir); err != nil {
+		return fmt.Errorf("failed to create grove config directory: %w", err)
 	}
-	if err := fs.WriteString(filepath.Join(xdgGroveDir, "grove.yml"), groveYAML); err != nil {
+	if err := fs.WriteString(filepath.Join(groveConfigDir, "grove.yml"), groveYAML); err != nil {
 		return fmt.Errorf("failed to write grove.yml: %w", err)
 	}
 
-	// gmux session mappings go to $HOME/.grove/gmux/sessions.yml
-	homeDir := ctx.HomeDir()
-	gmuxBaseDir := filepath.Join(homeDir, ".grove")
-	gmuxDir := filepath.Join(gmuxBaseDir, "gmux")
-	if err := fs.CreateDir(gmuxDir); err != nil {
-		return fmt.Errorf("failed to create gmux config directory: %w", err)
+	// nav session mappings go to $XDG_STATE_HOME/grove/nav/sessions.yml
+	xdgStateDir := ctx.StateDir()
+	navStateDir := filepath.Join(xdgStateDir, "grove", "nav")
+	if err := fs.CreateDir(navStateDir); err != nil {
+		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
 	// Create sessions.yml with optional key mappings
@@ -107,15 +107,15 @@ tmux:
 		// If no mappings, write an empty sessions block with a placeholder comment
 		sessionsYAML += "  # No sessions configured\n"
 	}
-	if err := fs.WriteString(filepath.Join(gmuxDir, "sessions.yml"), sessionsYAML); err != nil {
+	if err := fs.WriteString(filepath.Join(navStateDir, "sessions.yml"), sessionsYAML); err != nil {
 		return fmt.Errorf("failed to write sessions.yml: %w", err)
 	}
 
 	// Create context rules if specified
-	// Context rules are stored in ~/.grove/cx/rules.yml
+	// Context rules are stored in $XDG_CONFIG_HOME/grove/cx/rules.yml
 	if len(setupOpts.ContextRules) > 0 {
-		cxDir := filepath.Join(gmuxBaseDir, "cx")
-		if err := fs.CreateDir(cxDir); err != nil {
+		cxConfigDir := filepath.Join(groveConfigDir, "cx")
+		if err := fs.CreateDir(cxConfigDir); err != nil {
 			return fmt.Errorf("failed to create cx config directory: %w", err)
 		}
 
@@ -127,7 +127,7 @@ tmux:
       - "%s/**"
 `, ruleType, projectPath)
 		}
-		if err := fs.WriteString(filepath.Join(cxDir, "rules.yml"), rulesYAML); err != nil {
+		if err := fs.WriteString(filepath.Join(cxConfigDir, "rules.yml"), rulesYAML); err != nil {
 			return fmt.Errorf("failed to write rules.yml: %w", err)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/workspace"
 	"gopkg.in/yaml.v3"
 )
@@ -47,9 +48,9 @@ type ProjectCache struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
-// LoadState loads the sessionizer state from ~/.grove/gmux/state.yml
+// LoadState loads the sessionizer state from the nav state directory.
 func LoadState(configDir string) (*SessionizerState, error) {
-	statePath := filepath.Join(configDir, "gmux", "state.yml")
+	statePath := filepath.Join(paths.StateDir(), "nav", "state.yml")
 
 	data, err := os.ReadFile(statePath)
 	if err != nil {
@@ -68,16 +69,16 @@ func LoadState(configDir string) (*SessionizerState, error) {
 	return &state, nil
 }
 
-// Save saves the sessionizer state to ~/.grove/gmux/state.yml
+// Save saves the sessionizer state to the nav state directory.
 func (s *SessionizerState) Save(configDir string) error {
-	gmuxDir := filepath.Join(configDir, "gmux")
+	navDir := filepath.Join(paths.StateDir(), "nav")
 
 	// Ensure directory exists
-	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+	if err := os.MkdirAll(navDir, 0755); err != nil {
 		return err
 	}
 
-	statePath := filepath.Join(gmuxDir, "state.yml")
+	statePath := filepath.Join(navDir, "state.yml")
 
 	data, err := yaml.Marshal(s)
 	if err != nil {
@@ -87,9 +88,9 @@ func (s *SessionizerState) Save(configDir string) error {
 	return os.WriteFile(statePath, data, 0644)
 }
 
-// LoadProjectCache loads the cached project data from ~/.grove/gmux/cache.json
+// LoadProjectCache loads the cached project data from the nav cache directory.
 func LoadProjectCache(configDir string) (*ProjectCache, error) {
-	cachePath := filepath.Join(configDir, "gmux", "cache.json")
+	cachePath := filepath.Join(paths.CacheDir(), "nav", "cache.json")
 
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
@@ -107,12 +108,12 @@ func LoadProjectCache(configDir string) (*ProjectCache, error) {
 	return &cache, nil
 }
 
-// SaveProjectCache saves the project cache to ~/.grove/gmux/cache.json
+// SaveProjectCache saves the project cache to the nav cache directory.
 func SaveProjectCache(configDir string, projects []SessionizeProject) error {
-	gmuxDir := filepath.Join(configDir, "gmux")
+	navDir := filepath.Join(paths.CacheDir(), "nav")
 
 	// Ensure directory exists
-	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+	if err := os.MkdirAll(navDir, 0755); err != nil {
 		return err
 	}
 
@@ -141,7 +142,7 @@ func SaveProjectCache(configDir string, projects []SessionizeProject) error {
 		return err
 	}
 
-	cachePath := filepath.Join(gmuxDir, "cache.json")
+	cachePath := filepath.Join(navDir, "cache.json")
 	return os.WriteFile(cachePath, data, 0644)
 }
 
@@ -151,9 +152,9 @@ type KeyManageCache struct {
 	Timestamp        time.Time                `json:"timestamp"`
 }
 
-// LoadKeyManageCache loads the cached key manage data from ~/.grove/gmux/km-cache.json
+// LoadKeyManageCache loads the cached key manage data from the nav cache directory.
 func LoadKeyManageCache(configDir string) (*KeyManageCache, error) {
-	cachePath := filepath.Join(configDir, "gmux", "km-cache.json")
+	cachePath := filepath.Join(paths.CacheDir(), "nav", "km-cache.json")
 
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
@@ -171,12 +172,12 @@ func LoadKeyManageCache(configDir string) (*KeyManageCache, error) {
 	return &cache, nil
 }
 
-// SaveKeyManageCache saves the key manage cache to ~/.grove/gmux/km-cache.json
+// SaveKeyManageCache saves the key manage cache to the nav cache directory.
 func SaveKeyManageCache(configDir string, enrichedProjects map[string]*SessionizeProject) error {
-	gmuxDir := filepath.Join(configDir, "gmux")
+	navDir := filepath.Join(paths.CacheDir(), "nav")
 
 	// Ensure directory exists
-	if err := os.MkdirAll(gmuxDir, 0755); err != nil {
+	if err := os.MkdirAll(navDir, 0755); err != nil {
 		return err
 	}
 
@@ -205,6 +206,6 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*Sessioniz
 		return err
 	}
 
-	cachePath := filepath.Join(gmuxDir, "km-cache.json")
+	cachePath := filepath.Join(navDir, "km-cache.json")
 	return os.WriteFile(cachePath, data, 0644)
 }

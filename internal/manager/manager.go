@@ -11,6 +11,7 @@ import (
 
 	core_config "github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/sirupsen/logrus"
@@ -81,8 +82,8 @@ func NewManager(configDir string) (*Manager, error) {
 		configPath = filepath.Join(home, ".config", "grove", "grove.yml")
 	}
 
-	// Load sessions from separate file in gmux directory
-	sessionsPath := filepath.Join(configDir, "gmux", "sessions.yml")
+	// Load sessions from separate file in nav state directory
+	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
 	sessions := make(map[string]TmuxSessionConfig)
 	var lockedKeys []string
 
@@ -155,7 +156,7 @@ func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
 
 // Save persists the tmux configuration:
 // - Static config (search paths, discovery) to grove.yml
-// - Dynamic state (session mappings) to gmux/sessions.yml
+// - Dynamic state (session mappings) to nav/sessions.yml
 func (m *Manager) Save() error {
 	// Save static config to grove.yml
 	if err := m.saveStaticConfig(); err != nil {
@@ -200,12 +201,12 @@ func (m *Manager) saveStaticConfig() error {
 	return os.WriteFile(m.configPath, newData, 0o644)
 }
 
-// saveSessions saves the session mappings to gmux/sessions.yml
+// saveSessions saves the session mappings to nav/sessions.yml
 func (m *Manager) saveSessions() error {
-	// Ensure the gmux directory exists
-	gmuxDir := filepath.Dir(m.sessionsPath)
-	if err := os.MkdirAll(gmuxDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create gmux directory: %w", err)
+	// Ensure the nav directory exists in the state folder
+	navDir := filepath.Dir(m.sessionsPath)
+	if err := os.MkdirAll(navDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
 	// Create the sessions file structure
@@ -695,7 +696,7 @@ func (m *Manager) RegenerateBindingsGo() error {
 			session.Key, sessionizerPath, session.Path))
 	}
 
-	bindingsFile := filepath.Join(m.configDir, "gmux", "generated-bindings.conf")
+	bindingsFile := filepath.Join(paths.CacheDir(), "nav", "generated-bindings.conf")
 	return os.WriteFile(bindingsFile, []byte(bindings.String()), 0o644)
 }
 
