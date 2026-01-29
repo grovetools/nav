@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/pkg/paths"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/keymap"
@@ -698,12 +699,7 @@ func getIconForWindow(w tmuxclient.Window) string {
 }
 
 func loadTmuxConfig() (*manager.TmuxConfig, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	groveConfigPath := filepath.Join(homeDir, ".grove", "grove.yml")
+	groveConfigPath := filepath.Join(paths.ConfigDir(), "grove.yml")
 	data, err := os.ReadFile(groveConfigPath)
 	if err != nil {
 		return nil, err

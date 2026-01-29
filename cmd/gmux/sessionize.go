@@ -594,7 +594,7 @@ explicit_projects:
 
 // groupClonedProjectsAsEcosystem identifies projects cloned via `cx repo` and groups them
 // under a virtual "cx-repos" ecosystem node. Projects are identified by their
-// ParentEcosystemPath pointing to the cx ecosystem path (~/.grove/cx).
+// ParentEcosystemPath pointing to the cx ecosystem path (~/.local/share/grove/cx).
 // This function adds a virtual ecosystem node if one doesn't already exist.
 func groupClonedProjectsAsEcosystem(projects []manager.SessionizeProject) []manager.SessionizeProject {
 	logger := grovelogging.NewLogger("gmux-sessionize")

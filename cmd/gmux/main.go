@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/grovetools/core/cli"
+	"github.com/grovetools/core/pkg/paths"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/version"
 	"github.com/grovetools/nav/pkg/tmux"
@@ -116,7 +117,7 @@ func init() {
 `)
 
 	// Add global flags
-	defaultConfigDir := filepath.Join(os.Getenv("HOME"), ".grove")
+	defaultConfigDir := paths.ConfigDir()
 	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", defaultConfigDir, "Configuration directory")
 
 	// Add the --style flag to the alias command as well, so Cobra recognizes it.

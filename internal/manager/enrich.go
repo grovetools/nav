@@ -12,6 +12,7 @@ import (
 
 	coreconfig "github.com/grovetools/core/config"
 	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/delegation"
 	"github.com/grovetools/flow/pkg/orchestration"
@@ -100,7 +101,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 // The caller should map workspace names to paths as needed.
 func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 
-	nbPath := filepath.Join(os.Getenv("HOME"), ".grove", "bin", "nb")
+	nbPath := filepath.Join(paths.BinDir(), "nb")
 	var cmd *exec.Cmd
 	if _, err := os.Stat(nbPath); err == nil {
 		cmd = exec.Command(nbPath, "list", "--workspaces", "--json")

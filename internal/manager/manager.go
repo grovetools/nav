@@ -662,11 +662,12 @@ func (m *Manager) RegenerateBindingsGo() error {
 
 	// Add hook to record session access when switching sessions via native tmux commands
 	bindings.WriteString("# Hook to track session switches for history\n")
-	bindings.WriteString("set-hook -g client-session-changed 'run-shell -b \"HOME=$HOME PATH=$PATH:$HOME/.grove/bin nav record-session\"'\n\n")
+	binDir := paths.BinDir()
+	bindings.WriteString(fmt.Sprintf("set-hook -g client-session-changed 'run-shell -b \"HOME=$HOME PATH=$PATH:%s nav record-session\"'\n\n", binDir))
 
 	// Use nav sessionize with proper environment to ensure it works in tmux shell context
 	// HOME is needed for config directory resolution, PATH for finding the binary
-	sessionizerPath := "HOME=$HOME PATH=$PATH:$HOME/.grove/bin nav sessionize"
+	sessionizerPath := fmt.Sprintf("HOME=$HOME PATH=$PATH:%s nav sessionize", binDir)
 
 	// Sort sessions by key for consistent output
 	sortedSessions := make([]models.TmuxSession, len(sessions))
