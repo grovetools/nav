@@ -372,7 +372,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 				if status != nil {
 					var statusParts []string
 					if status.IsDirty {
-						statusParts = append(statusParts, core_theme.DefaultTheme.Warning.Render("x"))
+						statusParts = append(statusParts, core_theme.DefaultTheme.Warning.Render(core_theme.IconGitModified))
 					}
 
 					isMainBranch := status.Branch == "main" || status.Branch == "master"
@@ -407,7 +407,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 					if len(statusParts) > 0 {
 						gitStatus = strings.Join(statusParts, " ")
 					} else if !status.IsDirty {
-						gitStatus = core_theme.DefaultTheme.Success.Render("*")
+						gitStatus = core_theme.DefaultTheme.Success.Render(core_theme.IconSuccess)
 					}
 				}
 
