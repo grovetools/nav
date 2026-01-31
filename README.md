@@ -1,71 +1,75 @@
+<p align="center">
+  <img src="https://grovetools.ai/docs/nav/images/nav-logo-with-text-dark.svg" alt="Grove Nav">
+</p>
+
 <!-- DOCGEN:OVERVIEW:START -->
 
-<img src="docs/images/grove-tmux-readme.svg" width="60%" />
-`gmux` is an interactive session manager for `tmux`. It provides a terminal interface to discover and switch between projects, see `tmux` session status, and view Git repository information.
+`nav` is a command-line tool for managing tmux sessions, windows, and navigation between project directories within the Grove ecosystem.
 
-<!-- placeholder for animated gif -->
+### Features
 
-## Key Features
+*   **Project Sessionizer (`nav sessionize` or `sz`)**: A terminal interface that lists projects discovered via grove `core`. It aggregates metadata including Git status, `nb` note counts, `flow` plan statistics, and `cx` token counts. Supports filtering, ecosystem focusing (`@`), and hierarchical worktree display.
+*   **Key Mapping (`nav key manage` or `km`)**: A terminal interface for assigning single-character hotkeys to specific project paths. These mappings generate global tmux bindings for rapid access.
+*   **Session History (`nav history` or `h`)**: A terminal interface listing accessed project sessions, sorted by recency. The `nav last` (or `l`) command switches to the most recently used session without opening the interface.
+*   **Window Management (`nav windows`)**: A terminal interface for identifying and manipulating windows within the current session. Features include filtering by name or process, renaming, closing, and moving windows, with a pane content preview.
+*   **Hotkey Generation**: Generates a tmux configuration file containing `bind-key` commands for mapped projects.
+*   **Session Automation (`nav launch`, `nav wait`)**: Commands to create sessions with specific layouts/panes or block execution until a session closes.
 
-*   **Session Interface (`gmux sz`)**: A terminal interface that lists projects discovered from configured search paths. The list displays active `tmux` sessions and Git status for those sessions, and refreshes its data sources periodically.
-*   **Key Mapping (`gmux key manage`)**: A terminal interface to map project paths to single-character keys. It includes a fuzzy finder to search for unmapped projects from the discovered list.
-*   **Hotkey Generation**: Creates a `tmux` configuration file with `bind-key` commands for each mapped project. This allows switching to projects using a keyboard shortcut from within `tmux`.
-*   **Session Creation (`gmux launch`)**: A command to create `tmux` sessions with specified window names, a session-wide working directory, and multiple panes. Working directories can also be set on a per-pane basis.
-*   **Scripting Commands**: Subcommands (`session exists`, `session kill`, `wait`) for checking and controlling `tmux` session state from shell scripts.
-*   **Worktree Discovery**: Finds Git worktrees located in `.grove-worktrees` subdirectories and lists them hierarchically under their parent repository in the sessionizer interface.
+### How It Works
 
-## Ecosystem Integration
+**Discovery & Configuration**
+`nav` utilizes the `DiscoveryService` from `core` to locate projects based on the `groves` configuration in `~/.config/grove/grove.yml`. It supports standard repositories, ecosystems, and Git worktrees.
 
-`gmux` uses other components of the Grove ecosystem to function.
+**Data & Caching**
+*   **Static Configuration**: Reads search paths and settings from `~/.config/grove/grove.yml`.
+*   **Session State**: Key mappings are stored in `~/.local/state/nav/sessions.yml` (platform dependent).
+*   **Cache**: Project metadata (Git status, note counts) is cached in `~/.cache/nav/cache.json` to improve startup performance.
+*   **Enrichment**: The sessionizer executes background subprocesses (`git`, `nb`, `cx`, `grove`) to populate status columns asynchronously.
 
-*   **Configuration**: It reads configuration files from the `~/.config/grove/` directory.
-*   **`grove-hooks` Execution**: If the `grove-hooks` binary is found in the `PATH`, `gmux` executes it to fetch and display the status of active Claude AI sessions.
-*   **`grove` Meta-CLI**: The `grove` meta-CLI is the intended tool for installing and managing the `gmux` binary.
+**Tmux Integration**
+*   **Bindings**: `nav` generates `~/.cache/nav/generated-bindings.conf`. Users source this file in `~/.tmux.conf`.
+*   **Hooks**: The generated configuration includes a `client-session-changed` hook that executes `nav record-session`, maintaining the access history.
+*   **Execution**: Operations interact with the tmux server via the `tmux` binary. The tool respects the `GROVE_TMUX_SOCKET` environment variable for socket isolation.
 
-## How It Works
-
-The sessionizer (`gmux sz`) is a terminal application that runs background commands every 10 seconds to gather information.
-
-It executes `tmux` commands to list running sessions and find their working directories. For each active session in a Git repository, it runs `git` commands to get the branch status, file counts, and line changes. It uses `grove-core`'s DiscoveryService to discover projects from paths configured in the global `groves` section of `grove.yml` and reloads key mappings from `~/.config/grove/gmux/sessions.yml`. The terminal interface redraws only if the fetched data differs from its current state.
-
-When key mappings are changed, `gmux` updates `sessions.yml` and regenerates a bindings file (`generated-bindings.conf`). It then attempts to execute `tmux source-file` to apply the changes in the current `tmux` server.
-
-## Configuration Migration Notice
-
-**Important**: Project discovery has been centralized to `grove-core`. If you previously configured search paths in the `tmux` section of your `grove.yml`, you need to migrate to the new `groves` configuration.
-
-**Old configuration** (no longer supported):
-```yaml
-tmux:
-  search_paths:
-    work:
-      path: ~/Work
-      enabled: true
-```
-
-**New configuration** (in global `~/.config/grove/grove.yml`):
-```yaml
-groves:
-  work:
-    path: ~/Work
-    enabled: true
-```
-
-See the [Configuration Reference](docs/03-configuration.md) for details.
-
-## Installation
+### Installation
 
 Install via the Grove meta-CLI:
+
 ```bash
-grove install tmux
+grove install nav
 ```
 
 Verify installation:
+
 ```bash
-gmux version
+nav version
 ```
 
-Requires the `grove` meta-CLI. See the [Grove Installation Guide](https://github.com/mattsolo1/grove-meta/blob/main/docs/02-installation.md) if you don't have it installed.
+### Usage Examples
+
+**Interactive Sessionizer**
+```bash
+# Open project picker
+nav sz
+
+# Open project picker focused on current working directory's ecosystem
+nav sz .
+```
+
+**Key Management**
+```bash
+# Open interactive key manager
+nav km
+
+# Map current directory to 'w' key
+nav key update w
+```
+
+### Limitations
+
+*   **Tmux Dependency**: Core functionality requires a running tmux server.
+*   **Terminal Support**: TUI features require a terminal emulator with support for standard ANSI escape sequences.
+*   **Enrichment Performance**: Metadata columns (e.g., Git status, `nb` counts) rely on external binaries; performance depends on the execution speed of these underlying tools.
 
 <!-- DOCGEN:OVERVIEW:END -->
 
