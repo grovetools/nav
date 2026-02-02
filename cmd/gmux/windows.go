@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/paths"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/components/help"
@@ -21,7 +20,6 @@ import (
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var windowsCmd = &cobra.Command{
@@ -699,20 +697,21 @@ func getIconForWindow(w tmuxclient.Window) string {
 }
 
 func loadTmuxConfig() (*manager.TmuxConfig, error) {
-	groveConfigPath := filepath.Join(paths.ConfigDir(), "grove.yml")
-	data, err := os.ReadFile(groveConfigPath)
+	groveConfigPath, err := config.FindConfigFile(paths.ConfigDir())
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := config.Load(groveConfigPath)
 	if err != nil {
 		return nil, err
 	}
 
-	var rawConfig struct {
-		Tmux *manager.TmuxConfig `yaml:"tmux"`
-	}
-	if err := yaml.Unmarshal(data, &rawConfig); err != nil {
+	var tmuxConfig manager.TmuxConfig
+	if err := cfg.UnmarshalExtension("tmux", &tmuxConfig); err != nil {
 		return nil, err
 	}
 
-	return rawConfig.Tmux, nil
+	return &tmuxConfig, nil
 }
 
 func init() {

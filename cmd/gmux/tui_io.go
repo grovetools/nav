@@ -12,15 +12,15 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	grovecontext "github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/delegation"
+	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
-	"gopkg.in/yaml.v3"
 )
 
 // gitStatusMsg is sent when git status for a single project is fetched.
@@ -382,13 +382,6 @@ type groveListEntry struct {
 	LatestRelease string `json:"latest_release"`
 }
 
-// projectBinaryConfig represents the binary config in grove.yml
-type projectBinaryConfig struct {
-	Binary struct {
-		Name string `yaml:"name"`
-	} `yaml:"binary"`
-}
-
 // fetchAllBinaryStatusCmd fetches active binary status for all projects.
 // Uses `grove list --json` to get tool info efficiently in one call.
 func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
@@ -408,17 +401,22 @@ func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 		}
 
 		for _, p := range projects {
-			// Read binary name from project's grove.yml
-			groveYmlPath := filepath.Join(p.Path, "grove.yml")
-			data, err := os.ReadFile(groveYmlPath)
+			// Read binary name from project's grove config
+			configPath, err := config.FindConfigFile(p.Path)
 			if err != nil {
 				continue
 			}
-			var projCfg projectBinaryConfig
-			if err := yaml.Unmarshal(data, &projCfg); err != nil || projCfg.Binary.Name == "" {
+			cfg, err := config.Load(configPath)
+			if err != nil {
 				continue
 			}
-			binaryName := projCfg.Binary.Name
+			var binaryCfg struct {
+				Name string `yaml:"name"`
+			}
+			if err := cfg.UnmarshalExtension("binary", &binaryCfg); err != nil || binaryCfg.Name == "" {
+				continue
+			}
+			binaryName := binaryCfg.Name
 
 			// Look up tool info from grove list output by repo name
 			repoName := filepath.Base(p.Path)
