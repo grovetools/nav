@@ -96,29 +96,6 @@
         }
       ]
     },
-    "configuration": {
-      "title": "Configuration Reference",
-      "content": "This document describes the configuration files used by `gmux`. Paths with a leading `~` are expanded to the user's home directory.\n\nBy default, `gmux` looks for configuration files in `~/.config/grove`. This can be changed with the global `--config-dir` flag.",
-      "subsections": [
-        {
-          "title": "grove.yml (Static Configuration)",
-          "content": "`gmux` uses the unified Grove configuration system. Configuration is stored in `grove.yml`, which supports layered configuration (global, project, and override files).\n\n**Location**: `~/.config/grove/grove.yml` (or project-specific `grove.yml` files)\n\n**Note**: Session key mappings (which change frequently) are stored separately in `~/.config/grove/gmux/sessions.yml` to keep version-controlled config files clean.\n\n### Project Discovery\n\n**As of this version**, project discovery is managed centrally by `grove-core`'s DiscoveryService. Projects are discovered from paths defined in the global `groves` configuration section.\n\nThe `groves` section in your global `~/.config/grove/grove.yml` defines:\n- Root directories to search for projects and ecosystems\n\nThe `tmux` section defines:\n- Available hotkeys for session switching\n\n### Schema\n\n**Global Configuration** (`~/.config/grove/grove.yml`):\n\n*   `groves` (map of string to object): Defines root directories to scan for projects.\n    *   `path` (string): Directory path to scan.\n    *   `description` (string, optional): A description for the grove.\n    *   `enabled` (bool): If `true`, this path is scanned for projects.\n\n*   `explicit_projects` (array of objects): Defines specific projects to include without discovery.\n    *   `path` (string): The path to the project.\n    *   `name` (string, optional): A display name, defaults to the directory name.\n    *   `description` (string, optional): A description for the project.\n    *   `enabled` (bool): If `true`, this project is included.\n\n*   `tmux` (object): Tmux-specific configuration.\n    *   `available_keys` ([]string): A list of characters to be used as session hotkeys (e.g., `a`, `s`, `d`).\n\n### Discovery Logic\n\nThe sessionizer discovers projects using `grove-core`'s DiscoveryService:\n1.  Scans all enabled `groves` paths for projects with `grove.yml` files.\n2.  Identifies ecosystems (directories with `grove.yml` containing a `workspaces` key).\n3.  Discovers projects (directories with `grove.yml` but no `workspaces` key).\n4.  For each project, scans for `.grove-worktrees` subdirectories and includes worktrees hierarchically.\n5.  Includes non-Grove directories (directories with `.git` but no `grove.yml`).\n6.  Adds all enabled `explicit_projects` (useful for including specific directories like dotfiles).\n\n### Migration from Old Configuration\n\n**If you previously used `search_paths`, `explicit_projects`, or `discovery` settings**, these are now deprecated. Migrate to the new `groves` configuration:\n\n**Old configuration** (deprecated):\n\n**New configuration**:\n\n### Example",
-          "code_blocks": [
-            "tmux:\n  search_paths:\n    work:\n      path: ~/Work\n      enabled: true",
-            "groves:\n  work:\n    path: ~/Work\n    enabled: true\n    description: \"Work projects\"",
-            "# ~/.config/grove/grove.yml\n\nversion: \"1.0\"\n\n# Project discovery paths (global configuration)\ngroves:\n  work:\n    path: ~/Work\n    description: \"Work projects\"\n    enabled: true\n  personal:\n    path: ~/Projects\n    description: \"Personal projects\"\n    enabled: true\n\n# Explicit projects (specific directories to include)\nexplicit_projects:\n  - path: ~/.config\n    name: \"dotfiles\"\n    description: \"Configuration files\"\n    enabled: true\n\n# Tmux configuration (static settings only)\ntmux:\n  # Available hotkeys for session switching\n  available_keys: [a, s, d, f, g, h, j, k, l]"
-          ]
-        },
-        {
-          "title": "gmux/sessions.yml (Dynamic State)",
-          "content": "This file stores session key mappings (which change frequently when you map/unmap projects). It is automatically managed by `gmux key` commands and is stored separately from `grove.yml` to avoid polluting version control.\n\n**Location**: `~/.config/grove/gmux/sessions.yml`\n\nThe recommended way to modify this file is with the `gmux key manage` command, which provides an interactive interface for mapping projects to keys.\n\n### Schema\n\n*   `sessions` (map of key to object): Defines the project mapped to each key. Unmapped keys from `available_keys` are not written to this file.\n    *   `path` (string): The project path the key is mapped to.\n    *   `repository` (string): The display name for the project.\n    *   `description` (string, optional): A free-text description.\n\n### Example\n\n\n### Version Control Recommendation\n\nAdd `gmux/sessions.yml` to your `.gitignore` to prevent session mappings from polluting your version control history:",
-          "code_blocks": [
-            "# ~/.config/grove/gmux/sessions.yml\nsessions:\n  # Maps key 'a' to the grove-tmux project\n  a:\n    path: \"~/Work/grove-tmux\"\n    repository: \"grove-tmux\"\n    description: \"\"\n\n  # Maps key 'd' to another project\n  d:\n    path: \"~/Projects/my-app\"\n    repository: \"my-app\"\n    description: \"My awesome application\"\n\n  # Keys 's', 'f', 'g', etc. are available but currently unmapped",
-            "# In ~/.config/grove/.gitignore\ngmux/sessions.yml\ngmux/access-history.json"
-          ]
-        }
-      ]
-    },
     "examples": {
       "title": "Examples",
       "content": "This guide provides examples for common gmux workflows.",
