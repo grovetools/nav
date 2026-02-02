@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	core_config "github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/paths"
@@ -167,12 +168,15 @@ func (m *Manager) Save() error {
 	return m.saveSessions()
 }
 
-// saveStaticConfig saves the static tmux configuration to grove.yml
+// saveStaticConfig saves the static tmux configuration to the grove config file
 func (m *Manager) saveStaticConfig() error {
 	// Ensure the config directory exists
 	if err := os.MkdirAll(filepath.Dir(m.configPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
+
+	// Determine format based on file extension
+	isTOML := strings.HasSuffix(m.configPath, ".toml")
 
 	// Read the existing file into a generic map to preserve other contents
 	var fullConfig map[string]interface{}
@@ -182,8 +186,14 @@ func (m *Manager) saveStaticConfig() error {
 	}
 	// If file exists, unmarshal it
 	if len(data) > 0 {
-		if err := yaml.Unmarshal(data, &fullConfig); err != nil {
-			return fmt.Errorf("failed to parse existing config file: %w", err)
+		if isTOML {
+			if _, err := toml.Decode(string(data), &fullConfig); err != nil {
+				return fmt.Errorf("failed to parse existing config file: %w", err)
+			}
+		} else {
+			if err := yaml.Unmarshal(data, &fullConfig); err != nil {
+				return fmt.Errorf("failed to parse existing config file: %w", err)
+			}
 		}
 	} else {
 		fullConfig = make(map[string]interface{})
@@ -192,10 +202,20 @@ func (m *Manager) saveStaticConfig() error {
 	// Update the 'tmux' section (static config only, no sessions)
 	fullConfig["tmux"] = m.tmuxConfig
 
-	// Marshal the full config back to YAML
-	newData, err := yaml.Marshal(fullConfig)
-	if err != nil {
-		return fmt.Errorf("failed to marshal updated config: %w", err)
+	// Marshal the full config back
+	var newData []byte
+	if isTOML {
+		var buf strings.Builder
+		enc := toml.NewEncoder(&buf)
+		if err := enc.Encode(fullConfig); err != nil {
+			return fmt.Errorf("failed to marshal updated config: %w", err)
+		}
+		newData = []byte(buf.String())
+	} else {
+		newData, err = yaml.Marshal(fullConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal updated config: %w", err)
+		}
 	}
 
 	return os.WriteFile(m.configPath, newData, 0o644)

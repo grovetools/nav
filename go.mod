@@ -21,6 +21,7 @@ require (
 	cloud.google.com/go/auth v0.16.1 // indirect
 	cloud.google.com/go/compute/metadata v0.7.0 // indirect
 	github.com/ActiveState/vt10x v1.3.1 // indirect
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2 // indirect
 	github.com/anthropics/anthropic-sdk-go v1.19.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
