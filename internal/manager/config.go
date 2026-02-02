@@ -2,12 +2,12 @@ package manager
 
 //go:generate sh -c "cd ../.. && go run ./tools/schema-generator/"
 
-// TmuxConfig represents the 'tmux' section in grove.yml.
+// TmuxConfig represents the 'tmux' section in grove config.
 // This struct now only contains static configuration specific to gmux itself.
 // Project discovery is now handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
-	AvailableKeys          []string `yaml:"available_keys"`
-	ShowChildProcesses     bool     `yaml:"show_child_processes,omitempty"`     // Enable child process detection in window selector
+	AvailableKeys      []string `yaml:"available_keys" toml:"available_keys"`
+	ShowChildProcesses bool     `yaml:"show_child_processes,omitempty" toml:"show_child_processes"` // Enable child process detection in window selector
 }
 
 // TmuxSessionsFile represents the sessions file stored in ~/.config/grove/gmux/sessions.yml
