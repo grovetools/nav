@@ -1,3 +1,83 @@
+## v0.6.0 (2026-02-02)
+
+Configuration handling sees significant improvements with the migration to XDG-compliant paths, renaming directory references from `gmux` to `nav` (63e494e), along with full support for TOML configuration files (a73cc48, d785281, 3ff2012). These changes ensure better standard compliance and flexibility in user settings.
+
+The sessionizer TUI has been enhanced with a new toggleable CX (Context) column (ba33e18) that provides accurate per-line token counts and improved display behavior (5e5a628). Additionally, tmux integration has been robustified to respect `GROVE_TMUX_SOCKET` for better environment isolation (e7180e8) and now utilizes shared core command implementations (8092688).
+
+### Features
+- Migrate nav to XDG-compliant paths (63e494e)
+- Add toggleable CX column with accurate per-line token counts (ba33e18)
+- Add configuration/readme update (db3b57e)
+- Update readme/overview (6704b64)
+
+### Bug Fixes
+- Use XDG paths for nav/gmux configuration and binaries (890d59a)
+- Add toml tags to TmuxConfig for proper serialization (a73cc48)
+- Support TOML format when saving tmux config (d785281)
+- Respect GROVE_TMUX_SOCKET in all tmux exec calls (e7180e8)
+- Improve CX column display and update behavior (5e5a628)
+- Update VERSION_PKG to grovetools/core path (d6c297f)
+- Git icons (cc70cdf)
+- Use nav (01d3bd9)
+- Rm logo overview (35027bf)
+
+### Refactoring
+- Use config.FindConfigFile for TOML support (3ff2012)
+- Use core's tmux.Command() instead of local implementation (8092688)
+- Update docgen title to match package name (81b747c)
+
+### Documentation
+- Add MIT License (c0b77dc)
+- Add concept lookup instructions to CLAUDE.md (a5a42f8)
+
+### Chores
+- Restore release workflow (23060e0)
+- Migrate grove.yml to grove.toml (3d6e571)
+- Move README template to notebook (70b5162)
+- Remove docgen files from repo (4b8f004)
+- Move docs.rules to .cx/ directory (6b7be22)
+- Update docs.json (125a9ca)
+- Update go.mod for grovetools migration (c3ddeb7)
+
+### File Changes
+```
+ {docs => .cx}/docs.rules       |   0
+ .github/workflows/release.yml  |  58 +++-------------
+ CLAUDE.md                      |  15 +++-
+ LICENSE                        |  21 ++++++
+ Makefile                       |   2 +-
+ README.md                      |  98 +++++++++++++-------------
+ cmd/gmux/key.go                |   4 +-
+ cmd/gmux/key_manage.go         |   3 +-
+ cmd/gmux/main.go               |   3 +-
+ cmd/gmux/sessionize.go         |  10 ++-
+ cmd/gmux/tui.go                |  55 ++++++++++-----
+ cmd/gmux/tui_io.go             | 153 ++++++++++++++++++++++++++++++-----------
+ cmd/gmux/tui_keymap.go         |  24 +++----
+ cmd/gmux/tui_table.go          |  50 +++++++-------
+ cmd/gmux/windows.go            |  31 ++++-----
+ docs/01-overview.md            |  73 +++++++++++++-------
+ docs/06-configuration.md       |  12 ++++
+ docs/README.md.tpl             |   6 --
+ docs/docgen.config.yml         |  39 -----------
+ go.mod                         |  21 +++++-
+ go.sum                         |  73 +++++++++++++++++---
+ grove.toml                     |  10 +++
+ grove.yml                      |   9 ---
+ internal/manager/config.go     |   6 +-
+ internal/manager/enrich.go     |   3 +-
+ internal/manager/manager.go    |  76 ++++++++++++++------
+ internal/manager/project.go    |  10 +++
+ internal/manager/state.go      |  38 +++++-----
+ pkg/docs/docs.json             |  48 ++-----------
+ pkg/tmux/tmux.go               |  10 +++
+ tests/e2e/scenarios.go         |  26 ++++---
+ tests/e2e/scenarios_sz_cols.go |  32 ++++-----
+ tests/e2e/tmux_scenarios.go    |  85 +++++++++++++++++------
+ tmux.schema.json               |   2 +-
+ 34 files changed, 662 insertions(+), 444 deletions(-)
+```
+
 ## v0.1.1-nightly.2817cba (2025-10-03)
 
 ## v0.1.0 (2025-10-01)
