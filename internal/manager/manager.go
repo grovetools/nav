@@ -11,11 +11,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 	core_config "github.com/grovetools/core/config"
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -302,24 +302,24 @@ func isGitRepository(path string) bool {
 	return err == nil
 }
 
-// GetAvailableProjects now uses the DiscoveryService from grove-core to find all projects.
-// Enrichment is no longer handled here; it is done asynchronously in the TUI.
+// GetAvailableProjects uses the daemon client to fetch workspaces.
+// If the daemon is running, it uses cached/pre-computed data from the daemon.
+// If not, it falls back to direct discovery via LocalClient.
+// Enrichment is handled separately in the TUI via EnrichProjects.
 func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
-	// Initialize the DiscoveryService
-	logger := logrus.New()
-	logger.SetOutput(os.Stderr)
-	logger.SetLevel(logrus.WarnLevel)
+	// Create daemon client (automatically falls back to local if daemon not running)
+	client := daemon.New()
+	defer client.Close()
 
-	// Step 1: Run discovery and transform to WorkspaceNodes
-	// GetProjects is the new, consolidated function in grove-core.
-	workspaceNodes, err := workspace.GetProjects(logger)
+	// Fetch workspaces via the client interface
+	workspaceNodes, err := client.GetWorkspaces(context.Background())
 	if err != nil {
 		// Return an empty list if discovery fails - sessionize will handle the empty case
 		// This allows first-run setup to trigger
-		return []DiscoveredProject{}, fmt.Errorf("failed to run discovery service: %w", err)
+		return []DiscoveredProject{}, fmt.Errorf("failed to get workspaces: %w", err)
 	}
 
-	// Step 2: Transform []*workspace.WorkspaceNode into []DiscoveredProject (SessionizeProject)
+	// Transform []*workspace.WorkspaceNode into []DiscoveredProject (SessionizeProject)
 	projects := make([]DiscoveredProject, len(workspaceNodes))
 	for i, node := range workspaceNodes {
 		projects[i] = SessionizeProject{
