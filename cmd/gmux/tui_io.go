@@ -751,3 +751,22 @@ func stopDaemonStream() {
 	daemonStreamState.cancel = nil
 	daemonStreamState.started = false
 }
+
+// updateDaemonFocusCmd tells the daemon which workspaces to prioritize for scanning.
+// This should be called whenever the visible/filtered workspace list changes.
+func updateDaemonFocusCmd(paths []string) tea.Cmd {
+	return func() tea.Msg {
+		client := daemon.New()
+		defer client.Close()
+
+		if !client.IsRunning() {
+			return nil // No daemon, no focus to update
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		_ = client.SetFocus(ctx, paths)
+		return nil // Fire and forget
+	}
+}

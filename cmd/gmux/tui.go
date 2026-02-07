@@ -294,6 +294,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
 		subscribeToDaemonCmd(), // Subscribe to daemon state updates (if daemon is running)
+		updateDaemonFocusCmd(m.getVisiblePaths()), // Set initial focus for daemon
 	}
 
 	// Only do full project discovery if we didn't load from cache
@@ -677,6 +678,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fetchRunningSessionsCmd(),
 			fetchKeyMapCmd(m.manager),
 			tickCmd(), // This reschedules the tick
+			updateDaemonFocusCmd(m.getVisiblePaths()), // Keep daemon focus in sync
 		}
 
 		// Track if we're starting any enrichment
@@ -745,7 +747,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Clear the focused ecosystem from state
 				_ = m.buildState().Save(m.configDir)
 			}
-			return m, nil
+			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
 		case key.Matches(msg, sessionizeKeys.FilterDirty):
 			// Toggle dirty filter
@@ -853,7 +855,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
 						}
 					}
-					return m, nil
+					return m, updateDaemonFocusCmd(m.getVisiblePaths())
 				}
 				// Select current project even while filtering
 				if m.cursor < len(m.filtered) {
@@ -872,13 +874,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 				}
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			case tea.KeyDown:
 				// Navigate down while filtering
 				if m.cursor < len(m.filtered)-1 {
 					m.cursor++
 				}
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			default:
 				// Let filter input handle all other keys when focused
 				prevValue := m.filterInput.Value()
@@ -889,6 +891,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateFiltered()
 					m.cursor = 0
 					m.moveCursorToFirstSelectable()
+					return m, tea.Batch(cmd, updateDaemonFocusCmd(m.getVisiblePaths()))
 				}
 				return m, cmd
 			}
@@ -898,10 +901,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyUp, tea.KeyCtrlP:
 			m.moveCursorUp()
-			return m, m.enrichVisibleProjects()
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 		case tea.KeyDown, tea.KeyCtrlN:
 			m.moveCursorDown()
-			return m, m.enrichVisibleProjects()
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 		case tea.KeyCtrlU:
 			// Page up (vim-style)
 			pageSize := 10
@@ -909,7 +912,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, m.enrichVisibleProjects()
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 		case tea.KeyCtrlD:
 			// Page down (vim-style)
 			pageSize := 10
@@ -920,29 +923,29 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, m.enrichVisibleProjects()
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 		case tea.KeyRunes:
 			switch msg.String() {
 			case "j":
 				// Vim-style down navigation
 				m.moveCursorDown()
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			case "k":
 				// Vim-style up navigation
 				m.moveCursorUp()
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			case "g":
 				// Handle gg (go to top) - need to check for double g
 				// For simplicity, single g goes to top (common in many TUIs)
 				m.cursor = 0
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			case "G":
 				// Go to bottom
 				m.cursor = len(m.filtered) - 1
 				if m.cursor < 0 {
 					m.cursor = 0
 				}
-				return m, m.enrichVisibleProjects()
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 			case "X":
 				// Close session (moved from ctrl+d)
 				if m.cursor < len(m.filtered) {
@@ -1031,7 +1034,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateFiltered()
 				m.cursor = 0
 				m.moveCursorToFirstSelectable()
-				return m, nil
+				return m, updateDaemonFocusCmd(m.getVisiblePaths())
 			case "s":
 				// Toggle git status
 				m.showGitStatus = !m.showGitStatus
@@ -1109,7 +1112,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worktreesFolded = !m.worktreesFolded
 			m.updateFiltered()
 			_ = m.buildState().Save(m.configDir)
-			return m, m.enrichVisibleProjects()
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 		case tea.KeyCtrlE:
 			// Enter key editing mode
 			if m.cursor < len(m.filtered) {
@@ -1177,7 +1180,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
 					}
 				}
-				return m, nil
+				return m, updateDaemonFocusCmd(m.getVisiblePaths())
 			}
 			// Normal mode - select project and quit
 			if m.cursor < len(m.filtered) {
@@ -2279,4 +2282,27 @@ func (m *sessionizeModel) getVisibleRange() (int, int) {
 	}
 
 	return start, end
+}
+
+// getVisiblePaths returns the paths of currently filtered projects.
+// This is used to tell the daemon which workspaces to prioritize for scanning.
+// When focused, returns all filtered paths (the focused ecosystem's children).
+// Otherwise returns just the visible range.
+func (m *sessionizeModel) getVisiblePaths() []string {
+	// If focused or height not yet set, use all filtered paths
+	if m.focusedProject != nil || m.height == 0 {
+		paths := make([]string, 0, len(m.filtered))
+		for _, p := range m.filtered {
+			paths = append(paths, p.Path)
+		}
+		return paths
+	}
+
+	// Otherwise use visible range
+	start, end := m.getVisibleRange()
+	paths := make([]string, 0, end-start)
+	for i := start; i < end && i < len(m.filtered); i++ {
+		paths = append(paths, m.filtered[i].Path)
+	}
+	return paths
 }
