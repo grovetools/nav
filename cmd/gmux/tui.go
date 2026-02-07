@@ -293,6 +293,7 @@ func (m sessionizeModel) Init() tea.Cmd {
 		fetchRunningSessionsCmd(),
 		fetchKeyMapCmd(m.manager),
 		tickCmd(), // Start the periodic refresh cycle
+		subscribeToDaemonCmd(), // Subscribe to daemon state updates (if daemon is running)
 	}
 
 	// Only do full project discovery if we didn't load from cache
@@ -304,18 +305,30 @@ func (m sessionizeModel) Init() tea.Cmd {
 		cmds = append(cmds, fetchRulesStateCmd(m.projects))
 	}
 
-	// Fetch fresh enrichment data (will update cached data in background)
-	// Git status is fetched for visible projects only via enrichVisibleProjects()
-	if m.showNoteCounts {
+	// Use daemon's cached data if available (fast startup)
+	// Only fetch if daemon didn't provide the data
+	hasGitStatus, hasNoteCounts, hasPlanStats := false, false, false
+	for _, p := range m.projects {
+		if p.GitStatus != nil {
+			hasGitStatus = true
+		}
+		if p.NoteCounts != nil {
+			hasNoteCounts = true
+		}
+		if p.PlanStats != nil {
+			hasPlanStats = true
+		}
+	}
+
+	if m.showNoteCounts && !hasNoteCounts {
 		m.enrichmentLoading["notes"] = true
 		cmds = append(cmds, fetchAllNoteCountsCmd())
 	}
-	if m.showPlanStats {
+	if m.showPlanStats && !hasPlanStats {
 		m.enrichmentLoading["plans"] = true
 		cmds = append(cmds, fetchAllPlanStatsCmd())
 	}
-	if m.showGitStatus {
-		// Refresh git status for all projects in background
+	if m.showGitStatus && !hasGitStatus {
 		m.enrichmentLoading["git"] = true
 		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
 	}
@@ -586,6 +599,61 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions = msg.sessions
 		return m, nil
 
+	case daemonStateUpdateMsg:
+		// Handle real-time state updates from daemon
+		// Update enrichment data for workspaces that changed
+		if msg.update.Workspaces != nil {
+			for _, ew := range msg.update.Workspaces {
+				if proj, ok := m.projectMap[ew.Path]; ok {
+					if ew.GitStatus != nil {
+						proj.GitStatus = ew.GitStatus
+						proj.EnrichmentStatus["git"] = "done"
+					}
+					if ew.GitRemoteURL != "" {
+						proj.GitRemoteURL = ew.GitRemoteURL
+					}
+					// Map NoteCounts from daemon
+					if ew.NoteCounts != nil {
+						proj.NoteCounts = &manager.NoteCounts{
+							Current:    ew.NoteCounts.Current,
+							Issues:     ew.NoteCounts.Issues,
+							Inbox:      ew.NoteCounts.Inbox,
+							Docs:       ew.NoteCounts.Docs,
+							Completed:  ew.NoteCounts.Completed,
+							Review:     ew.NoteCounts.Review,
+							InProgress: ew.NoteCounts.InProgress,
+							Other:      ew.NoteCounts.Other,
+						}
+					}
+					// Map PlanStats from daemon
+					if ew.PlanStats != nil {
+						proj.PlanStats = &manager.PlanStats{
+							TotalPlans: ew.PlanStats.TotalPlans,
+							ActivePlan: ew.PlanStats.ActivePlan,
+							Running:    ew.PlanStats.Running,
+							Pending:    ew.PlanStats.Pending,
+							Completed:  ew.PlanStats.Completed,
+							Failed:     ew.PlanStats.Failed,
+							Todo:       ew.PlanStats.Todo,
+							Hold:       ew.PlanStats.Hold,
+							Abandoned:  ew.PlanStats.Abandoned,
+							PlanStatus: ew.PlanStats.PlanStatus,
+						}
+					}
+				}
+			}
+		}
+		// Continue listening for more updates
+		return m, listenToDaemonCmd()
+
+	case daemonStreamStartedMsg:
+		// Daemon stream is ready, start listening for updates
+		return m, listenToDaemonCmd()
+
+	case daemonStreamErrorMsg:
+		// Stream closed or errored - don't restart, just continue without streaming
+		return m, nil
+
 	case spinnerTickMsg:
 		// Update spinner animation frame
 		m.spinnerFrame++
@@ -616,20 +684,23 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Only refresh fast/dynamic data on tick.
 		// Expensive/static data (release, binary, link, cxstats) only refresh on toggle or manual refresh.
-		if m.showGitStatus {
-			m.enrichmentLoading["git"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
-		}
-		if m.showNoteCounts {
-			m.enrichmentLoading["notes"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllNoteCountsCmd())
-		}
-		if m.showPlanStats {
-			m.enrichmentLoading["plans"] = true
-			startedEnrichment = true
-			cmds = append(cmds, fetchAllPlanStatsCmd())
+		// Skip enrichment fetches if daemon is streaming updates (it pushes all enrichment data)
+		if !daemonStreamState.started {
+			if m.showGitStatus {
+				m.enrichmentLoading["git"] = true
+				startedEnrichment = true
+				cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+			}
+			if m.showNoteCounts {
+				m.enrichmentLoading["notes"] = true
+				startedEnrichment = true
+				cmds = append(cmds, fetchAllNoteCountsCmd())
+			}
+			if m.showPlanStats {
+				m.enrichmentLoading["plans"] = true
+				startedEnrichment = true
+				cmds = append(cmds, fetchAllPlanStatsCmd())
+			}
 		}
 		// NOTE: release, binary, link, and cxstats are NOT refreshed on tick.
 		// They spawn many processes and contain relatively static data.

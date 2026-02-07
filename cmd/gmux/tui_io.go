@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
@@ -85,6 +86,16 @@ type rulesStateUpdateMsg struct {
 
 // ruleToggleResultMsg is sent after a rule is toggled.
 type ruleToggleResultMsg struct {
+	err error
+}
+
+// daemonStateUpdateMsg is sent when the daemon pushes a state update via SSE.
+type daemonStateUpdateMsg struct {
+	update daemon.StateUpdate
+}
+
+// daemonStreamErrorMsg is sent when the daemon stream encounters an error or closes.
+type daemonStreamErrorMsg struct {
 	err error
 }
 
@@ -294,6 +305,7 @@ func fetchGitStatusCmd(path string) tea.Cmd {
 }
 
 // fetchAllGitStatusesCmd returns a command to fetch git status for multiple paths concurrently.
+// Projects that already have GitStatus pre-populated (from daemon) are skipped.
 func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
@@ -302,6 +314,14 @@ func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
 
 		for _, p := range projects {
+			// Skip projects that already have git status from daemon
+			if p.GitStatus != nil {
+				mu.Lock()
+				statuses[p.Path] = p.GitStatus
+				mu.Unlock()
+				continue
+			}
+
 			wg.Add(1)
 			go func(proj *manager.SessionizeProject) {
 				defer wg.Done()
@@ -644,4 +664,90 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 			projectList:      projectList,
 		}
 	}
+}
+
+// daemonStreamState holds the state for the daemon SSE stream subscription.
+// This is used to maintain the stream connection across multiple tea.Cmd invocations.
+var daemonStreamState struct {
+	mu       sync.Mutex
+	ch       <-chan daemon.StateUpdate
+	cancel   context.CancelFunc
+	started  bool
+}
+
+// daemonStreamStartedMsg is sent after the daemon stream subscription is established.
+type daemonStreamStartedMsg struct{}
+
+// subscribeToDaemonCmd starts listening to daemon state updates via SSE.
+// After setup, it returns daemonStreamStartedMsg to trigger listening.
+// If the daemon is not running, this is a no-op.
+func subscribeToDaemonCmd() tea.Cmd {
+	return func() tea.Msg {
+		daemonStreamState.mu.Lock()
+		defer daemonStreamState.mu.Unlock()
+
+		// If stream already started, just signal ready
+		if daemonStreamState.started {
+			return daemonStreamStartedMsg{}
+		}
+
+		client := daemon.New()
+
+		// Only subscribe if daemon is actually running (RemoteClient)
+		if !client.IsRunning() {
+			client.Close()
+			return nil // No daemon, no streaming
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		ch, err := client.StreamState(ctx)
+		if err != nil {
+			cancel()
+			client.Close()
+			return daemonStreamErrorMsg{err: err}
+		}
+
+		daemonStreamState.ch = ch
+		daemonStreamState.cancel = cancel
+		daemonStreamState.started = true
+
+		return daemonStreamStartedMsg{}
+	}
+}
+
+// listenToDaemonCmd waits for the next update from the daemon stream.
+// This should be called after receiving daemonStreamStartedMsg.
+func listenToDaemonCmd() tea.Cmd {
+	return func() tea.Msg {
+		daemonStreamState.mu.Lock()
+		ch := daemonStreamState.ch
+		started := daemonStreamState.started
+		daemonStreamState.mu.Unlock()
+
+		if !started || ch == nil {
+			return nil // Stream not active
+		}
+
+		// Block waiting for next update
+		update, ok := <-ch
+		if !ok {
+			// Channel closed
+			return daemonStreamErrorMsg{err: nil}
+		}
+
+		return daemonStateUpdateMsg{update: update}
+	}
+}
+
+// stopDaemonStream stops the daemon SSE stream subscription.
+func stopDaemonStream() {
+	daemonStreamState.mu.Lock()
+	defer daemonStreamState.mu.Unlock()
+
+	if daemonStreamState.cancel != nil {
+		daemonStreamState.cancel()
+	}
+	daemonStreamState.ch = nil
+	daemonStreamState.cancel = nil
+	daemonStreamState.started = false
 }

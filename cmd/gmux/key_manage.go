@@ -359,6 +359,7 @@ func (m *manageModel) Init() tea.Cmd {
 }
 
 // fetchAllGitStatusesForKeyManageCmd returns a command to fetch git status for multiple paths concurrently.
+// Projects that already have GitStatus pre-populated (from daemon) are skipped.
 func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
@@ -367,6 +368,14 @@ func fetchAllGitStatusesForKeyManageCmd(projects []*manager.SessionizeProject) t
 		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
 
 		for _, p := range projects {
+			// Skip projects that already have git status from daemon
+			if p.GitStatus != nil {
+				mu.Lock()
+				statuses[p.Path] = p.GitStatus
+				mu.Unlock()
+				continue
+			}
+
 			wg.Add(1)
 			go func(proj *manager.SessionizeProject) {
 				defer wg.Done()
