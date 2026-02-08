@@ -733,8 +733,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, sessionizeKeys.RefreshProjects):
 			m.isLoading = true
-			m.statusMessage = "Refreshing project list..."
-			m.statusTimeout = time.Now().Add(5 * time.Second)
 			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.manager, m.configDir))
 
 		case key.Matches(msg, sessionizeKeys.ClearFocus):

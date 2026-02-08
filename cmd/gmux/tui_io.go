@@ -271,8 +271,21 @@ func spinnerTickCmd() tea.Cmd {
 
 // fetchProjectsCmd returns a command that re-scans configured search paths.
 // This command only performs discovery and does NOT fetch enrichment data.
+// If the daemon is running, it also triggers a daemon refresh so the daemon
+// re-discovers workspaces and broadcasts the update via SSE.
 func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 	return func() tea.Msg {
+		// Trigger daemon refresh if available (non-blocking, fire-and-forget)
+		go func() {
+			client := daemon.New()
+			defer client.Close()
+			if client.IsRunning() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = client.Refresh(ctx)
+			}
+		}()
+
 		projects, _ := mgr.GetAvailableProjects()
 
 		// Sort by access history
