@@ -2,23 +2,20 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/daemon"
+	"github.com/grovetools/core/pkg/enrichment"
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/core/util/delegation"
 	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
@@ -371,197 +368,77 @@ func fetchAllPlanStatsCmd() tea.Cmd {
 	}
 }
 
-// fetchAllReleaseInfoCmd fetches release info using `grove list --json`.
+// fetchAllReleaseInfoCmd fetches release info using core enrichment.
 func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		releases := make(map[string]*manager.ReleaseInfo)
-
-		// Run `grove list --json` once to get all release info
-		toolsByRepo := make(map[string]*groveListEntry)
-		cmd := exec.Command("grove", "list", "--json")
-		if output, err := cmd.Output(); err == nil {
-			var tools []groveListEntry
-			if json.Unmarshal(output, &tools) == nil {
-				for i := range tools {
-					toolsByRepo[tools[i].RepoName] = &tools[i]
-				}
-			}
+		// Convert to workspace nodes for the enrichment function
+		nodes := make([]*workspace.WorkspaceNode, len(projects))
+		for i, p := range projects {
+			nodes[i] = p.WorkspaceNode
 		}
 
-		for _, p := range projects {
-			// Match project to tool by repo name
-			repoName := filepath.Base(p.Path)
-			if p.IsWorktree() && p.ParentProjectPath != "" {
-				repoName = filepath.Base(p.ParentProjectPath)
-			}
+		// Use core enrichment function
+		coreReleases, _ := enrichment.FetchToolInfoMap(nodes, true, false)
 
-			if tool, ok := toolsByRepo[repoName]; ok && tool.LatestRelease != "" {
-				releases[p.Path] = &manager.ReleaseInfo{
-					LatestTag:    tool.LatestRelease,
-					CommitsAhead: 0, // grove list doesn't provide this, but it's less important
-				}
+		// Convert to local types
+		releases := make(map[string]*manager.ReleaseInfo, len(coreReleases))
+		for path, info := range coreReleases {
+			releases[path] = &manager.ReleaseInfo{
+				LatestTag:    info.LatestTag,
+				CommitsAhead: info.CommitsAhead,
 			}
 		}
 		return releaseInfoMapMsg{releases: releases}
 	}
 }
 
-// groveListEntry represents a single tool from `grove list --json`
-type groveListEntry struct {
-	Name          string `json:"name"`
-	RepoName      string `json:"repo_name"`
-	Status        string `json:"status"`
-	ActiveVersion string `json:"active_version"`
-	LatestRelease string `json:"latest_release"`
-}
-
 // fetchAllBinaryStatusCmd fetches active binary status for all projects.
-// Uses `grove list --json` to get tool info efficiently in one call.
 func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		statuses := make(map[string]*manager.BinaryStatus)
-
-		// Run `grove list --json` once to get all tool info
-		toolsByRepo := make(map[string]*groveListEntry)
-		cmd := exec.Command("grove", "list", "--json")
-		if output, err := cmd.Output(); err == nil {
-			var tools []groveListEntry
-			if json.Unmarshal(output, &tools) == nil {
-				for i := range tools {
-					toolsByRepo[tools[i].RepoName] = &tools[i]
-				}
-			}
+		// Convert to workspace nodes for the enrichment function
+		nodes := make([]*workspace.WorkspaceNode, len(projects))
+		for i, p := range projects {
+			nodes[i] = p.WorkspaceNode
 		}
 
-		for _, p := range projects {
-			// Read binary name from project's grove config
-			configPath, err := config.FindConfigFile(p.Path)
-			if err != nil {
-				continue
-			}
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				continue
-			}
-			var binaryCfg struct {
-				Name string `yaml:"name"`
-			}
-			if err := cfg.UnmarshalExtension("binary", &binaryCfg); err != nil || binaryCfg.Name == "" {
-				continue
-			}
-			binaryName := binaryCfg.Name
+		// Use core enrichment function
+		_, coreBinaries := enrichment.FetchToolInfoMap(nodes, false, true)
 
-			// Look up tool info from grove list output by repo name
-			repoName := filepath.Base(p.Path)
-			// Handle worktrees: strip worktree suffix to get base repo name
-			if p.IsWorktree() && p.ParentProjectPath != "" {
-				repoName = filepath.Base(p.ParentProjectPath)
-			}
-
-			isDev := false
-			currentVersion := ""
-			if tool, ok := toolsByRepo[repoName]; ok {
-				isDev = tool.Status == "dev"
-				currentVersion = tool.ActiveVersion
-			}
-
-			statuses[p.Path] = &manager.BinaryStatus{
-				ToolName:       binaryName,
-				IsDevActive:    isDev,
-				LinkName:       "", // Not needed with this approach
-				CurrentVersion: currentVersion,
+		// Convert to local types
+		statuses := make(map[string]*manager.BinaryStatus, len(coreBinaries))
+		for path, status := range coreBinaries {
+			statuses[path] = &manager.BinaryStatus{
+				ToolName:       status.ToolName,
+				IsDevActive:    status.IsDevActive,
+				LinkName:       status.LinkName,
+				CurrentVersion: status.CurrentVersion,
 			}
 		}
 		return binaryStatusMapMsg{statuses: statuses}
 	}
 }
 
-// fetchCxPerLineStatsCmd fetches context stats by running cx stats --per-line on the
-// active rules file, then maps the results to projects based on alias patterns.
-// This ensures token counts match what would actually be included in context.
+// fetchCxPerLineStatsCmd fetches context stats using core enrichment.
 func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		stats := make(map[string]*manager.CxStats)
-
-		// Run cx stats --per-line .grove/rules --json in CWD
-		cmd := delegation.Command("cx", "stats", "--per-line", ".grove/rules", "--json")
-		output, err := cmd.Output()
-		if err != nil || len(output) == 0 {
-			return cxStatsMapMsg{stats: stats}
+		// Convert to workspace nodes for the enrichment function
+		nodes := make([]*workspace.WorkspaceNode, len(projects))
+		for i, p := range projects {
+			nodes[i] = p.WorkspaceNode
 		}
 
-		trimmed := strings.TrimSpace(string(output))
-		if !strings.HasPrefix(trimmed, "[") {
-			return cxStatsMapMsg{stats: stats}
-		}
+		// Use core enrichment function
+		coreStats := enrichment.FetchCxStatsMap(nodes)
 
-		var perLineStats []manager.CxPerLineStat
-		if err := json.Unmarshal([]byte(trimmed), &perLineStats); err != nil {
-			return cxStatsMapMsg{stats: stats}
-		}
-
-		// Build a map of "ecosystem:workspace" -> project for matching
-		// This avoids collisions when multiple projects have the same name
-		projectByKey := make(map[string]*manager.SessionizeProject)
-		for _, p := range projects {
-			// Get ecosystem name from RootEcosystemPath
-			ecosystemName := ""
-			if p.RootEcosystemPath != "" {
-				ecosystemName = filepath.Base(p.RootEcosystemPath)
-			}
-			// Key is "ecosystem:workspace" or just "workspace" if no ecosystem
-			key := p.Name
-			if ecosystemName != "" {
-				key = ecosystemName + ":" + p.Name
-			}
-			projectByKey[key] = p
-		}
-
-		// Match each rule to a project
-		for _, lineStat := range perLineStats {
-			// Parse alias patterns like @a:ecosystem:workspace::ruleset or @alias:ecosystem:workspace::ruleset
-			rule := lineStat.Rule
-			var matchKey string
-
-			if strings.HasPrefix(rule, "@a:") || strings.HasPrefix(rule, "@alias:") {
-				// Extract ecosystem:workspace from alias
-				// Format: @a:ecosystem:workspace::ruleset or @a:ecosystem:workspace @grep: "pattern"
-				prefix := "@a:"
-				if strings.HasPrefix(rule, "@alias:") {
-					prefix = "@alias:"
-				}
-				rest := strings.TrimPrefix(rule, prefix)
-
-				// Skip git aliases for now - they're external repos
-				if strings.HasPrefix(rest, "git:") {
-					continue
-				}
-
-				// Strip any modifiers like @grep:, @find:, etc. (they start with " @")
-				if idx := strings.Index(rest, " @"); idx != -1 {
-					rest = rest[:idx]
-				}
-
-				// Parse ecosystem:workspace::ruleset
-				parts := strings.SplitN(rest, "::", 2)
-				if len(parts) >= 1 {
-					// parts[0] is "ecosystem:workspace"
-					matchKey = parts[0]
-				}
-			}
-
-			// Find matching project by ecosystem:workspace key
-			if matchKey != "" {
-				if proj, ok := projectByKey[matchKey]; ok {
-					stats[proj.Path] = &manager.CxStats{
-						Files:  lineStat.FileCount,
-						Tokens: lineStat.TotalTokens,
-						Size:   lineStat.TotalSize,
-					}
-				}
+		// Convert to local types
+		stats := make(map[string]*manager.CxStats, len(coreStats))
+		for path, coreStat := range coreStats {
+			stats[path] = &manager.CxStats{
+				Files:  coreStat.Files,
+				Tokens: coreStat.Tokens,
+				Size:   coreStat.Size,
 			}
 		}
-
 		return cxStatsMapMsg{stats: stats}
 	}
 }
@@ -571,10 +448,8 @@ func fetchAllRemoteURLsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
 		urls := make(map[string]string)
 		for _, p := range projects {
-			cmd := exec.Command("git", "remote", "get-url", "origin")
-			cmd.Dir = p.Path
-			if output, err := cmd.Output(); err == nil {
-				urls[p.Path] = strings.TrimSpace(string(output))
+			if url := enrichment.GetRemoteURL(p.Path); url != "" {
+				urls[p.Path] = url
 			}
 		}
 		return remoteURLMapMsg{urls: urls}

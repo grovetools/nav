@@ -1,25 +1,18 @@
+// Package manager provides session management for the nav TUI.
+// Enrichment logic has been consolidated into github.com/grovetools/core/pkg/enrichment.
+// This file provides thin wrappers for backward compatibility.
 package manager
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"sync"
 
-	coreconfig "github.com/grovetools/core/config"
 	"github.com/grovetools/core/git"
-	"github.com/grovetools/core/pkg/paths"
-	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/core/util/delegation"
-	"github.com/grovetools/flow/pkg/orchestration"
-	"github.com/sirupsen/logrus"
+	"github.com/grovetools/core/pkg/enrichment"
 )
 
-// EnrichmentOptions controls which data to fetch and for which projects
+// EnrichmentOptions controls which data to fetch and for which projects.
+// This is a local alias for the core enrichment options.
 type EnrichmentOptions struct {
 	FetchNoteCounts bool
 	FetchGitStatus  bool
@@ -27,17 +20,18 @@ type EnrichmentOptions struct {
 	GitStatusPaths  map[string]bool
 }
 
-// DefaultEnrichmentOptions returns options that fetch everything for all projects
+// DefaultEnrichmentOptions returns options that fetch everything for all projects.
 func DefaultEnrichmentOptions() *EnrichmentOptions {
 	return &EnrichmentOptions{
 		FetchNoteCounts: true,
 		FetchGitStatus:  true,
 		FetchPlanStats:  true,
-		GitStatusPaths:  nil, // nil means all projects
+		GitStatusPaths:  nil,
 	}
 }
 
 // EnrichProjects updates SessionizeProject items in-place with runtime data.
+// This function is used for local enrichment when the daemon is not running.
 func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *EnrichmentOptions) {
 	if opts == nil {
 		opts = DefaultEnrichmentOptions()
@@ -95,243 +89,54 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 	wg.Wait()
 }
 
-
 // FetchNoteCountsMap fetches note counts for all known workspaces.
-// Note: This function returns counts indexed by workspace name (not path).
-// The caller should map workspace names to paths as needed.
+// Delegates to core/pkg/enrichment.
 func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
-
-	nbPath := filepath.Join(paths.BinDir(), "nb")
-	var cmd *exec.Cmd
-	if _, err := os.Stat(nbPath); err == nil {
-		cmd = exec.Command(nbPath, "list", "--workspaces", "--json")
-	} else {
-		cmd = delegation.Command("nb", "list", "--workspaces", "--json")
-	}
-
-	output, err := cmd.Output()
+	coreCounts, err := enrichment.FetchNoteCountsMap()
 	if err != nil {
-		return make(map[string]*NoteCounts), nil
+		return make(map[string]*NoteCounts), err
 	}
 
-	type nbNote struct {
-		Type      string `json:"type"`
-		Workspace string `json:"workspace"`
-	}
-
-	var notes []nbNote
-	if err := json.Unmarshal(output, &notes); err != nil {
-		return make(map[string]*NoteCounts), fmt.Errorf("failed to unmarshal nb output: %w", err)
-	}
-
-	countsByName := make(map[string]*NoteCounts)
-	for _, note := range notes {
-		if _, ok := countsByName[note.Workspace]; !ok {
-			countsByName[note.Workspace] = &NoteCounts{}
-		}
-		switch note.Type {
-		case "current":
-			countsByName[note.Workspace].Current++
-		case "issues":
-			countsByName[note.Workspace].Issues++
-		case "inbox":
-			countsByName[note.Workspace].Inbox++
-		case "docs":
-			countsByName[note.Workspace].Docs++
-		case "completed":
-			countsByName[note.Workspace].Completed++
-		case "review":
-			countsByName[note.Workspace].Review++
-		case "in-progress":
-			countsByName[note.Workspace].InProgress++
-		default:
-			countsByName[note.Workspace].Other++
+	// Convert core types to local types
+	result := make(map[string]*NoteCounts, len(coreCounts))
+	for name, coreCount := range coreCounts {
+		result[name] = &NoteCounts{
+			Current:    coreCount.Current,
+			Issues:     coreCount.Issues,
+			Inbox:      coreCount.Inbox,
+			Docs:       coreCount.Docs,
+			Completed:  coreCount.Completed,
+			Review:     coreCount.Review,
+			InProgress: coreCount.InProgress,
+			Other:      coreCount.Other,
 		}
 	}
-
-	return countsByName, nil
+	return result, nil
 }
 
-// FetchPlanStatsMap fetches plan statistics for all workspaces using NotebookLocator.
+// FetchPlanStatsMap fetches plan statistics for all workspaces.
+// Delegates to core/pkg/enrichment.
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
-	statsByPath := make(map[string]*PlanStats)
-	seenDirs := make(map[string]*PlanStats) // Cache for already processed directories
-
-	// 1. Initialize dependencies from grove-core
-	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
-	discoveryService := workspace.NewDiscoveryService(logger)
-	discoveryResult, err := discoveryService.DiscoverAll()
+	coreStats, err := enrichment.FetchPlanStatsMap()
 	if err != nil {
-		return nil, fmt.Errorf("workspace discovery failed: %w", err)
-	}
-	provider := workspace.NewProvider(discoveryResult)
-
-	coreCfg, err := coreconfig.LoadDefault()
-	if err != nil {
-		coreCfg = &coreconfig.Config{}
-	}
-	locator := workspace.NewNotebookLocator(coreCfg)
-
-	// 2. Process each workspace node individually
-	for _, node := range provider.All() {
-		// 3. Get the plans directory for this specific node
-		plansRootDir, err := locator.GetPlansDir(node)
-		if err != nil {
-			statsByPath[node.Path] = &PlanStats{}
-			continue // Skip if we can't find the plans directory
-		}
-
-		// Check if we have already processed this directory
-		if cachedStats, seen := seenDirs[plansRootDir]; seen {
-			statsByPath[node.Path] = cachedStats
-			continue
-		}
-
-		// Get or create the stats object for this directory
-		stats := &PlanStats{}
-		statsByPath[node.Path] = stats
-		seenDirs[plansRootDir] = stats // Add to cache before processing
-
-		// 4. Walk the plans root directory to find individual plans
-		entries, err := os.ReadDir(plansRootDir)
-		if err != nil {
-			continue // Skip this directory if unreadable
-		}
-
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-
-			// Skip hidden directories (like .archive, .grove)
-			if strings.HasPrefix(entry.Name(), ".") {
-				continue
-			}
-
-			planPath := filepath.Join(plansRootDir, entry.Name())
-			plan, err := orchestration.LoadPlan(planPath)
-			if err != nil {
-				continue // Skip if it's not a valid plan
-			}
-
-			// For worktree nodes, set PlanStatus if this plan's worktree matches the node's worktree name
-			if node.IsWorktree() && plan.Config != nil && plan.Config.Worktree != "" {
-				// Get the worktree name from the node
-				worktreeName := node.GetWorktreeName()
-				if worktreeName != "" && plan.Config.Worktree == worktreeName {
-					stats.PlanStatus = plan.Config.Status
-				}
-			}
-
-			// Skip finished plans
-			if plan.Config != nil && plan.Config.Status == "finished" {
-				continue
-			}
-
-			// 5. Aggregate stats for this node
-			stats.TotalPlans++
-			for _, job := range plan.Jobs {
-				switch job.Status {
-				case "completed":
-					stats.Completed++
-				case "running":
-					stats.Running++
-				case "pending", "pending_user":
-					stats.Pending++
-				case "failed":
-					stats.Failed++
-				case "todo":
-					stats.Todo++
-				case "hold":
-					stats.Hold++
-				case "abandoned":
-					stats.Abandoned++
-				}
-			}
-		}
-
-		// Also try to find the active plan for this specific workspace path
-		activePlan := getActivePlanForPath(node.Path)
-		if activePlan != "" {
-			stats.ActivePlan = activePlan
-		}
+		return make(map[string]*PlanStats), err
 	}
 
-	return statsByPath, nil
-}
-
-// getActivePlanForPath reads the active plan from a workspace's state file
-func getActivePlanForPath(workspacePath string) string {
-	stateFilePath := filepath.Join(workspacePath, ".grove", "state.yml")
-	data, err := os.ReadFile(stateFilePath)
-	if err != nil {
-		return ""
-	}
-
-	var stateMap map[string]interface{}
-	if err := json.Unmarshal(data, &stateMap); err != nil {
-		// Try YAML format
-		stateMap = make(map[string]interface{})
-		// Simple YAML parsing - look for "flow.active_plan:" line
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "flow.active_plan:") {
-				parts := strings.SplitN(line, ":", 2)
-				if len(parts) == 2 {
-					return strings.TrimSpace(parts[1])
-				}
-			}
-		}
-		return ""
-	}
-
-	// Try both keys for backward compatibility
-	if val, ok := stateMap["flow.active_plan"].(string); ok {
-		return val
-	}
-	if val, ok := stateMap["active_plan"].(string); ok {
-		return val
-	}
-	return ""
-}
-
-// parseJobStatus extracts the status field from job frontmatter
-func parseJobStatus(content string) string {
-	lines := strings.Split(content, "\n")
-	inFrontmatter := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "---" {
-			if !inFrontmatter {
-				inFrontmatter = true
-				continue
-			} else {
-				break
-			}
-		}
-
-		if !inFrontmatter {
-			continue
-		}
-
-		// Skip lines with leading whitespace (nested YAML structures)
-		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
-			continue
-		}
-
-		parts := strings.SplitN(trimmed, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		value = strings.Trim(value, `"`)
-
-		if key == "status" {
-			return value
+	// Convert core types to local types
+	result := make(map[string]*PlanStats, len(coreStats))
+	for path, coreStat := range coreStats {
+		result[path] = &PlanStats{
+			TotalPlans: coreStat.TotalPlans,
+			ActivePlan: coreStat.ActivePlan,
+			Running:    coreStat.Running,
+			Pending:    coreStat.Pending,
+			Completed:  coreStat.Completed,
+			Failed:     coreStat.Failed,
+			Todo:       coreStat.Todo,
+			Hold:       coreStat.Hold,
+			Abandoned:  coreStat.Abandoned,
+			PlanStatus: coreStat.PlanStatus,
 		}
 	}
-	return "pending"
+	return result, nil
 }
