@@ -1,3 +1,26 @@
+## v0.6.1 (2026-02-10)
+
+This release integrates `nav` with `grove-daemon`, transforming the navigation tool into a thin client that leverages centralized services. Key improvements include the adoption of the daemon client for workspace discovery with transparent local fallback (cd7fca1) and the implementation of real-time enrichment updates via Server-Sent Events (SSE) (c6fcbaa). The update also introduces smart scanning capabilities by syncing visible workspace focus with the daemon (3ddc190) and ensures data consistency by triggering daemon refreshes upon manual project reloads (0731dd3). Additionally, duplicate enrichment logic has been refactored and consolidated into the core package (d122a4c).
+
+### Features
+- Integrate with daemon for real-time enrichment updates via SSE (c6fcbaa)
+- Integrate daemon focus API for smart scanning of visible workspaces (3ddc190)
+- Trigger daemon refresh on manual project reload in TUI (0731dd3)
+- Use daemon client for workspace discovery with local fallback (cd7fca1)
+
+### Refactor
+- Make nav a thin client delegating to core enrichment (d122a4c)
+
+### File Changes
+```
+ cmd/gmux/key_manage.go      |   9 ++
+ cmd/gmux/tui.go             | 169 ++++++++++++++++-----
+ cmd/gmux/tui_io.go          | 353 +++++++++++++++++++++++---------------------
+ internal/manager/enrich.go  | 291 ++++++------------------------------
+ internal/manager/manager.go |  88 ++++++++---
+ 5 files changed, 442 insertions(+), 468 deletions(-)
+```
+
 ## v0.6.0 (2026-02-02)
 
 Configuration handling sees significant improvements with the migration to XDG-compliant paths, renaming directory references from `gmux` to `nav` (63e494e), along with full support for TOML configuration files (a73cc48, d785281, 3ff2012). These changes ensure better standard compliance and flexibility in user settings.
