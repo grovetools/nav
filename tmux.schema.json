@@ -6,10 +6,16 @@
       "items": {
         "type": "string"
       },
-      "type": "array"
+      "type": "array",
+      "description": "Keys available for tmux pane shortcuts",
+      "x-layer": "global",
+      "x-priority": "70"
     },
     "show_child_processes": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Show child processes in pane list",
+      "x-layer": "global",
+      "x-priority": "71"
     }
   },
   "type": "object",
