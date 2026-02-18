@@ -6,7 +6,7 @@ package manager
 // This struct now only contains static configuration specific to gmux itself.
 // Project discovery is now handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
-	AvailableKeys      []string `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70"`
+	AvailableKeys      []string `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
 	ShowChildProcesses bool     `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`
 }
 

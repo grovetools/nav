@@ -8,6 +8,7 @@
       },
       "type": "array",
       "description": "Keys available for tmux pane shortcuts",
+      "x-important": true,
       "x-layer": "global",
       "x-priority": "70"
     },
