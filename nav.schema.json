@@ -20,6 +20,6 @@
     }
   },
   "type": "object",
-  "title": "Grove Tmux Configuration",
-  "description": "Schema for the 'tmux' extension in grove.yml."
+  "title": "Grove Nav Configuration",
+  "description": "Schema for the 'nav' extension in grove.toml. For backwards compatibility, 'tmux' is also supported."
 }

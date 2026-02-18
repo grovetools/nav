@@ -1,0 +1,4 @@
+{
+  "available_keys": "Defines the list of single-character keyboard shortcuts available for mapping to specific project sessions in tmux. Use this to customize the pool of hotkeys used for quick session switching, ensuring they align with your workflow and don't conflict with other bindings. These keys are used by the manager to generate tmux bindings that launch the sessionizer for specific projects.",
+  "show_child_processes": "Controls whether the window selection interface displays the specific active child process (e.g., 'vim', 'node') running in each pane instead of just the shell name. Enable this to easily distinguish between multiple terminal windows by seeing exactly what command is currently running inside them. This feature relies on system process inspection tools like 'ps'."
+}

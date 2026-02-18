@@ -69,10 +69,16 @@ func NewManager(configDir string) (*Manager, error) {
 		coreCfg = &core_config.Config{}
 	}
 
-	// Unmarshal the 'tmux' extension (static config only)
-	var tmuxCfg TmuxConfig
-	if err := coreCfg.UnmarshalExtension("tmux", &tmuxCfg); err != nil {
-		return nil, fmt.Errorf("failed to parse 'tmux' config section: %w", err)
+	// Unmarshal the 'nav' extension (with backwards compatibility for 'tmux')
+	var navCfg TmuxConfig
+	if err := coreCfg.UnmarshalExtension("nav", &navCfg); err != nil {
+		return nil, fmt.Errorf("failed to parse 'nav' config section: %w", err)
+	}
+	// Backwards compatibility: if 'nav' section is empty, try 'tmux'
+	if navCfg.AvailableKeys == nil {
+		if err := coreCfg.UnmarshalExtension("tmux", &navCfg); err != nil {
+			return nil, fmt.Errorf("failed to parse 'tmux' config section: %w", err)
+		}
 	}
 
 	// Find the primary config file path for saving
@@ -110,7 +116,7 @@ func NewManager(configDir string) (*Manager, error) {
 	return &Manager{
 		configDir:    configDir,
 		coreConfig:   coreCfg,
-		tmuxConfig:   &tmuxCfg,
+		tmuxConfig:   &navCfg,
 		sessions:     sessions,
 		lockedKeys:   lockedKeys,
 		configPath:   configPath,
@@ -199,8 +205,10 @@ func (m *Manager) saveStaticConfig() error {
 		fullConfig = make(map[string]interface{})
 	}
 
-	// Update the 'tmux' section (static config only, no sessions)
-	fullConfig["tmux"] = m.tmuxConfig
+	// Update the 'nav' section (static config only, no sessions)
+	// Remove legacy 'tmux' key if present (migration to 'nav')
+	delete(fullConfig, "tmux")
+	fullConfig["nav"] = m.tmuxConfig
 
 	// Marshal the full config back
 	var newData []byte

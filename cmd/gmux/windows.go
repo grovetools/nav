@@ -706,12 +706,18 @@ func loadTmuxConfig() (*manager.TmuxConfig, error) {
 		return nil, err
 	}
 
-	var tmuxConfig manager.TmuxConfig
-	if err := cfg.UnmarshalExtension("tmux", &tmuxConfig); err != nil {
+	// Try 'nav' first, fall back to 'tmux' for backwards compatibility
+	var navConfig manager.TmuxConfig
+	if err := cfg.UnmarshalExtension("nav", &navConfig); err != nil {
 		return nil, err
 	}
+	if navConfig.AvailableKeys == nil {
+		if err := cfg.UnmarshalExtension("tmux", &navConfig); err != nil {
+			return nil, err
+		}
+	}
 
-	return &tmuxConfig, nil
+	return &navConfig, nil
 }
 
 func init() {

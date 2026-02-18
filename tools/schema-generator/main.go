@@ -17,8 +17,8 @@ func main() {
 	}
 
 	schema := r.Reflect(&manager.TmuxConfig{})
-	schema.Title = "Grove Tmux Configuration"
-	schema.Description = "Schema for the 'tmux' extension in grove.yml."
+	schema.Title = "Grove Nav Configuration"
+	schema.Description = "Schema for the 'nav' extension in grove.toml. For backwards compatibility, 'tmux' is also supported."
 
 	// Make all fields optional - Grove configs should not require any fields
 	schema.Required = nil
@@ -29,9 +29,9 @@ func main() {
 	}
 
 	// Write to the package root
-	if err := os.WriteFile("tmux.schema.json", data, 0644); err != nil {
+	if err := os.WriteFile("nav.schema.json", data, 0644); err != nil {
 		log.Fatalf("Error writing schema file: %v", err)
 	}
 
-	log.Printf("Successfully generated tmux schema at tmux.schema.json")
+	log.Printf("Successfully generated nav schema at nav.schema.json")
 }

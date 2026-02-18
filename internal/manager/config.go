@@ -2,9 +2,10 @@ package manager
 
 //go:generate sh -c "cd ../.. && go run ./tools/schema-generator/"
 
-// TmuxConfig represents the 'tmux' section in grove config.
-// This struct now only contains static configuration specific to gmux itself.
-// Project discovery is now handled by grove-core's DiscoveryService.
+// TmuxConfig represents the 'nav' section in grove config (legacy name retained for compatibility).
+// For backwards compatibility, the 'tmux' section is also supported.
+// This struct only contains static configuration specific to nav itself.
+// Project discovery is handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
 	AvailableKeys      []string `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
 	ShowChildProcesses bool     `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`

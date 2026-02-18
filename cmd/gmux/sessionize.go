@@ -380,7 +380,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	// Check if user added any paths
 	if len(searchPaths) == 0 {
 		ulogSessionize.Info("No directories added").
-			Pretty("\nNo directories added. To set up manually, edit your grove.yml file:\n  ~/.config/grove/grove.yml\n\nAnd add a 'tmux' section like this:\n" + getDefaultTmuxConfigContent()).
+			Pretty("\nNo directories added. To set up manually, edit your grove.toml file:\n  ~/.config/grove/grove.toml\n\nAnd add a 'nav' section like this:\n" + getDefaultNavConfigContent()).
 			PrettyOnly().
 			Emit()
 		return nil
@@ -491,35 +491,12 @@ explicit_projects: []
 	return content.String()
 }
 
-// getDefaultTmuxConfigContent returns a well-commented default configuration for the tmux section
-func getDefaultTmuxConfigContent() string {
-	return `tmux:
-  available_keys: [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z]
+// getDefaultNavConfigContent returns a well-commented default configuration for the nav section
+func getDefaultNavConfigContent() string {
+	return `[nav]
+available_keys = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 
-  # Search paths: directories where the sessionizer looks for projects
-  search_paths:
-    work:
-      path: ~/Work
-      description: "Work projects"
-      enabled: true
-    personal:
-      path: ~/Projects
-      description: "Personal projects"
-      enabled: true
-
-  # Discovery settings control how projects are found
-  discovery:
-    max_depth: 2
-    min_depth: 0
-    exclude_patterns:
-      - node_modules
-      - .cache
-      - target
-      - build
-      - dist
-
-  # Explicit projects: specific directories to always include
-  explicit_projects: []
+# Search paths are now configured via [groves] section - see grove-core docs
 `
 }
 

@@ -1,0 +1,10 @@
+{
+  "available_keys": {
+    "example": "[nav]\n# Keys reserved for quick-switching sessions via tmux bindings\navailable_keys = [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\", \"k\", \"l\", \"m\", \"n\", \"o\", \"p\", \"q\", \"r\", \"s\", \"t\", \"u\", \"v\", \"w\", \"x\", \"y\", \"z\"]",
+    "description": "Defines the list of single-character keys that can be assigned to tmux sessions for rapid switching. Defaults to a-z."
+  },
+  "show_child_processes": {
+    "example": "[nav]\n# Display the active command (e.g. nvim, go run) instead of just the shell\nshow_child_processes = true",
+    "description": "When enabled, the windows list TUI attempts to resolve the specific child process running in a pane, providing more context than the default shell name."
+  }
+}
