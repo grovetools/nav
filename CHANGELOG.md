@@ -1,3 +1,33 @@
+## v0.6.2 (2026-02-19)
+
+This release updates the configuration structure by renaming the `[tmux]` section to `[nav]` (316678b). This change includes backward compatibility to load existing configurations and automatically migrates them upon saving. Additionally, JSON schema extensions were added to support configuration UI metadata, including priority and layer tags (cc97fd2), and marking specific keys as important (20e52f9). Documentation infrastructure was also updated with new generation targets (b6a354a).
+
+### Features
+- Rename config section from `[tmux]` to `[nav]` with backward compatibility and auto-migration (316678b)
+- Add `x-important` metadata tag to `available_keys` configuration (20e52f9)
+- Add `x-*` schema extensions for configuration UI metadata (cc97fd2)
+
+### Chores
+- Add docs.json for documentation generation (b6a354a)
+
+### File Changes
+```
+ cmd/gmux/sessionize.go         |  37 +---
+ cmd/gmux/windows.go            |  12 +-
+ docs/05-cli-reference.md       | 463 +++++++++++++++++++++++++++++++++++++++++
+ docs/06-configuration.json     |  20 ++
+ docs/06-configuration.md       |  15 +-
+ docs/nav.descriptions.json     |   4 +
+ docs/nav.examples.json         |  10 +
+ internal/manager/config.go     |  11 +-
+ internal/manager/manager.go    |  22 +-
+ nav.schema.json                |  25 +++
+ pkg/docs/docs.json             |  25 +++
+ tmux.schema.json               |  18 --
+ tools/schema-generator/main.go |   8 +-
+ 13 files changed, 592 insertions(+), 78 deletions(-)
+```
+
 ## v0.6.1 (2026-02-10)
 
 This release integrates `nav` with `grove-daemon`, transforming the navigation tool into a thin client that leverages centralized services. Key improvements include the adoption of the daemon client for workspace discovery with transparent local fallback (cd7fca1) and the implementation of real-time enrichment updates via Server-Sent Events (SSE) (c6fcbaa). The update also introduces smart scanning capabilities by syncing visible workspace focus with the daemon (3ddc190) and ensures data consistency by triggering daemon refreshes upon manual project reloads (0731dd3). Additionally, duplicate enrichment logic has been refactored and consolidated into the core package (d122a4c).
