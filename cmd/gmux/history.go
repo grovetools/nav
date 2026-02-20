@@ -248,6 +248,26 @@ func (k historyKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the history TUI actually implements.
+func (k historyKeyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		{
+			Name: "Navigation",
+			Bindings: []key.Binding{
+				k.Up,
+				k.Down,
+				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+			},
+		},
+		{
+			Name:     "Actions",
+			Bindings: []key.Binding{k.Filter, k.Open},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var historyKeys = historyKeyMap{
 	Base: keymap.NewBase(),
 	Up: key.NewBinding(

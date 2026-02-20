@@ -80,6 +80,58 @@ func (k sessionizeKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the sessionize TUI actually implements.
+func (k sessionizeKeyMap) Sections() []keymap.Section {
+	// Customize navigation for sessionize
+	nav := k.Base.NavigationSection()
+	nav.Bindings = []key.Binding{
+		k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom,
+		k.Search,
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select session")),
+	}
+
+	return []keymap.Section{
+		nav,
+		{
+			Name: "Session",
+			Bindings: []key.Binding{
+				k.RefreshProjects,
+				k.EditKey,
+				k.ClearKey,
+				k.CopyPath,
+				k.CloseSession,
+			},
+		},
+		{
+			Name: "Focus",
+			Bindings: []key.Binding{
+				k.FocusEcosystem,
+				k.ClearFocus,
+				k.ToggleWorktrees,
+				k.FilterDirty,
+				k.ToggleHotContext,
+			},
+		},
+		{
+			Name: "Columns",
+			Bindings: []key.Binding{
+				k.ToggleCx,
+				k.ToggleGitStatus,
+				k.ToggleBranch,
+				k.ToggleNoteCounts,
+				k.TogglePlanStats,
+				k.ToggleHold,
+				k.TogglePaths,
+				k.ToggleRelease,
+				k.ToggleBinary,
+				k.ToggleLink,
+			},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var sessionizeKeys = sessionizeKeyMap{
 	Base: keymap.NewBase(),
 	EditKey: key.NewBinding(

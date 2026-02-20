@@ -120,6 +120,32 @@ func (k windowsKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the windows TUI actually implements.
+func (k windowsKeyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		{
+			Name: "Navigation",
+			Bindings: []key.Binding{
+				k.Up, k.Down,
+				key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
+			},
+		},
+		{
+			Name:     "Actions",
+			Bindings: []key.Binding{k.Switch, k.Filter, k.Rename, k.Close},
+		},
+		{
+			Name: "Reorder",
+			Bindings: []key.Binding{
+				k.MoveMode,
+				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
+			},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var windowsKeys = windowsKeyMap{
 	Base: keymap.NewBase(),
 	Switch: key.NewBinding(

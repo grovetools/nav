@@ -246,6 +246,40 @@ func (k keyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the key manager TUI actually implements.
+func (k keyMap) Sections() []keymap.Section {
+	return []keymap.Section{
+		{
+			Name: "Navigation",
+			Bindings: []key.Binding{
+				k.Up,
+				k.Down,
+				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "switch to session")),
+			},
+		},
+		{
+			Name:     "Actions",
+			Bindings: []key.Binding{k.Edit, k.SetKey, k.Toggle, k.Delete, k.Save},
+		},
+		{
+			Name: "Reorder",
+			Bindings: []key.Binding{
+				k.MoveMode,
+				k.Lock,
+				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
+			},
+		},
+		{
+			Name:     "View",
+			Bindings: []key.Binding{k.TogglePaths},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
 var keys = keyMap{
 	Base: keymap.NewBase(),
 	Up: key.NewBinding(
