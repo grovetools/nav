@@ -215,3 +215,14 @@ var sessionizeKeys = sessionizeKeyMap{
 		key.WithHelp("c", "toggle cx column"),
 	),
 }
+
+// SessionizeKeymapInfo returns the keymap metadata for the nav sessionize TUI.
+// Used by the grove keys registry generator to aggregate all TUI keybindings.
+func SessionizeKeymapInfo() keymap.TUIInfo {
+	return keymap.MakeTUIInfo(
+		"nav-sessionize",
+		"nav",
+		"Tmux session switcher and workspace browser",
+		sessionizeKeys,
+	)
+}
