@@ -1,0 +1,232 @@
+// Package keymap contains exported keymap definitions for nav TUIs.
+package keymap
+
+import (
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/tui/keymap"
+)
+
+// SessionizeKeyMap defines the key bindings for the sessionize TUI
+type SessionizeKeyMap struct {
+	keymap.Base
+	EditKey          key.Binding
+	ClearKey         key.Binding
+	CopyPath         key.Binding
+	CloseSession     key.Binding
+	FocusEcosystem   key.Binding
+	ClearFocus       key.Binding
+	ToggleWorktrees  key.Binding
+	ToggleGitStatus  key.Binding
+	ToggleBranch     key.Binding
+	ToggleNoteCounts key.Binding
+	TogglePlanStats  key.Binding
+	TogglePaths      key.Binding
+	FilterDirty      key.Binding
+	RefreshProjects  key.Binding
+	ToggleHotContext key.Binding
+	ToggleHold       key.Binding
+	ToggleRelease    key.Binding
+	ToggleBinary     key.Binding
+	ToggleLink       key.Binding
+	ToggleCx         key.Binding
+}
+
+func (k SessionizeKeyMap) ShortHelp() []key.Binding {
+	// Return empty to show no help in footer - all help goes in popup
+	return []key.Binding{}
+}
+
+func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
+			key.NewBinding(key.WithKeys("j/k, ↑/↓"), key.WithHelp("j/k, ↑/↓", "Move up/down")),
+			key.NewBinding(key.WithKeys("ctrl+u"), key.WithHelp("ctrl+u", "Page up")),
+			key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("ctrl+d", "Page down")),
+			key.NewBinding(key.WithKeys("gg"), key.WithHelp("gg", "Go to top")),
+			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
+			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Start filtering")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Create/switch session")),
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
+			k.RefreshProjects,
+			k.EditKey,
+			k.ClearKey,
+			k.CopyPath,
+			k.CloseSession,
+			k.Help,
+			k.Quit,
+		},
+		{
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Focus & View")),
+			k.FocusEcosystem,
+			k.ClearFocus,
+			k.ToggleWorktrees,
+			k.FilterDirty,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Context Management")),
+			k.ToggleHotContext,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
+			k.ToggleCx,
+			k.ToggleGitStatus,
+			k.ToggleBranch,
+			k.ToggleNoteCounts,
+			k.TogglePlanStats,
+			k.ToggleHold,
+			k.TogglePaths,
+			k.ToggleRelease,
+			k.ToggleBinary,
+			k.ToggleLink,
+		},
+	}
+}
+
+// Sections returns grouped sections of key bindings for the full help view.
+// Only includes sections that the sessionize TUI actually implements.
+func (k SessionizeKeyMap) Sections() []keymap.Section {
+	// Customize navigation for sessionize
+	nav := k.Base.NavigationSection()
+	nav.Bindings = []key.Binding{
+		k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom,
+		k.Search,
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select session")),
+	}
+
+	return []keymap.Section{
+		nav,
+		{
+			Name: "Session",
+			Bindings: []key.Binding{
+				k.RefreshProjects,
+				k.EditKey,
+				k.ClearKey,
+				k.CopyPath,
+				k.CloseSession,
+			},
+		},
+		{
+			Name: "Focus",
+			Bindings: []key.Binding{
+				k.FocusEcosystem,
+				k.ClearFocus,
+				k.ToggleWorktrees,
+				k.FilterDirty,
+				k.ToggleHotContext,
+			},
+		},
+		{
+			Name: "Columns",
+			Bindings: []key.Binding{
+				k.ToggleCx,
+				k.ToggleGitStatus,
+				k.ToggleBranch,
+				k.ToggleNoteCounts,
+				k.TogglePlanStats,
+				k.ToggleHold,
+				k.TogglePaths,
+				k.ToggleRelease,
+				k.ToggleBinary,
+				k.ToggleLink,
+			},
+		},
+		k.Base.SystemSection(),
+	}
+}
+
+// NewSessionizeKeyMap creates a new sessionize keymap with default bindings.
+func NewSessionizeKeyMap() SessionizeKeyMap {
+	return SessionizeKeyMap{
+		Base: keymap.NewBase(),
+		EditKey: key.NewBinding(
+			key.WithKeys("ctrl+e"),
+			key.WithHelp("ctrl+e", "edit key mapping"),
+		),
+		ClearKey: key.NewBinding(
+			key.WithKeys("ctrl+x"),
+			key.WithHelp("ctrl+x", "clear key mapping"),
+		),
+		CopyPath: key.NewBinding(
+			key.WithKeys("ctrl+y"),
+			key.WithHelp("ctrl+y", "copy path to clipboard"),
+		),
+		CloseSession: key.NewBinding(
+			key.WithKeys("X"),
+			key.WithHelp("X", "close session"),
+		),
+		FocusEcosystem: key.NewBinding(
+			key.WithKeys("@"),
+			key.WithHelp("@", "focus on project"),
+		),
+		ClearFocus: key.NewBinding(
+			key.WithKeys("ctrl+g"),
+			key.WithHelp("ctrl+g", "clear focus"),
+		),
+		ToggleWorktrees: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "toggle worktrees"),
+		),
+		ToggleGitStatus: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "toggle git status"),
+		),
+		ToggleBranch: key.NewBinding(
+			key.WithKeys("b"),
+			key.WithHelp("b", "toggle branch names"),
+		),
+		ToggleNoteCounts: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "toggle note counts"),
+		),
+		TogglePlanStats: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "toggle flow plans"),
+		),
+		TogglePaths: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "toggle full paths"),
+		),
+		FilterDirty: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "filter dirty"),
+		),
+		RefreshProjects: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("ctrl+r", "refresh project list"),
+		),
+		ToggleHotContext: key.NewBinding(
+			key.WithKeys("C"),
+			key.WithHelp("C", "toggle context"),
+		),
+		ToggleHold: key.NewBinding(
+			key.WithKeys("H"),
+			key.WithHelp("H", "toggle on-hold"),
+		),
+		ToggleRelease: key.NewBinding(
+			key.WithKeys("r"),
+			key.WithHelp("r", "toggle release"),
+		),
+		ToggleBinary: key.NewBinding(
+			key.WithKeys("y"),
+			key.WithHelp("y", "toggle tool/version"),
+		),
+		ToggleLink: key.NewBinding(
+			key.WithKeys("l"),
+			key.WithHelp("l", "toggle remote"),
+		),
+		ToggleCx: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "toggle cx column"),
+		),
+	}
+}
+
+// SessionizeKeymapInfo returns the keymap metadata for the nav sessionize TUI.
+// Used by the grove keys registry generator to aggregate all TUI keybindings.
+func SessionizeKeymapInfo() keymap.TUIInfo {
+	return keymap.MakeTUIInfo(
+		"nav-sessionize",
+		"nav",
+		"Tmux session switcher and workspace browser",
+		NewSessionizeKeyMap(),
+	)
+}
