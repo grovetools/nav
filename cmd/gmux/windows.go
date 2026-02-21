@@ -157,8 +157,8 @@ var windowsKeys = windowsKeyMap{
 		key.WithHelp("/", "filter"),
 	),
 	Rename: key.NewBinding(
-		key.WithKeys("r"),
-		key.WithHelp("r", "rename"),
+		key.WithKeys("R"),
+		key.WithHelp("R", "rename"),
 	),
 	Close: key.NewBinding(
 		key.WithKeys("X"),

@@ -9,10 +9,9 @@ import (
 // SessionizeKeyMap defines the key bindings for the sessionize TUI
 type SessionizeKeyMap struct {
 	keymap.Base
-	EditKey          key.Binding
-	ClearKey         key.Binding
-	CopyPath         key.Binding
-	CloseSession     key.Binding
+	EditKey      key.Binding
+	ClearKey     key.Binding
+	CloseSession key.Binding
 	FocusEcosystem   key.Binding
 	ClearFocus       key.Binding
 	ToggleWorktrees  key.Binding
@@ -144,10 +143,6 @@ func NewSessionizeKeyMap() SessionizeKeyMap {
 		ClearKey: key.NewBinding(
 			key.WithKeys("ctrl+x"),
 			key.WithHelp("ctrl+x", "clear key mapping"),
-		),
-		CopyPath: key.NewBinding(
-			key.WithKeys("ctrl+y"),
-			key.WithHelp("ctrl+y", "copy path to clipboard"),
 		),
 		CloseSession: key.NewBinding(
 			key.WithKeys("X"),
