@@ -43,6 +43,7 @@ type sessionizeModel struct {
 	currentSession  string            // name of the current tmux session
 	width                    int
 	height                   int
+	keys                     sessionizeKeyMap  // keybindings for this TUI
 	// Key editing mode
 	editingKeys   bool
 	keyCursor     int
@@ -227,6 +228,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		keyMap:          keyMap,
 		runningSessions: runningSessions,
 		currentSession:  currentSession,
+		width:                    0,
+		height:                   0,
+		keys:                     sessionizeKeys,
 		cursor:                   0,
 		editingKeys:              false,
 		keyCursor:                0,
@@ -895,14 +899,17 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Normal mode (when filter is not focused)
-		switch msg.Type {
-		case tea.KeyUp, tea.KeyCtrlP:
+		// Use key.Matches() for all keybindings to respect user config overrides
+		switch {
+		case key.Matches(msg, m.keys.Up):
 			m.moveCursorUp()
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-		case tea.KeyDown, tea.KeyCtrlN:
+
+		case key.Matches(msg, m.keys.Down):
 			m.moveCursorDown()
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-		case tea.KeyCtrlU:
+
+		case key.Matches(msg, m.keys.PageUp):
 			// Page up (vim-style)
 			pageSize := 10
 			m.cursor -= pageSize
@@ -910,7 +917,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 			}
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-		case tea.KeyCtrlD:
+
+		case key.Matches(msg, m.keys.PageDown):
 			// Page down (vim-style)
 			pageSize := 10
 			m.cursor += pageSize
@@ -921,208 +929,206 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 			}
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-		case tea.KeyRunes:
-			switch msg.String() {
-			case "j":
-				// Vim-style down navigation
-				m.moveCursorDown()
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			case "k":
-				// Vim-style up navigation
-				m.moveCursorUp()
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			case "g":
-				// Handle gg (go to top) - need to check for double g
-				// For simplicity, single g goes to top (common in many TUIs)
+
+		case key.Matches(msg, m.keys.Top):
+			m.cursor = 0
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+
+		case key.Matches(msg, m.keys.Bottom):
+			m.cursor = len(m.filtered) - 1
+			if m.cursor < 0 {
 				m.cursor = 0
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			case "G":
-				// Go to bottom
-				m.cursor = len(m.filtered) - 1
-				if m.cursor < 0 {
-					m.cursor = 0
-				}
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			case "X":
-				// Close session (moved from ctrl+d)
-				if m.cursor < len(m.filtered) {
-					project := m.filtered[m.cursor]
-					sessionName := project.Identifier()
+			}
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
-					// Check if session exists before trying to close it
-					client, err := tmuxclient.NewClient()
-					if err == nil {
-						ctx := context.Background()
-						exists, err := client.SessionExists(ctx, sessionName)
-						if err == nil && exists {
-							// Check if we're in tmux and if this is the current session
-							if os.Getenv("TMUX") != "" {
-								currentSession, err := client.GetCurrentSession(ctx)
-								if err == nil && currentSession == sessionName {
-									// We're closing the current session - need to switch first
-									// Get all sessions
-									sessions, _ := client.ListSessions(ctx)
+		case key.Matches(msg, m.keys.CloseSession):
+			// Close session
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				sessionName := project.Identifier()
 
-									// Find the best session to switch to
-									var targetSession string
+				// Check if session exists before trying to close it
+				client, err := tmuxclient.NewClient()
+				if err == nil {
+					ctx := context.Background()
+					exists, err := client.SessionExists(ctx, sessionName)
+					if err == nil && exists {
+						// Check if we're in tmux and if this is the current session
+						if os.Getenv("TMUX") != "" {
+							currentSession, err := client.GetCurrentSession(ctx)
+							if err == nil && currentSession == sessionName {
+								// We're closing the current session - need to switch first
+								// Get all sessions
+								sessions, _ := client.ListSessions(ctx)
 
-									// First, try to find the most recently accessed session from our list
-									for _, p := range m.filtered {
-										candidateName := p.Identifier()
+								// Find the best session to switch to
+								var targetSession string
 
-										// Skip the current session
-										if candidateName == sessionName {
-											continue
-										}
+								// First, try to find the most recently accessed session from our list
+								for _, p := range m.filtered {
+									candidateName := p.Identifier()
 
-										// Check if this session exists
-										for _, s := range sessions {
-											if s == candidateName {
-												targetSession = candidateName
-												break
-											}
-										}
+									// Skip the current session
+									if candidateName == sessionName {
+										continue
+									}
 
-										if targetSession != "" {
+									// Check if this session exists
+									for _, s := range sessions {
+										if s == candidateName {
+											targetSession = candidateName
 											break
 										}
 									}
 
-									// If no session from our list, just pick any other session
-									if targetSession == "" {
-										for _, s := range sessions {
-											if s != sessionName {
-												targetSession = s
-												break
-											}
-										}
-									}
-
-									// Switch to the target session before killing current
 									if targetSession != "" {
-										_ = client.SwitchClient(ctx, targetSession)
+										break
 									}
 								}
-							}
 
-							// Kill the session
-							if err := client.KillSession(ctx, sessionName); err == nil {
-								// Clear the cached session status
-								delete(m.runningSessions, sessionName)
+								// If no session from our list, just pick any other session
+								if targetSession == "" {
+									for _, s := range sessions {
+										if s != sessionName {
+											targetSession = s
+											break
+										}
+									}
+								}
+
+								// Switch to the target session before killing current
+								if targetSession != "" {
+									_ = client.SwitchClient(ctx, targetSession)
+								}
 							}
+						}
+
+						// Kill the session
+						if err := client.KillSession(ctx, sessionName); err == nil {
+							// Clear the cached session status
+							delete(m.runningSessions, sessionName)
 						}
 					}
 				}
-				return m, nil
-			case "?":
-				m.help.Toggle()
-				return m, nil
-			case "/":
-				// Focus filter input for search
-				// Clear dirty filter to make them mutually exclusive
-				if m.filterDirty {
-					m.filterDirty = false
-				}
-				m.filterInput.Focus()
-				return m, textinput.Blink
-			case "@":
-				// Focus ecosystem (handled by key.Matches below for consistency)
-				m.ecosystemPickerMode = true
-				m.updateFiltered()
-				m.cursor = 0
-				m.moveCursorToFirstSelectable()
-				return m, updateDaemonFocusCmd(m.getVisiblePaths())
-			case "s":
-				// Toggle git status
-				m.showGitStatus = !m.showGitStatus
-				_ = m.buildState().Save(m.configDir)
-				return m, m.enrichVisibleProjects()
-			case "b":
-				// Toggle branch names
-				m.showBranch = !m.showBranch
-				_ = m.buildState().Save(m.configDir)
-				return m, m.enrichVisibleProjects()
-			case "C": // Toggle context (add/remove from hot context)
-				if m.cursor < len(m.filtered) {
-					selected := m.filtered[m.cursor]
-					currentStatus := m.rulesState[selected.Path]
-					return m, toggleRuleCmd(selected, "hot", currentStatus)
-				}
-			case "n":
-				// Toggle note counts
-				m.showNoteCounts = !m.showNoteCounts
-				_ = m.buildState().Save(m.configDir)
-				// Refetch note counts if toggled on
-				if m.showNoteCounts {
-					return m, fetchAllNoteCountsCmd()
-				}
-				return m, nil
-			case "f":
-				// Toggle plan stats
-				m.showPlanStats = !m.showPlanStats
-				_ = m.buildState().Save(m.configDir)
-				// Refetch plan stats if toggled on
-				if m.showPlanStats {
-					return m, fetchAllPlanStatsCmd()
-				}
-				return m, nil
-			case "p":
-				// Toggle paths display mode
-				m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
-				_ = m.buildState().Save(m.configDir)
-				return m, nil
-			case "r":
-				// Toggle release column
-				m.showRelease = !m.showRelease
-				_ = m.buildState().Save(m.configDir)
-				if m.showRelease {
-					m.enrichmentLoading["release"] = true
-					return m, tea.Batch(spinnerTickCmd(), fetchAllReleaseInfoCmd(m.projects))
-				}
-				return m, nil
-			case "y":
-				// Toggle tool/version columns
-				m.showBinary = !m.showBinary
-				_ = m.buildState().Save(m.configDir)
-				if m.showBinary {
-					m.enrichmentLoading["binary"] = true
-					return m, tea.Batch(spinnerTickCmd(), fetchAllBinaryStatusCmd(m.projects))
-				}
-				return m, nil
-			case "l":
-				// Toggle link column
-				m.showLink = !m.showLink
-				_ = m.buildState().Save(m.configDir)
-				if m.showLink {
-					m.enrichmentLoading["link"] = true
-					return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.projects))
-				}
-				return m, nil
-			case "c":
-				// Toggle CX column
-				m.showCx = !m.showCx
-				_ = m.buildState().Save(m.configDir)
-				return m, nil
 			}
-		case tea.KeyTab:
-			// Toggle worktrees
+			return m, nil
+
+		case key.Matches(msg, m.keys.Help):
+			m.help.Toggle()
+			return m, nil
+
+		case key.Matches(msg, m.keys.Search):
+			// Focus filter input for search
+			// Clear dirty filter to make them mutually exclusive
+			if m.filterDirty {
+				m.filterDirty = false
+			}
+			m.filterInput.Focus()
+			return m, textinput.Blink
+
+		case key.Matches(msg, m.keys.FocusEcosystem):
+			m.ecosystemPickerMode = true
+			m.updateFiltered()
+			m.cursor = 0
+			m.moveCursorToFirstSelectable()
+			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+
+		case key.Matches(msg, m.keys.ToggleGitStatus):
+			m.showGitStatus = !m.showGitStatus
+			_ = m.buildState().Save(m.configDir)
+			return m, m.enrichVisibleProjects()
+
+		case key.Matches(msg, m.keys.ToggleBranch):
+			m.showBranch = !m.showBranch
+			_ = m.buildState().Save(m.configDir)
+			return m, m.enrichVisibleProjects()
+
+		case key.Matches(msg, m.keys.ToggleHotContext):
+			if m.cursor < len(m.filtered) {
+				selected := m.filtered[m.cursor]
+				currentStatus := m.rulesState[selected.Path]
+				return m, toggleRuleCmd(selected, "hot", currentStatus)
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleNoteCounts):
+			m.showNoteCounts = !m.showNoteCounts
+			_ = m.buildState().Save(m.configDir)
+			// Refetch note counts if toggled on
+			if m.showNoteCounts {
+				return m, fetchAllNoteCountsCmd()
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.TogglePlanStats):
+			m.showPlanStats = !m.showPlanStats
+			_ = m.buildState().Save(m.configDir)
+			// Refetch plan stats if toggled on
+			if m.showPlanStats {
+				return m, fetchAllPlanStatsCmd()
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.TogglePaths):
+			m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
+			_ = m.buildState().Save(m.configDir)
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleRelease):
+			m.showRelease = !m.showRelease
+			_ = m.buildState().Save(m.configDir)
+			if m.showRelease {
+				m.enrichmentLoading["release"] = true
+				return m, tea.Batch(spinnerTickCmd(), fetchAllReleaseInfoCmd(m.projects))
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleBinary):
+			m.showBinary = !m.showBinary
+			_ = m.buildState().Save(m.configDir)
+			if m.showBinary {
+				m.enrichmentLoading["binary"] = true
+				return m, tea.Batch(spinnerTickCmd(), fetchAllBinaryStatusCmd(m.projects))
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleLink):
+			m.showLink = !m.showLink
+			_ = m.buildState().Save(m.configDir)
+			if m.showLink {
+				m.enrichmentLoading["link"] = true
+				return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.projects))
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleCx):
+			m.showCx = !m.showCx
+			_ = m.buildState().Save(m.configDir)
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleWorktrees):
 			m.worktreesFolded = !m.worktreesFolded
 			m.updateFiltered()
 			_ = m.buildState().Save(m.configDir)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-		case tea.KeyCtrlE:
+
+		case key.Matches(msg, m.keys.EditKey):
 			// Enter key editing mode
 			if m.cursor < len(m.filtered) {
 				m.editingKeys = true
 				m.keyCursor = 0
 			}
-		case tea.KeyCtrlX:
+			return m, nil
+
+		case key.Matches(msg, m.keys.ClearKey):
 			// Clear key mapping for the selected project
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
 				m.clearKeyMapping(project.Path)
 			}
-		case tea.KeyCtrlY:
+			return m, nil
+
+		case key.Matches(msg, m.keys.CopyPath):
 			// Yank (copy) the selected project path
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
@@ -1134,7 +1140,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusTimeout = time.Now().Add(2 * time.Second)
 				return m, clearStatusCmd(2 * time.Second)
 			}
-		case tea.KeyEnter:
+			return m, nil
+
+		case key.Matches(msg, m.keys.Confirm):
 			// Handle ecosystem picker mode
 			if m.ecosystemPickerMode {
 				if m.cursor < len(m.filtered) {
@@ -1167,7 +1175,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = manager.SaveProjectCache(m.configDir, projects)
 				return m, tea.Quit
 			}
-		case tea.KeyEsc, tea.KeyCtrlC:
+			return m, nil
+
+		case key.Matches(msg, m.keys.Quit):
 			// If dirty filter is active, clear it first
 			if m.filterDirty {
 				m.filterDirty = false
@@ -1183,9 +1193,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			_ = manager.SaveProjectCache(m.configDir, projects)
 			return m, tea.Quit
-		default:
-			// Handle other keys normally
-			return m, nil
 		}
 	}
 

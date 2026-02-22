@@ -3,6 +3,7 @@ package keymap
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -119,10 +120,12 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 	}
 }
 
-// NewSessionizeKeyMap creates a new sessionize keymap with default bindings.
-func NewSessionizeKeyMap() SessionizeKeyMap {
-	return SessionizeKeyMap{
-		Base: keymap.NewBase(),
+// NewSessionizeKeyMap creates a new sessionize keymap with user configuration applied.
+// Base bindings (navigation, actions, search, selection) come from keymap.Load().
+// Only TUI-specific bindings are defined here.
+func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
+	km := SessionizeKeyMap{
+		Base: keymap.Load(cfg, "nav.sessionize"),
 		EditKey: key.NewBinding(
 			key.WithKeys("ctrl+e"),
 			key.WithHelp("ctrl+e", "edit key mapping"),
@@ -200,6 +203,18 @@ func NewSessionizeKeyMap() SessionizeKeyMap {
 			key.WithHelp("c", "toggle cx column"),
 		),
 	}
+
+	// Apply TUI-specific overrides from config (uses reflection to map all bindings)
+	if cfg != nil && cfg.TUI != nil && cfg.TUI.Keybindings != nil {
+		tuiOverrides := cfg.TUI.Keybindings.GetTUIOverrides()
+		if navOverrides, ok := tuiOverrides["nav"]; ok {
+			if overrides, ok := navOverrides["sessionize"]; ok {
+				keymap.ApplyOverrides(&km, overrides)
+			}
+		}
+	}
+
+	return km
 }
 
 // SessionizeKeymapInfo returns the keymap metadata for the nav sessionize TUI.
@@ -209,6 +224,6 @@ func SessionizeKeymapInfo() keymap.TUIInfo {
 		"nav-sessionize",
 		"nav",
 		"Tmux session switcher and workspace browser",
-		NewSessionizeKeyMap(),
+		NewSessionizeKeyMap(nil),
 	)
 }
