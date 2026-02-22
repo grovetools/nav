@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,7 +18,6 @@ import (
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/table"
-	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
@@ -215,78 +215,10 @@ type historyModel struct {
 	keyMap            map[string]string // map[path]key
 	filterMode        bool
 	filterText        string
+	statusMessage     string
 }
 
-// TUI Keymap
-type historyKeyMap struct {
-	keymap.Base
-	Up     key.Binding
-	Down   key.Binding
-	Open   key.Binding
-	Filter key.Binding
-}
-
-func (k historyKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Filter, k.Open, k.Quit}
-}
-
-func (k historyKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
-			k.Up,
-			k.Down,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
-			k.Filter,
-			k.Open,
-			k.Help,
-			k.Quit,
-		},
-	}
-}
-
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the history TUI actually implements.
-func (k historyKeyMap) Sections() []keymap.Section {
-	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up,
-				k.Down,
-				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Filter, k.Open},
-		},
-		k.Base.SystemSection(),
-	}
-}
-
-var historyKeys = historyKeyMap{
-	Base: keymap.NewBase(),
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "down"),
-	),
-	Open: key.NewBinding(
-		key.WithKeys("o", "enter"),
-		key.WithHelp("enter/o", "switch to session"),
-	),
-	Filter: key.NewBinding(
-		key.WithKeys("/"),
-		key.WithHelp("/", "filter"),
-	),
-}
+// Key bindings are defined in pkg/keymap/history.go and re-exported via tui_keymap.go
 
 func newHistoryModel(items []historyItem, mgr *tmux.Manager, keyMap map[string]string) *historyModel {
 	helpModel := help.NewBuilder().
@@ -458,6 +390,17 @@ func (m *historyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.quitting = true
 				return m, tea.Quit
 			}
+
+		case key.Matches(msg, m.keys.CopyPath):
+			if m.cursor < len(m.filteredItems) {
+				path := m.filteredItems[m.cursor].project.Path
+				if err := clipboard.WriteAll(path); err != nil {
+					m.statusMessage = fmt.Sprintf("Error copying path: %v", err)
+				} else {
+					m.statusMessage = fmt.Sprintf("Copied: %s", path)
+				}
+			}
+			return m, nil
 		}
 	}
 
@@ -565,6 +508,9 @@ func (m *historyModel) View() string {
 	tableStr := table.SelectableTableWithOptions(headers, rows, m.cursor, table.SelectableTableOptions{})
 	b.WriteString(tableStr)
 	b.WriteString("\n\n")
+	if m.statusMessage != "" {
+		b.WriteString(core_theme.DefaultTheme.Muted.Render(m.statusMessage) + "\n")
+	}
 	b.WriteString(m.help.View())
 
 	return pageStyle.Render(b.String())

@@ -5,13 +5,12 @@ import (
 	"fmt"
 	grovecontext "github.com/grovetools/cx/pkg/context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -1127,36 +1126,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Yank (copy) the selected project path
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
-				// Use pbcopy on macOS, xclip on Linux
-				var cmd *exec.Cmd
-				if runtime.GOOS == "darwin" {
-					cmd = exec.Command("pbcopy")
+				if err := clipboard.WriteAll(project.Path); err != nil {
+					m.statusMessage = fmt.Sprintf("Error copying path: %v", err)
 				} else {
-					// Try xclip first, then xsel
-					if _, err := exec.LookPath("xclip"); err == nil {
-						cmd = exec.Command("xclip", "-selection", "clipboard")
-					} else if _, err := exec.LookPath("xsel"); err == nil {
-						cmd = exec.Command("xsel", "--clipboard", "--input")
-					} else {
-						// No clipboard utility found
-						m.statusMessage = "No clipboard utility found"
-						m.statusTimeout = time.Now().Add(2 * time.Second)
-						return m, clearStatusCmd(2 * time.Second)
-					}
+					m.statusMessage = fmt.Sprintf("Copied: %s", project.Path)
 				}
-
-				if cmd != nil {
-					cmd.Stdin = strings.NewReader(project.Path)
-					if err := cmd.Run(); err == nil {
-						m.statusMessage = "Path copied to clipboard"
-						m.statusTimeout = time.Now().Add(2 * time.Second)
-						return m, clearStatusCmd(2 * time.Second)
-					} else {
-						m.statusMessage = "Failed to copy path"
-						m.statusTimeout = time.Now().Add(2 * time.Second)
-						return m, clearStatusCmd(2 * time.Second)
-					}
-				}
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
 			}
 		case tea.KeyEnter:
 			// Handle ecosystem picker mode

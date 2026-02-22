@@ -9,13 +9,11 @@ import (
 // ManageKeyMap defines the key bindings for the session key manager TUI.
 type ManageKeyMap struct {
 	keymap.Base
-	Up          key.Binding
-	Down        key.Binding
 	Toggle      key.Binding
-	Edit        key.Binding
+	Edit        key.Binding // Overrides Base.Edit with "map CWD" behavior
 	SetKey      key.Binding
 	Open        key.Binding
-	Delete      key.Binding
+	Delete      key.Binding // Overrides Base.Delete with "clear mapping" behavior
 	Save        key.Binding
 	MoveMode    key.Binding
 	Lock        key.Binding
@@ -30,68 +28,31 @@ func (k ManageKeyMap) ShortHelp() []key.Binding {
 }
 
 func (k ManageKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
-			k.Up,
-			k.Down,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "Jump to row")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Switch to session")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
-			k.Edit,
-			k.SetKey,
-			k.Toggle,
-			k.Delete,
-			k.Save,
-			k.Help,
-			k.Quit,
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Reorder")),
-			k.MoveMode,
-			k.Lock,
-			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "View")),
-			k.TogglePaths,
-		},
+	sections := k.Sections()
+	result := make([][]key.Binding, len(sections))
+	for i, s := range sections {
+		result[i] = s.Bindings
 	}
+	return result
 }
 
 // Sections returns grouped sections of key bindings for the full help view.
+// Only includes bindings that the manage TUI actually implements.
 func (k ManageKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up,
-				k.Down,
-				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "switch to session")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Edit, k.SetKey, k.Toggle, k.Delete, k.Save},
-		},
-		{
-			Name: "Reorder",
-			Bindings: []key.Binding{
-				k.MoveMode,
-				k.Lock,
-				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
-			},
-		},
-		{
-			Name:     "View",
-			Bindings: []key.Binding{k.TogglePaths},
-		},
-		k.Base.SystemSection(),
+		keymap.NavigationSection(
+			k.Up, k.Down,
+			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+			k.Open,
+		),
+		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.Save, k.CopyPath),
+		keymap.NewSection("Reorder",
+			k.MoveMode, k.Lock,
+			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
+			k.ConfirmMove,
+		),
+		keymap.ViewSection(k.TogglePaths),
+		keymap.SystemSection(k.Help, k.Quit),
 	}
 }
 
@@ -99,14 +60,6 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 func NewManageKeyMap() ManageKeyMap {
 	return ManageKeyMap{
 		Base: keymap.NewBase(),
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("k/up", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("j/down", "down"),
-		),
 		Toggle: key.NewBinding(
 			key.WithKeys(" "),
 			key.WithHelp("space", "quick toggle"),

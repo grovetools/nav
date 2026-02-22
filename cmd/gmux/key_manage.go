@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	grovecontext "github.com/grovetools/cx/pkg/context"
@@ -19,7 +20,6 @@ import (
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/table"
-	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
 	"github.com/grovetools/nav/internal/manager"
@@ -163,7 +163,7 @@ type manageModel struct {
 	cursor   int
 	sessions []models.TmuxSession
 	manager  *tmux.Manager
-	keys     keyMap
+	keys     manageKeyMap
 	help     help.Model
 	quitting bool
 	message  string
@@ -190,159 +190,11 @@ type manageModel struct {
 	changesMade bool
 }
 
-// Key bindings
-type keyMap struct {
-	keymap.Base
-	Up          key.Binding
-	Down        key.Binding
-	Toggle      key.Binding
-	Edit        key.Binding
-	SetKey      key.Binding
-	Open        key.Binding
-	Delete      key.Binding
-	Save        key.Binding
-	MoveMode    key.Binding
-	Lock        key.Binding
-	MoveUp      key.Binding
-	MoveDown    key.Binding
-	ConfirmMove key.Binding
-	TogglePaths key.Binding
-}
-
-func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.MoveMode, k.Lock, k.TogglePaths, k.Quit}
-}
-
-func (k keyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
-			k.Up,
-			k.Down,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "Jump to row")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Switch to session")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
-			k.Edit,
-			k.SetKey,
-			k.Toggle,
-			k.Delete,
-			k.Save,
-			k.Help,
-			k.Quit,
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Reorder")),
-			k.MoveMode,
-			k.Lock,
-			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "View")),
-			k.TogglePaths,
-		},
-	}
-}
-
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the key manager TUI actually implements.
-func (k keyMap) Sections() []keymap.Section {
-	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up,
-				k.Down,
-				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "switch to session")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Edit, k.SetKey, k.Toggle, k.Delete, k.Save},
-		},
-		{
-			Name: "Reorder",
-			Bindings: []key.Binding{
-				k.MoveMode,
-				k.Lock,
-				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm move")),
-			},
-		},
-		{
-			Name:     "View",
-			Bindings: []key.Binding{k.TogglePaths},
-		},
-		k.Base.SystemSection(),
-	}
-}
-
-var keys = keyMap{
-	Base: keymap.NewBase(),
-	Up: key.NewBinding(
-		key.WithKeys("up", "k"),
-		key.WithHelp("↑/k", "up"),
-	),
-	Down: key.NewBinding(
-		key.WithKeys("down", "j"),
-		key.WithHelp("↓/j", "down"),
-	),
-	Toggle: key.NewBinding(
-		key.WithKeys(" "),
-		key.WithHelp("space", "quick toggle"),
-	),
-	Edit: key.NewBinding(
-		key.WithKeys("e"),
-		key.WithHelp("e", "map CWD"),
-	),
-	SetKey: key.NewBinding(
-		key.WithKeys("h"),
-		key.WithHelp("h", "set key mode"),
-	),
-	Open: key.NewBinding(
-		key.WithKeys("o", "enter"),
-		key.WithHelp("enter/o", "switch to session"),
-	),
-	Delete: key.NewBinding(
-		key.WithKeys("d", "delete"),
-		key.WithHelp("d/del", "clear mapping"),
-	),
-	Save: key.NewBinding(
-		key.WithKeys("s", "ctrl+s"),
-		key.WithHelp("s/ctrl+s", "save & exit"),
-	),
-	MoveMode: key.NewBinding(
-		key.WithKeys("m"),
-		key.WithHelp("m", "enter move mode"),
-	),
-	Lock: key.NewBinding(
-		key.WithKeys("l"),
-		key.WithHelp("l", "toggle lock"),
-	),
-	MoveUp: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "move up"),
-	),
-	MoveDown: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "move down"),
-	),
-	ConfirmMove: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "confirm move"),
-	),
-	TogglePaths: key.NewBinding(
-		key.WithKeys("p"),
-		key.WithHelp("p", "toggle paths"),
-	),
-}
+// Key bindings are defined in pkg/keymap/manage.go and re-exported via tui_keymap.go
 
 func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath string, cachedEnrichedProjects map[string]*manager.SessionizeProject, usedCache bool) manageModel {
 	helpModel := help.NewBuilder().
-		WithKeys(keys).
+		WithKeys(manageKeys).
 		WithTitle("Session Key Manager - Help").
 		Build()
 
@@ -363,7 +215,7 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		cursor:            0,
 		sessions:          sessions,
 		manager:           mgr,
-		keys:              keys,
+		keys:              manageKeys,
 		help:              helpModel,
 		cwdPath:           cwdPath,
 		enrichedProjects:  enrichedProjects,
@@ -984,6 +836,22 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
+		case key.Matches(msg, m.keys.CopyPath):
+			// Copy the session path to clipboard
+			if m.cursor < len(m.sessions) {
+				session := m.sessions[m.cursor]
+				if session.Path != "" {
+					if err := clipboard.WriteAll(session.Path); err != nil {
+						m.message = fmt.Sprintf("Error copying path: %v", err)
+					} else {
+						m.message = fmt.Sprintf("Copied: %s", session.Path)
+					}
+				} else {
+					m.message = "No path mapped to this key"
+				}
+			}
+			return m, nil
+
 		case key.Matches(msg, m.keys.Toggle):
 			// Quick toggle - unmap if mapped
 			if m.cursor < len(m.sessions) {
@@ -1445,8 +1313,11 @@ func (m *manageModel) View() string {
 
 	b.WriteString("\n\n")
 
+	// Always reserve space for message to prevent layout shift
 	if m.message != "" {
-		b.WriteString(dimStyle.Render(m.message) + "\n\n")
+		b.WriteString(dimStyle.Render(m.message) + "\n")
+	} else {
+		b.WriteString("\n")
 	}
 
 	// Show different help text based on mode

@@ -112,7 +112,7 @@
     },
     "config-examples": {
       "title": "Configuration Examples",
-      "content": "{\n  \"available_keys\": {\n    \"example\": \"[nav]\\navailable_keys = [\\\"w\\\", \\\"e\\\", \\\"r\\\", \\\"t\\\", \\\"y\\\", \\\"o\\\", \\\"a\\\", \\\"f\\\", \\\"g\\\", \\\"v\\\"]\",\n    \"description\": \"Defines the pool of short keys available for mapping to specific tmux sessions for quick switching.\"\n  },\n  \"show_child_processes\": {\n    \"example\": \"[nav]\\nshow_child_processes = false\",\n    \"description\": \"When enabled, the interactive window list will identify and display the active child process (e.g., `nvim`, `node`) running in each window, providing more context than the default shell command.\"\n  }\n}"
+      "content": "{\n  \"available_keys\": {\n    \"example\": \"[nav]\\n# Keys reserved for quick-switching sessions via tmux bindings\\navailable_keys = [\\\"a\\\", \\\"b\\\", \\\"c\\\", \\\"d\\\", \\\"e\\\", \\\"f\\\", \\\"g\\\", \\\"h\\\", \\\"i\\\", \\\"j\\\", \\\"k\\\", \\\"l\\\", \\\"m\\\", \\\"n\\\", \\\"o\\\", \\\"p\\\", \\\"q\\\", \\\"r\\\", \\\"s\\\", \\\"t\\\", \\\"u\\\", \\\"v\\\", \\\"w\\\", \\\"x\\\", \\\"y\\\", \\\"z\\\"]\",\n    \"description\": \"Defines the list of single-character keys that can be assigned to tmux sessions for rapid switching. Defaults to a-z.\"\n  },\n  \"show_child_processes\": {\n    \"example\": \"[nav]\\n# Display the active command (e.g. nvim, go run) instead of just the shell\\nshow_child_processes = true\",\n    \"description\": \"When enabled, the windows list TUI attempts to resolve the specific child process running in a pane, providing more context than the default shell name.\"\n  }\n}"
     },
     "configuration": {
       "title": "Configuration",

@@ -9,8 +9,6 @@ import (
 // HistoryKeyMap defines the key bindings for the session history TUI.
 type HistoryKeyMap struct {
 	keymap.Base
-	Up     key.Binding
-	Down   key.Binding
 	Open   key.Binding
 	Filter key.Binding
 }
@@ -20,39 +18,24 @@ func (k HistoryKeyMap) ShortHelp() []key.Binding {
 }
 
 func (k HistoryKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
-			k.Up,
-			k.Down,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
-			k.Filter,
-			k.Open,
-			k.Help,
-			k.Quit,
-		},
+	sections := k.Sections()
+	result := make([][]key.Binding, len(sections))
+	for i, s := range sections {
+		result[i] = s.Bindings
 	}
+	return result
 }
 
 // Sections returns grouped sections of key bindings for the full help view.
+// Only includes bindings that the history TUI actually implements.
 func (k HistoryKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up,
-				k.Down,
-				key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Filter, k.Open},
-		},
-		k.Base.SystemSection(),
+		keymap.NavigationSection(
+			k.Up, k.Down,
+			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+		),
+		keymap.ActionsSection(k.Filter, k.Open, k.CopyPath),
+		keymap.SystemSection(k.Help, k.Quit),
 	}
 }
 
@@ -60,14 +43,6 @@ func (k HistoryKeyMap) Sections() []keymap.Section {
 func NewHistoryKeyMap() HistoryKeyMap {
 	return HistoryKeyMap{
 		Base: keymap.NewBase(),
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("k/up", "up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("j/down", "down"),
-		),
 		Open: key.NewBinding(
 			key.WithKeys("o", "enter"),
 			key.WithHelp("enter/o", "switch to session"),

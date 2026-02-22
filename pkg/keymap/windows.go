@@ -44,25 +44,16 @@ func (k WindowsKeyMap) FullHelp() [][]key.Binding {
 // Sections returns grouped sections of key bindings for the full help view.
 func (k WindowsKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up, k.Down,
-				key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Switch, k.Filter, k.Rename, k.Close},
-		},
-		{
-			Name: "Reorder",
-			Bindings: []key.Binding{
-				k.MoveMode,
-				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
-			},
-		},
-		k.Base.SystemSection(),
+		keymap.NavigationSection(
+			k.Up, k.Down,
+			key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
+		),
+		keymap.ActionsSection(k.Switch, k.Filter, k.Rename, k.Close),
+		keymap.NewSection("Reorder",
+			k.MoveMode,
+			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
+		),
+		keymap.SystemSection(k.Help, k.Quit),
 	}
 }
 

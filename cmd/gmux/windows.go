@@ -15,7 +15,6 @@ import (
 	"github.com/grovetools/core/pkg/paths"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/components/help"
-	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
@@ -86,97 +85,7 @@ type windowsModel struct {
 	originalWindows    []tmuxclient.Window // Original order when entering move mode
 }
 
-type windowsKeyMap struct {
-	keymap.Base
-	Switch   key.Binding
-	Filter   key.Binding
-	Rename   key.Binding
-	Close    key.Binding
-	MoveMode key.Binding
-	MoveUp   key.Binding
-	MoveDown key.Binding
-}
-
-func (k windowsKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Quit}
-}
-
-func (k windowsKeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
-			k.Up, k.Down,
-			key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
-			k.Switch, k.Filter, k.Rename, k.Close, k.Help, k.Quit,
-		},
-		{
-			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Reorder")),
-			k.MoveMode,
-			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
-		},
-	}
-}
-
-// Sections returns grouped sections of key bindings for the full help view.
-// Only includes sections that the windows TUI actually implements.
-func (k windowsKeyMap) Sections() []keymap.Section {
-	return []keymap.Section{
-		{
-			Name: "Navigation",
-			Bindings: []key.Binding{
-				k.Up, k.Down,
-				key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
-			},
-		},
-		{
-			Name:     "Actions",
-			Bindings: []key.Binding{k.Switch, k.Filter, k.Rename, k.Close},
-		},
-		{
-			Name: "Reorder",
-			Bindings: []key.Binding{
-				k.MoveMode,
-				key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move (in move mode)")),
-			},
-		},
-		k.Base.SystemSection(),
-	}
-}
-
-var windowsKeys = windowsKeyMap{
-	Base: keymap.NewBase(),
-	Switch: key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "switch"),
-	),
-	Filter: key.NewBinding(
-		key.WithKeys("/"),
-		key.WithHelp("/", "filter"),
-	),
-	Rename: key.NewBinding(
-		key.WithKeys("R"),
-		key.WithHelp("R", "rename"),
-	),
-	Close: key.NewBinding(
-		key.WithKeys("X"),
-		key.WithHelp("X", "close"),
-	),
-	MoveMode: key.NewBinding(
-		key.WithKeys("m"),
-		key.WithHelp("m", "move window"),
-	),
-	MoveUp: key.NewBinding(
-		key.WithKeys("k"),
-		key.WithHelp("k", "move up"),
-	),
-	MoveDown: key.NewBinding(
-		key.WithKeys("j"),
-		key.WithHelp("j", "move down"),
-	),
-}
+// Key bindings are defined in pkg/keymap/windows.go and re-exported via tui_keymap.go
 
 type windowsLoadedMsg struct {
 	windows []tmuxclient.Window
