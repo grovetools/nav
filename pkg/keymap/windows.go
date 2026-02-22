@@ -3,6 +3,7 @@ package keymap
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -57,10 +58,12 @@ func (k WindowsKeyMap) Sections() []keymap.Section {
 	}
 }
 
-// NewWindowsKeyMap creates a new windows keymap with default bindings.
-func NewWindowsKeyMap() WindowsKeyMap {
-	return WindowsKeyMap{
-		Base: keymap.NewBase(),
+// NewWindowsKeyMap creates a new windows keymap with user configuration applied.
+// Base bindings (navigation, actions, search, selection) come from keymap.Load().
+// Only TUI-specific bindings are defined here.
+func NewWindowsKeyMap(cfg *config.Config) WindowsKeyMap {
+	km := WindowsKeyMap{
+		Base: keymap.Load(cfg, "nav.windows"),
 		Switch: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "switch"),
@@ -90,6 +93,11 @@ func NewWindowsKeyMap() WindowsKeyMap {
 			key.WithHelp("j", "move down"),
 		),
 	}
+
+	// Apply TUI-specific overrides from config
+	keymap.ApplyTUIOverrides(cfg, "nav", "windows", &km)
+
+	return km
 }
 
 // WindowsKeymapInfo returns the keymap metadata for the nav windows TUI.
@@ -99,6 +107,6 @@ func WindowsKeymapInfo() keymap.TUIInfo {
 		"nav-windows",
 		"nav",
 		"Tmux window manager",
-		NewWindowsKeyMap(),
+		NewWindowsKeyMap(nil),
 	)
 }

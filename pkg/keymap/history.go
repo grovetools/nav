@@ -3,6 +3,7 @@ package keymap
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -39,10 +40,12 @@ func (k HistoryKeyMap) Sections() []keymap.Section {
 	}
 }
 
-// NewHistoryKeyMap creates a new history keymap with default bindings.
-func NewHistoryKeyMap() HistoryKeyMap {
-	return HistoryKeyMap{
-		Base: keymap.NewBase(),
+// NewHistoryKeyMap creates a new history keymap with user configuration applied.
+// Base bindings (navigation, actions, search, selection) come from keymap.Load().
+// Only TUI-specific bindings are defined here.
+func NewHistoryKeyMap(cfg *config.Config) HistoryKeyMap {
+	km := HistoryKeyMap{
+		Base: keymap.Load(cfg, "nav.history"),
 		Open: key.NewBinding(
 			key.WithKeys("o", "enter"),
 			key.WithHelp("enter/o", "switch to session"),
@@ -52,6 +55,11 @@ func NewHistoryKeyMap() HistoryKeyMap {
 			key.WithHelp("/", "filter"),
 		),
 	}
+
+	// Apply TUI-specific overrides from config
+	keymap.ApplyTUIOverrides(cfg, "nav", "history", &km)
+
+	return km
 }
 
 // HistoryKeymapInfo returns the keymap metadata for the nav history TUI.
@@ -61,6 +69,6 @@ func HistoryKeymapInfo() keymap.TUIInfo {
 		"nav-history",
 		"nav",
 		"Session history browser",
-		NewHistoryKeyMap(),
+		NewHistoryKeyMap(nil),
 	)
 }

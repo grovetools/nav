@@ -3,6 +3,7 @@ package keymap
 
 import (
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/tui/keymap"
 )
 
@@ -56,10 +57,12 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 	}
 }
 
-// NewManageKeyMap creates a new manage keymap with default bindings.
-func NewManageKeyMap() ManageKeyMap {
-	return ManageKeyMap{
-		Base: keymap.NewBase(),
+// NewManageKeyMap creates a new manage keymap with user configuration applied.
+// Base bindings (navigation, actions, search, selection) come from keymap.Load().
+// Only TUI-specific bindings are defined here.
+func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
+	km := ManageKeyMap{
+		Base: keymap.Load(cfg, "nav.manage"),
 		Toggle: key.NewBinding(
 			key.WithKeys(" "),
 			key.WithHelp("space", "quick toggle"),
@@ -109,6 +112,11 @@ func NewManageKeyMap() ManageKeyMap {
 			key.WithHelp("p", "toggle paths"),
 		),
 	}
+
+	// Apply TUI-specific overrides from config
+	keymap.ApplyTUIOverrides(cfg, "nav", "manage", &km)
+
+	return km
 }
 
 // ManageKeymapInfo returns the keymap metadata for the nav session key manager TUI.
@@ -118,6 +126,6 @@ func ManageKeymapInfo() keymap.TUIInfo {
 		"nav-manage",
 		"nav",
 		"Session hotkey manager",
-		NewManageKeyMap(),
+		NewManageKeyMap(nil),
 	)
 }

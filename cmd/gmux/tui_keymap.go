@@ -19,6 +19,6 @@ func loadConfig() *config.Config {
 }
 
 var sessionizeKeys = navkeymap.NewSessionizeKeyMap(loadConfig())
-var manageKeys = navkeymap.NewManageKeyMap()
-var historyKeys = navkeymap.NewHistoryKeyMap()
-var windowsKeys = navkeymap.NewWindowsKeyMap()
+var manageKeys = navkeymap.NewManageKeyMap(loadConfig())
+var historyKeys = navkeymap.NewHistoryKeyMap(loadConfig())
+var windowsKeys = navkeymap.NewWindowsKeyMap(loadConfig())
