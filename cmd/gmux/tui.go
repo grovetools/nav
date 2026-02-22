@@ -2021,7 +2021,7 @@ func (m sessionizeModel) View() string {
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
 	} else if m.focusedProject != nil {
-		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear focus • ") + togglesDisplay)
+		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear ecosystem focus • ") + togglesDisplay)
 	} else {
 		b.WriteString(helpStyle.Render("Press ? for help • ") + togglesDisplay)
 	}

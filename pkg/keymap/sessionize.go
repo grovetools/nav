@@ -137,11 +137,11 @@ func NewSessionizeKeyMap() SessionizeKeyMap {
 		),
 		FocusEcosystem: key.NewBinding(
 			key.WithKeys("@"),
-			key.WithHelp("@", "focus on project"),
+			key.WithHelp("@", "focus ecosystem"),
 		),
 		ClearFocus: key.NewBinding(
 			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "clear focus"),
+			key.WithHelp("ctrl+g", "clear ecosystem focus"),
 		),
 		ToggleWorktrees: key.NewBinding(
 			key.WithKeys("tab"),
