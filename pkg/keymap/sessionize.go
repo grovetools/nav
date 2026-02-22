@@ -204,15 +204,8 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		),
 	}
 
-	// Apply TUI-specific overrides from config (uses reflection to map all bindings)
-	if cfg != nil && cfg.TUI != nil && cfg.TUI.Keybindings != nil {
-		tuiOverrides := cfg.TUI.Keybindings.GetTUIOverrides()
-		if navOverrides, ok := tuiOverrides["nav"]; ok {
-			if overrides, ok := navOverrides["sessionize"]; ok {
-				keymap.ApplyOverrides(&km, overrides)
-			}
-		}
-	}
+	// Apply TUI-specific overrides from config
+	keymap.ApplyTUIOverrides(cfg, "nav", "sessionize", &km)
 
 	return km
 }
