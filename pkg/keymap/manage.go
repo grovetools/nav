@@ -26,6 +26,7 @@ type ManageKeyMap struct {
 	LoadDefault   key.Binding
 	UnloadDefault key.Binding
 	SaveToGroup   key.Binding
+	MoveToGroup   key.Binding // Move current session to another group
 	NewGroup      key.Binding
 	DeleteGroup   key.Binding
 	Groups        key.Binding // Launch group manager TUI
@@ -57,6 +58,7 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.LoadDefault,
 			k.UnloadDefault,
 			k.SaveToGroup,
+			k.MoveToGroup,
 		),
 		keymap.NavigationSection(
 			k.Up, k.Down,
@@ -145,6 +147,10 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		SaveToGroup: key.NewBinding(
 			key.WithKeys("S"),
 			key.WithHelp("S", "save to group"),
+		),
+		MoveToGroup: key.NewBinding(
+			key.WithKeys("M"),
+			key.WithHelp("M", "move to group"),
 		),
 		NewGroup: key.NewBinding(
 			key.WithKeys("N"),

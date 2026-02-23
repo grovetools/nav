@@ -144,6 +144,11 @@ type manageModel struct {
 	saveToGroupCursor  int      // Current selection in dropdown
 	saveToGroupNewMode bool     // Whether we're typing a new group name
 	saveToGroupInput   string   // Text input for new group name
+	// Move to group state
+	moveToGroupMode    bool     // Whether we're in move-to-group mode
+	moveToGroupOptions []string // List of target groups
+	moveToGroupCursor  int      // Current selection
+	moveToGroupSession string   // Path of session being moved
 	// Confirmation state
 	confirmMode   string // "load", "clear", or "" for none
 	confirmSource string // Source group name for load confirmation
@@ -608,6 +613,39 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle move to group mode
+		if m.moveToGroupMode {
+			switch {
+			case msg.Type == tea.KeyEsc:
+				m.moveToGroupMode = false
+				m.message = "Move cancelled"
+				return m, nil
+
+			case key.Matches(msg, m.keys.Up), key.Matches(msg, m.keys.PrevGroup):
+				if m.moveToGroupCursor > 0 {
+					m.moveToGroupCursor--
+				} else {
+					m.moveToGroupCursor = len(m.moveToGroupOptions) - 1 // Wrap to end
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.Down), key.Matches(msg, m.keys.NextGroup):
+				if m.moveToGroupCursor < len(m.moveToGroupOptions)-1 {
+					m.moveToGroupCursor++
+				} else {
+					m.moveToGroupCursor = 0 // Wrap to start
+				}
+				return m, nil
+
+			case msg.Type == tea.KeyEnter, msg.Type == tea.KeySpace:
+				targetGroup := m.moveToGroupOptions[m.moveToGroupCursor]
+				m.executeMoveToGroup(targetGroup)
+				m.moveToGroupMode = false
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// Handle set key mode
 		if m.setKeyMode {
 			switch msg.Type {
@@ -1014,6 +1052,40 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = "Select group to save to (↑/↓ to navigate, Enter to select, Esc to cancel)"
 			return m, nil
 
+		case key.Matches(msg, m.keys.MoveToGroup):
+			// Get the current session
+			if m.cursor >= len(m.sessions) {
+				return m, nil
+			}
+			currentSession := m.sessions[m.cursor]
+			if currentSession.Path == "" {
+				m.message = "No workspace to move"
+				return m, nil
+			}
+			if m.lockedKeys[currentSession.Key] {
+				m.message = "Cannot move locked session"
+				return m, nil
+			}
+
+			// Build list of target groups (excluding current group)
+			m.moveToGroupOptions = []string{}
+			currentGroup := m.manager.GetActiveGroup()
+			for _, g := range m.manager.GetGroups() {
+				if g != currentGroup {
+					m.moveToGroupOptions = append(m.moveToGroupOptions, g)
+				}
+			}
+			if len(m.moveToGroupOptions) == 0 {
+				m.message = "No other groups to move to"
+				return m, nil
+			}
+
+			m.moveToGroupMode = true
+			m.moveToGroupCursor = 0
+			m.moveToGroupSession = currentSession.Path
+			m.message = fmt.Sprintf("Move '%s' to group (↑/↓, Enter, Esc)", filepath.Base(currentSession.Path))
+			return m, nil
+
 		case key.Matches(msg, m.keys.Quit):
 			// Just quit - save happens after TUI exits
 			return m, tea.Quit
@@ -1287,10 +1359,17 @@ func (m *manageModel) View() string {
 
 			tabText := iconStr + g
 
+			// Check if this is the move target
+			isMoveTarget := m.moveToGroupMode && m.moveToGroupCursor < len(m.moveToGroupOptions) && m.moveToGroupOptions[m.moveToGroupCursor] == g
+
 			if g == activeGroup {
 				// Active tab: arrow indicator + highlighted text
 				arrow := core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold)
 				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText))
+			} else if isMoveTarget {
+				// Move target: success/green style to show where session will go
+				arrow := core_theme.DefaultTheme.Success.Render(core_theme.IconArrow)
+				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Success.Render(tabText))
 			} else {
 				// Inactive tab: space placeholder (same width as arrow) + muted text
 				tabs = append(tabs, "  "+core_theme.DefaultTheme.Muted.Render(tabText))
@@ -1724,6 +1803,20 @@ func (m *manageModel) View() string {
 		b.WriteString("\n")
 	}
 
+	// Show move-to-group dropdown if active
+	if m.moveToGroupMode {
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Move to Group") + "\n")
+		for i, opt := range m.moveToGroupOptions {
+			if i == m.moveToGroupCursor {
+				b.WriteString(core_theme.DefaultTheme.Selected.Render("  → " + opt))
+			} else {
+				b.WriteString(dimStyle.Render("    " + opt))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// Always reserve space for message to prevent layout shift
 	// Skip if in confirm mode (message shown in confirmation box)
 	if m.confirmMode == "" {
@@ -1744,6 +1837,8 @@ func (m *manageModel) View() string {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SET KEY MODE]")
 	} else if m.saveToGroupMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SAVE TO GROUP]")
+	} else if m.moveToGroupMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MOVE TO GROUP]")
 	} else if m.loadFromGroupMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [LOAD FROM GROUP]")
 	} else if m.confirmMode != "" {
@@ -2015,6 +2110,84 @@ func (m *manageModel) saveDefaultToGroup(targetGroup string) {
 	m.cursor = 0
 	m.rebuildSessionsOrder()
 	m.message = fmt.Sprintf("Saved %d mappings to '%s'", count, targetGroup)
+}
+
+// executeMoveToGroup moves the selected session to the target group
+func (m *manageModel) executeMoveToGroup(targetGroup string) {
+	// Find the session we're moving
+	sessionPath := m.moveToGroupSession
+	sessionKey := ""
+	for _, s := range m.sessions {
+		if s.Path == sessionPath {
+			sessionKey = s.Key
+			break
+		}
+	}
+	if sessionKey == "" {
+		m.message = "Session not found"
+		return
+	}
+
+	sourceGroup := m.manager.GetActiveGroup()
+
+	// Switch to target group and find an empty slot
+	m.manager.SetActiveGroup(targetGroup)
+	targetSessions, _ := m.manager.GetSessions()
+
+	// Find first empty slot (not locked)
+	targetKey := ""
+	for _, ts := range targetSessions {
+		if ts.Path == "" && !m.lockedKeys[ts.Key] {
+			targetKey = ts.Key
+			break
+		}
+	}
+	if targetKey == "" {
+		m.message = fmt.Sprintf("No empty slots in '%s'", targetGroup)
+		m.manager.SetActiveGroup(sourceGroup)
+		return
+	}
+
+	// Set the mapping in target group
+	for i := range targetSessions {
+		if targetSessions[i].Key == targetKey {
+			targetSessions[i].Path = sessionPath
+			break
+		}
+	}
+
+	// Save target group
+	if err := m.manager.UpdateSessionsAndLocks(targetSessions, m.getLockedKeysSlice()); err != nil {
+		m.message = fmt.Sprintf("Error saving to target group: %v", err)
+		m.manager.SetActiveGroup(sourceGroup)
+		return
+	}
+
+	// Switch back to source group and clear the mapping
+	m.manager.SetActiveGroup(sourceGroup)
+	for i := range m.sessions {
+		if m.sessions[i].Key == sessionKey {
+			m.sessions[i].Path = ""
+			m.sessions[i].Repository = ""
+			m.sessions[i].Description = ""
+			break
+		}
+	}
+
+	// Save source group
+	if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
+		m.message = fmt.Sprintf("Error clearing source: %v", err)
+		return
+	}
+
+	// Regenerate bindings
+	if err := m.manager.RegenerateBindings(); err != nil {
+		m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
+	}
+
+	m.changesMade = true
+	m.rebuildSessionsOrder()
+	m.message = fmt.Sprintf("Moved to '%s' (key %s)", targetGroup, targetKey)
 }
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string
