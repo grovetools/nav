@@ -156,3 +156,38 @@ func (m *Manager) GetGroupConfig(group string) (manager.GroupRef, bool) {
 func (m *Manager) ConfirmKeyUpdates() bool {
 	return m.mgr.ConfirmKeyUpdates()
 }
+
+// GetAllGroups returns a list of all available workspace groups, including deactivated ones
+func (m *Manager) GetAllGroups() []string {
+	return m.mgr.GetAllGroups()
+}
+
+// CreateGroup creates a new group
+func (m *Manager) CreateGroup(name, prefix string) error {
+	return m.mgr.CreateGroup(name, prefix)
+}
+
+// DeleteGroup removes a group from config and state
+func (m *Manager) DeleteGroup(name string) error {
+	return m.mgr.DeleteGroup(name)
+}
+
+// SetGroupActive sets the active state of a group
+func (m *Manager) SetGroupActive(name string, active bool) error {
+	return m.mgr.SetGroupActive(name, active)
+}
+
+// FindGroupForPath finds which group contains a session with the given path
+func (m *Manager) FindGroupForPath(path string) string {
+	return m.mgr.FindGroupForPath(path)
+}
+
+// SetLastAccessedGroup updates the access history
+func (m *Manager) SetLastAccessedGroup(group string) error {
+	return m.mgr.SetLastAccessedGroup(group)
+}
+
+// GetLastAccessedGroup returns the most recently accessed group
+func (m *Manager) GetLastAccessedGroup() string {
+	return m.mgr.GetLastAccessedGroup()
+}

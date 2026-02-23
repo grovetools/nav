@@ -20,6 +20,7 @@ type GroupRef struct {
 	Icon     string                       `yaml:"icon,omitempty" toml:"icon,omitempty"`
 	Persist  interface{}                  `yaml:"persist,omitempty" toml:"persist,omitempty"`
 	Sessions map[string]TmuxSessionConfig `yaml:"sessions,omitempty" toml:"sessions,omitempty"`
+	Active   *bool                        `yaml:"active,omitempty" toml:"active,omitempty"`
 }
 
 // GroupState holds the dynamic session state for a workspace group.
@@ -33,7 +34,8 @@ type GroupState struct {
 type TmuxSessionsFile struct {
 	Sessions   map[string]TmuxSessionConfig `yaml:"sessions"`
 	LockedKeys []string                     `yaml:"locked_keys,omitempty"`
-	Groups     map[string]GroupState        `yaml:"groups,omitempty"`
+	Groups            map[string]GroupState `yaml:"groups,omitempty"`
+	LastAccessedGroup string                `yaml:"last_accessed_group,omitempty"`
 }
 
 // TmuxSessionConfig defines the configuration for a single session mapped to a key.

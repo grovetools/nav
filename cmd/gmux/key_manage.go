@@ -90,7 +90,22 @@ var keyManageCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
 
-		if targetGroup != "" {
+		// Detect current working directory for auto-selection
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current working directory: %w", err)
+		}
+
+		// Auto-select group based on CWD or last accessed
+		if targetGroup == "" {
+			if matched := mgr.FindGroupForPath(cwd); matched != "" {
+				mgr.SetActiveGroup(matched)
+			} else if last := mgr.GetLastAccessedGroup(); last != "" {
+				mgr.SetActiveGroup(last)
+			} else {
+				mgr.SetActiveGroup("default")
+			}
+		} else {
 			mgr.SetActiveGroup(targetGroup)
 		}
 
@@ -103,12 +118,6 @@ var keyManageCmd = &cobra.Command{
 		if len(sessions) == 0 {
 			fmt.Println("No sessions configured")
 			return nil
-		}
-
-		// Detect current working directory
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
 		}
 
 		// Try to load cached enriched data for instant startup
@@ -225,6 +234,11 @@ type manageModel struct {
 	loadFromGroupMode    bool
 	loadFromGroupOptions []string
 	loadFromGroupCursor  int
+	// Group Creation state
+	newGroupMode   bool
+	newGroupStep   int
+	newGroupName   string
+	newGroupPrefix string
 	// Default locked sessions (shared across all groups)
 	defaultLockedSessions map[string]models.TmuxSession
 }
@@ -494,9 +508,79 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.executeLoadIntoDefault(m.confirmSource)
 				case "clear":
 					m.executeClearGroup()
+				case "delete_group":
+					groupToDelete := m.manager.GetActiveGroup()
+					if err := m.manager.DeleteGroup(groupToDelete); err != nil {
+						m.message = fmt.Sprintf("Error deleting group: %v", err)
+					} else {
+						m.manager.SetActiveGroup("default")
+						_ = m.manager.SetLastAccessedGroup("default")
+						m.sessions, _ = m.manager.GetSessions()
+						m.rebuildSessionsOrder()
+						m.message = fmt.Sprintf("Deleted group '%s'", groupToDelete)
+					}
 				}
 				m.confirmMode = ""
 				m.confirmSource = ""
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle new group mode
+		if m.newGroupMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.newGroupMode = false
+				m.message = "New group cancelled"
+				return m, nil
+			case tea.KeyEnter:
+				if m.newGroupStep == 0 {
+					if m.newGroupName == "" {
+						m.message = "Group name cannot be empty"
+						return m, nil
+					}
+					m.newGroupStep = 1
+					m.message = ""
+				} else {
+					if err := m.manager.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
+						m.message = fmt.Sprintf("Error creating group: %v", err)
+					} else {
+						m.manager.SetActiveGroup(m.newGroupName)
+						_ = m.manager.SetLastAccessedGroup(m.newGroupName)
+						m.sessions, _ = m.manager.GetSessions()
+						m.rebuildSessionsOrder()
+						m.message = fmt.Sprintf("Created and switched to group '%s'", m.newGroupName)
+					}
+					m.newGroupMode = false
+				}
+				return m, nil
+			case tea.KeyBackspace:
+				if m.newGroupStep == 0 {
+					if len(m.newGroupName) > 0 {
+						m.newGroupName = m.newGroupName[:len(m.newGroupName)-1]
+					}
+				} else {
+					if len(m.newGroupPrefix) > 0 {
+						m.newGroupPrefix = m.newGroupPrefix[:len(m.newGroupPrefix)-1]
+					}
+				}
+				return m, nil
+			case tea.KeySpace:
+				if m.newGroupStep == 1 {
+					m.newGroupPrefix += " "
+				}
+				return m, nil
+			case tea.KeyRunes:
+				if m.newGroupStep == 0 {
+					for _, r := range msg.Runes {
+						if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+							m.newGroupName += string(r)
+						}
+					}
+				} else {
+					m.newGroupPrefix += string(msg.Runes)
+				}
 				return m, nil
 			}
 			return m, nil
@@ -955,6 +1039,23 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Execute immediately without confirmation
 				m.executeClearGroup()
 			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.NewGroup):
+			m.newGroupMode = true
+			m.newGroupStep = 0
+			m.newGroupName = ""
+			m.newGroupPrefix = ""
+			m.message = "Enter new group name:"
+			return m, nil
+
+		case key.Matches(msg, m.keys.DeleteGroup):
+			if m.manager.GetActiveGroup() == "default" {
+				m.message = "Cannot delete default group"
+				return m, nil
+			}
+			m.confirmMode = "delete_group"
+			m.message = fmt.Sprintf("Delete group '%s'? All mappings will be lost.", m.manager.GetActiveGroup())
 			return m, nil
 
 		case key.Matches(msg, m.keys.SaveToGroup):
@@ -1647,6 +1748,24 @@ func (m *manageModel) View() string {
 		b.WriteString("\n")
 	}
 
+	// Show new group prompt if active
+	if m.newGroupMode {
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Create New Group") + "\n")
+		if m.newGroupStep == 0 {
+			b.WriteString("  New group name: ")
+			b.WriteString(core_theme.DefaultTheme.Selected.Render(m.newGroupName + "█"))
+		} else {
+			b.WriteString(fmt.Sprintf("  Group name: %s\n", m.newGroupName))
+			b.WriteString("  Prefix key (optional): ")
+			b.WriteString(core_theme.DefaultTheme.Selected.Render(m.newGroupPrefix + "█"))
+			b.WriteString("\n")
+			b.WriteString(dimStyle.Render("  e.g. '<grove> g' → C-g g key"))
+		}
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("  (Enter to confirm, Esc to cancel)"))
+		b.WriteString("\n\n")
+	}
+
 	// Show save-to-group dropdown if active
 	if m.saveToGroupMode {
 		b.WriteString(core_theme.DefaultTheme.Header.Render("Save to Group") + "\n")
@@ -1750,6 +1869,7 @@ func (m *manageModel) cycleGroup(dir int) {
 
 	newGroup := groups[nextIdx]
 	m.manager.SetActiveGroup(newGroup)
+	_ = m.manager.SetLastAccessedGroup(newGroup)
 
 	// Reload sessions for the new group
 	m.sessions, _ = m.manager.GetSessions()
@@ -1902,6 +2022,22 @@ func (m *manageModel) saveDefaultToGroup(targetGroup string) {
 	sourceSessions := make([]models.TmuxSession, len(m.sessions))
 	copy(sourceSessions, m.sessions)
 	sourceGroup := m.manager.GetActiveGroup()
+
+	// Create the group if it doesn't exist
+	existingGroups := m.manager.GetAllGroups()
+	groupExists := false
+	for _, g := range existingGroups {
+		if g == targetGroup {
+			groupExists = true
+			break
+		}
+	}
+	if !groupExists {
+		if err := m.manager.CreateGroup(targetGroup, ""); err != nil {
+			m.message = fmt.Sprintf("Error creating group: %v", err)
+			return
+		}
+	}
 
 	// Switch to target group
 	m.manager.SetActiveGroup(targetGroup)

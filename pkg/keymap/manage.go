@@ -26,10 +26,12 @@ type ManageKeyMap struct {
 	LoadDefault   key.Binding
 	UnloadDefault key.Binding
 	SaveToGroup   key.Binding
+	NewGroup      key.Binding
+	DeleteGroup   key.Binding
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.MoveMode, k.Lock, k.TogglePaths, k.NextGroup, k.Quit}
+	return []key.Binding{k.Help, k.Quit}
 }
 
 func (k ManageKeyMap) FullHelp() [][]key.Binding {
@@ -48,6 +50,11 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 		keymap.NewSection("Groups",
 			k.NextGroup,
 			k.PrevGroup,
+			k.NewGroup,
+			k.DeleteGroup,
+			k.LoadDefault,
+			k.UnloadDefault,
+			k.SaveToGroup,
 		),
 		keymap.NavigationSection(
 			k.Up, k.Down,
@@ -57,9 +64,6 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.Open,
 		),
 		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.CopyPath),
-		keymap.NewSection("Group Operations",
-			k.LoadDefault, k.UnloadDefault, k.SaveToGroup,
-		),
 		keymap.NewSection("Reorder",
 			k.MoveMode, k.Lock,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
@@ -139,6 +143,14 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		SaveToGroup: key.NewBinding(
 			key.WithKeys("S"),
 			key.WithHelp("S", "save to group"),
+		),
+		NewGroup: key.NewBinding(
+			key.WithKeys("N"),
+			key.WithHelp("N", "new group"),
+		),
+		DeleteGroup: key.NewBinding(
+			key.WithKeys("D"),
+			key.WithHelp("D", "delete group"),
 		),
 	}
 

@@ -167,18 +167,28 @@ func NewManager(configDir string) (*Manager, error) {
 	}, nil
 }
 
-// findNavGroupsSource finds which config file contains nav.groups definitions.
-// It checks fragment files first, then global config, returning the first match.
+// findNavGroupsSource finds which config file should contain nav.groups definitions.
+// Priority: file with nav.groups > file with nav config > default path
 func findNavGroupsSource(layered *core_config.LayeredConfig, defaultPath string) string {
-	// Check fragment files first (they're more specific/modular)
+	// First pass: check for files that already have nav.groups
 	for _, fragment := range layered.GlobalFragments {
 		if hasNavGroups(fragment.Config) {
 			return fragment.Path
 		}
 	}
-
-	// Check global config
 	if layered.Global != nil && hasNavGroups(layered.Global) {
+		if globalPath, ok := layered.FilePaths[core_config.SourceGlobal]; ok {
+			return globalPath
+		}
+	}
+
+	// Second pass: find a file with any nav config (for new groups)
+	for _, fragment := range layered.GlobalFragments {
+		if hasNavConfig(fragment.Config) {
+			return fragment.Path
+		}
+	}
+	if layered.Global != nil && hasNavConfig(layered.Global) {
 		if globalPath, ok := layered.FilePaths[core_config.SourceGlobal]; ok {
 			return globalPath
 		}
@@ -202,6 +212,15 @@ func hasNavGroups(cfg *core_config.Config) bool {
 	}
 	_, hasGroups := navMap["groups"]
 	return hasGroups
+}
+
+// hasNavConfig checks if a config has any nav configuration defined
+func hasNavConfig(cfg *core_config.Config) bool {
+	if cfg == nil || cfg.Extensions == nil {
+		return false
+	}
+	_, ok := cfg.Extensions["nav"]
+	return ok
 }
 
 // loadSessionsFromFile loads sessions from an external TOML or YAML file.
@@ -340,15 +359,18 @@ func (m *Manager) GetActiveGroup() string {
 	return m.activeGroup
 }
 
-// GetGroups returns a list of all available workspace groups.
+// GetGroups returns a list of all available workspace groups (active only).
 // Always includes "default" as the first group, followed by other groups in sorted order.
 func (m *Manager) GetGroups() []string {
 	groups := []string{"default"}
 	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
 		// Collect group names and sort for deterministic ordering
 		var otherGroups []string
-		for g := range m.tmuxConfig.Groups {
-			otherGroups = append(otherGroups, g)
+		for g, ref := range m.tmuxConfig.Groups {
+			// Only include active groups (nil or true = active, false = deactivated)
+			if ref.Active == nil || *ref.Active {
+				otherGroups = append(otherGroups, g)
+			}
 		}
 		// Sort alphabetically
 		for i := 0; i < len(otherGroups)-1; i++ {
@@ -361,6 +383,111 @@ func (m *Manager) GetGroups() []string {
 		groups = append(groups, otherGroups...)
 	}
 	return groups
+}
+
+// GetAllGroups returns a list of all available workspace groups, including deactivated ones.
+func (m *Manager) GetAllGroups() []string {
+	groups := []string{"default"}
+	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
+		var otherGroups []string
+		for g := range m.tmuxConfig.Groups {
+			otherGroups = append(otherGroups, g)
+		}
+		for i := 0; i < len(otherGroups)-1; i++ {
+			for j := i + 1; j < len(otherGroups); j++ {
+				if otherGroups[i] > otherGroups[j] {
+					otherGroups[i], otherGroups[j] = otherGroups[j], otherGroups[i]
+				}
+			}
+		}
+		groups = append(groups, otherGroups...)
+	}
+	return groups
+}
+
+// CreateGroup creates a new group.
+func (m *Manager) CreateGroup(name, prefix string) error {
+	if name == "" || name == "default" {
+		return fmt.Errorf("invalid group name")
+	}
+	if m.tmuxConfig.Groups == nil {
+		m.tmuxConfig.Groups = make(map[string]GroupRef)
+	}
+	if _, exists := m.tmuxConfig.Groups[name]; exists {
+		return fmt.Errorf("group already exists")
+	}
+	active := true
+	m.tmuxConfig.Groups[name] = GroupRef{
+		Prefix: prefix,
+		Active: &active,
+	}
+	return m.saveStaticConfigFull()
+}
+
+// DeleteGroup removes a group from config and state.
+func (m *Manager) DeleteGroup(name string) error {
+	if name == "default" {
+		return fmt.Errorf("cannot delete default group")
+	}
+	if m.tmuxConfig.Groups != nil {
+		delete(m.tmuxConfig.Groups, name)
+	}
+	if m.sessionsFile.Groups != nil {
+		delete(m.sessionsFile.Groups, name)
+	}
+	if err := m.saveStaticConfigFull(); err != nil {
+		return err
+	}
+	return m.saveSessions()
+}
+
+// SetGroupActive sets the active state of a group.
+func (m *Manager) SetGroupActive(name string, active bool) error {
+	if name == "default" {
+		return fmt.Errorf("cannot modify default group active state")
+	}
+	if ref, exists := m.tmuxConfig.Groups[name]; exists {
+		ref.Active = &active
+		m.tmuxConfig.Groups[name] = ref
+		return m.saveStaticConfigFull()
+	}
+	return fmt.Errorf("group not found")
+}
+
+// FindGroupForPath finds which group contains a session with the given path.
+func (m *Manager) FindGroupForPath(targetPath string) string {
+	targetClean, err := filepath.Abs(expandPath(targetPath))
+	if err != nil {
+		return ""
+	}
+
+	originalGroup := m.activeGroup
+	defer m.SetActiveGroup(originalGroup)
+
+	for _, g := range m.GetAllGroups() {
+		m.SetActiveGroup(g)
+		sessions, _ := m.GetSessions()
+		for _, s := range sessions {
+			if s.Path != "" {
+				p, err := filepath.Abs(expandPath(s.Path))
+				if err == nil && p == targetClean {
+					return g
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// SetLastAccessedGroup updates the access history.
+func (m *Manager) SetLastAccessedGroup(group string) error {
+	m.sessionsFile.LastAccessedGroup = group
+	return m.saveSessions()
+}
+
+// GetLastAccessedGroup returns the most recently accessed group.
+func (m *Manager) GetLastAccessedGroup() string {
+	return m.sessionsFile.LastAccessedGroup
 }
 
 // GetPrefixForGroup returns the configured prefix for a specific group.
@@ -584,24 +711,37 @@ func (m *Manager) saveStaticConfigFull() error {
 		navSection = make(map[string]interface{})
 	}
 
-	groups, ok := navSection["groups"].(map[string]interface{})
-	if !ok {
-		groups = make(map[string]interface{})
-	}
+	// Start fresh - only save groups that exist in tmuxConfig
+	// (this ensures deleted groups are removed from the file)
+	groups := make(map[string]interface{})
 
-	if m.activeGroup != "" && m.activeGroup != "default" {
-		if groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]; exists {
-			groupMap, ok := groups[m.activeGroup].(map[string]interface{})
-			if !ok {
-				groupMap = make(map[string]interface{})
-			}
+	// Save ALL groups from tmuxConfig
+	for groupName, groupCfg := range m.tmuxConfig.Groups {
+		groupMap, ok := groups[groupName].(map[string]interface{})
+		if !ok {
+			groupMap = make(map[string]interface{})
+		}
+		// Save prefix if set
+		if groupCfg.Prefix != "" {
+			groupMap["prefix"] = groupCfg.Prefix
+		}
+		// Save active state if explicitly set to false
+		if groupCfg.Active != nil && !*groupCfg.Active {
+			groupMap["active"] = false
+		}
+		// Save icon if set
+		if groupCfg.Icon != "" {
+			groupMap["icon"] = groupCfg.Icon
+		}
+		// Save sessions if any
+		if len(groupCfg.Sessions) > 0 {
 			sessionsMap := make(map[string]string)
 			for key, sess := range groupCfg.Sessions {
 				sessionsMap[key] = sess.Path
 			}
 			groupMap["sessions"] = sessionsMap
-			groups[m.activeGroup] = groupMap
 		}
+		groups[groupName] = groupMap
 	}
 
 	navSection["groups"] = groups

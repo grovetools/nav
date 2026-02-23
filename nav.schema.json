@@ -16,6 +16,9 @@
             "$ref": "#/$defs/TmuxSessionConfig"
           },
           "type": "object"
+        },
+        "active": {
+          "type": "boolean"
         }
       },
       "type": "object",
