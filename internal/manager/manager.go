@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -21,16 +22,17 @@ import (
 )
 
 type Manager struct {
-	configDir    string
-	coreConfig   *core_config.Config
-	tmuxConfig   *TmuxConfig
-	sessions     map[string]TmuxSessionConfig
-	lockedKeys   []string
-	configPath   string
-	sessionsPath string
-	tmuxClient   *tmux.Client
-	activeGroup  string
-	sessionsFile TmuxSessionsFile
+	configDir     string
+	coreConfig    *core_config.Config
+	tmuxConfig    *TmuxConfig
+	sessions      map[string]TmuxSessionConfig
+	lockedKeys    []string
+	configPath    string
+	navConfigPath string // Path to the file containing nav config (may differ from configPath for fragments)
+	sessionsPath  string
+	tmuxClient    *tmux.Client
+	activeGroup   string
+	sessionsFile  TmuxSessionsFile
 }
 
 // expandPath expands ~ to home directory
@@ -63,9 +65,14 @@ func NewManager(configDir string) (*Manager, error) {
 	configDir = expandPath(configDir)
 
 	// Load the layered grove.yml configuration
-	coreCfg, err := core_config.LoadFrom(configDir)
+	layered, err := core_config.LoadLayered(configDir)
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to load grove config: %w", err)
+	}
+
+	var coreCfg *core_config.Config
+	if layered != nil {
+		coreCfg = layered.Final
 	}
 	// If config doesn't exist, proceed with a default config object
 	if coreCfg == nil {
@@ -92,6 +99,13 @@ func NewManager(configDir string) (*Manager, error) {
 		configPath = filepath.Join(home, ".config", "grove", "grove.yml")
 	}
 
+	// Find which file contains the nav.groups section for inline persistence
+	// Check fragment files first, then fall back to primary config
+	navConfigPath := configPath
+	if layered != nil {
+		navConfigPath = findNavGroupsSource(layered, configPath)
+	}
+
 	// Load sessions from separate file in nav state directory
 	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
 	sessions := make(map[string]TmuxSessionConfig)
@@ -100,11 +114,25 @@ func NewManager(configDir string) (*Manager, error) {
 
 	if data, err := os.ReadFile(sessionsPath); err == nil {
 		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
-			// Ensure sessions map is not nil before assigning
 			if sessionsFile.Sessions != nil {
 				sessions = sessionsFile.Sessions
 			}
+
+			// Migrate local locked keys to global locked keys
+			lockedMap := make(map[string]bool)
 			lockedKeys = sessionsFile.LockedKeys
+			for _, k := range lockedKeys {
+				lockedMap[k] = true
+			}
+			for _, gState := range sessionsFile.Groups {
+				for _, k := range gState.LockedKeys {
+					if !lockedMap[k] {
+						lockedKeys = append(lockedKeys, k)
+						lockedMap[k] = true
+					}
+				}
+			}
+			sessionsFile.LockedKeys = lockedKeys
 		}
 	}
 	// If file doesn't exist or is empty, sessions will be an empty map
@@ -125,45 +153,186 @@ func NewManager(configDir string) (*Manager, error) {
 	}
 
 	return &Manager{
-		configDir:    configDir,
-		coreConfig:   coreCfg,
-		tmuxConfig:   &navCfg,
-		sessions:     sessions,
-		lockedKeys:   lockedKeys,
-		configPath:   configPath,
-		sessionsPath: sessionsPath,
-		tmuxClient:   tmuxClient,
-		activeGroup:  "default",
-		sessionsFile: sessionsFile,
+		configDir:     configDir,
+		coreConfig:    coreCfg,
+		tmuxConfig:    &navCfg,
+		sessions:      sessions,
+		lockedKeys:    lockedKeys,
+		configPath:    configPath,
+		navConfigPath: navConfigPath,
+		sessionsPath:  sessionsPath,
+		tmuxClient:    tmuxClient,
+		activeGroup:   "default",
+		sessionsFile:  sessionsFile,
 	}, nil
 }
 
+// findNavGroupsSource finds which config file contains nav.groups definitions.
+// It checks fragment files first, then global config, returning the first match.
+func findNavGroupsSource(layered *core_config.LayeredConfig, defaultPath string) string {
+	// Check fragment files first (they're more specific/modular)
+	for _, fragment := range layered.GlobalFragments {
+		if hasNavGroups(fragment.Config) {
+			return fragment.Path
+		}
+	}
+
+	// Check global config
+	if layered.Global != nil && hasNavGroups(layered.Global) {
+		if globalPath, ok := layered.FilePaths[core_config.SourceGlobal]; ok {
+			return globalPath
+		}
+	}
+
+	return defaultPath
+}
+
+// hasNavGroups checks if a config has nav.groups defined
+func hasNavGroups(cfg *core_config.Config) bool {
+	if cfg == nil || cfg.Extensions == nil {
+		return false
+	}
+	nav, ok := cfg.Extensions["nav"]
+	if !ok {
+		return false
+	}
+	navMap, ok := nav.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, hasGroups := navMap["groups"]
+	return hasGroups
+}
+
+// loadSessionsFromFile loads sessions from an external TOML or YAML file.
+func (m *Manager) loadSessionsFromFile(path string) map[string]TmuxSessionConfig {
+	var file struct {
+		Nav struct {
+			Sessions map[string]TmuxSessionConfig `yaml:"sessions" toml:"sessions"`
+		} `yaml:"nav" toml:"nav"`
+	}
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if strings.HasSuffix(path, ".toml") {
+			toml.Decode(string(data), &file)
+		} else {
+			yaml.Unmarshal(data, &file)
+		}
+		if file.Nav.Sessions != nil {
+			return file.Nav.Sessions
+		}
+	}
+	return make(map[string]TmuxSessionConfig)
+}
+
+// saveSessionsToFile saves sessions to an external TOML or YAML file.
+// For TOML, writes simple "key = path" format when no extra metadata exists.
+func (m *Manager) saveSessionsToFile(path string, sessions map[string]TmuxSessionConfig) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+
+	// For TOML, use simpler format: key = "path" when no extra metadata
+	if strings.HasSuffix(path, ".toml") {
+		simpleSessions := make(map[string]string)
+		for k, v := range sessions {
+			// Only include path if Repository and Description are empty
+			simpleSessions[k] = v.Path
+		}
+		wrapper := map[string]interface{}{
+			"nav": map[string]interface{}{
+				"sessions": simpleSessions,
+			},
+		}
+		var buf strings.Builder
+		enc := toml.NewEncoder(&buf)
+		if err := enc.Encode(wrapper); err != nil {
+			return err
+		}
+		return os.WriteFile(path, []byte(buf.String()), 0o644)
+	}
+
+	// For YAML, use full struct
+	wrapper := map[string]interface{}{
+		"nav": map[string]interface{}{
+			"sessions": sessions,
+		},
+	}
+	data, err := yaml.Marshal(wrapper)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
 // SetActiveGroup switches the manager to operate on a different workspace group.
-// When switching groups, sessions and lockedKeys are swapped to the group's state.
+// When switching groups, sessions are swapped to the group's state.
+// Locked keys are global and shared across all groups.
 func (m *Manager) SetActiveGroup(group string) {
 	if group == "" {
 		group = "default"
 	}
 	m.activeGroup = group
+
+	// lockedKeys is global and remains attached to m.lockedKeys
+
 	if group == "default" {
 		m.sessions = m.sessionsFile.Sessions
-		m.lockedKeys = m.sessionsFile.LockedKeys
 	} else {
-		if m.sessionsFile.Groups == nil {
-			m.sessionsFile.Groups = make(map[string]GroupState)
+		groupCfg, exists := m.tmuxConfig.Groups[group]
+		isPersisted := false
+
+		if exists && groupCfg.Persist != nil && groupCfg.Persist != false && groupCfg.Persist != "false" && groupCfg.Persist != "" {
+			isPersisted = true
+			if persistStr, ok := groupCfg.Persist.(string); ok && persistStr != "true" {
+				targetPath := persistStr
+				if !filepath.IsAbs(targetPath) {
+					targetPath = filepath.Join(filepath.Dir(m.configPath), targetPath)
+				}
+				m.sessions = m.loadSessionsFromFile(targetPath)
+			} else {
+				if groupCfg.Sessions == nil {
+					m.sessions = make(map[string]TmuxSessionConfig)
+				} else {
+					m.sessions = groupCfg.Sessions
+				}
+			}
 		}
-		state, exists := m.sessionsFile.Groups[group]
-		if !exists {
-			state = GroupState{Sessions: make(map[string]TmuxSessionConfig)}
-			m.sessionsFile.Groups[group] = state
+
+		if !isPersisted {
+			if m.sessionsFile.Groups == nil {
+				m.sessionsFile.Groups = make(map[string]GroupState)
+			}
+			state, exists := m.sessionsFile.Groups[group]
+			if !exists {
+				state = GroupState{Sessions: make(map[string]TmuxSessionConfig)}
+				m.sessionsFile.Groups[group] = state
+			}
+			if state.Sessions == nil {
+				state.Sessions = make(map[string]TmuxSessionConfig)
+				m.sessionsFile.Groups[group] = state
+			}
+			m.sessions = state.Sessions
 		}
-		if state.Sessions == nil {
-			state.Sessions = make(map[string]TmuxSessionConfig)
-			m.sessionsFile.Groups[group] = state
-		}
-		m.sessions = state.Sessions
-		m.lockedKeys = state.LockedKeys
 	}
+}
+
+// GetGroupConfig returns the configuration for a specific group.
+func (m *Manager) GetGroupConfig(group string) (GroupRef, bool) {
+	if m.tmuxConfig == nil || m.tmuxConfig.Groups == nil {
+		return GroupRef{}, false
+	}
+	cfg, ok := m.tmuxConfig.Groups[group]
+	return cfg, ok
+}
+
+// ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations.
+// Defaults to true if not configured.
+func (m *Manager) ConfirmKeyUpdates() bool {
+	if m.tmuxConfig == nil || m.tmuxConfig.ConfirmKeyUpdates == nil {
+		return true // Default to showing confirmations
+	}
+	return *m.tmuxConfig.ConfirmKeyUpdates
 }
 
 // GetActiveGroup returns the name of the currently active workspace group.
@@ -237,10 +406,8 @@ func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
 		if sessionData, exists := m.sessions[key]; exists {
 			// Key has a configured session
 			sessions = append(sessions, models.TmuxSession{
-				Key:         key,
-				Path:        expandPath(sessionData.Path),
-				Repository:  sessionData.Repository,
-				Description: sessionData.Description,
+				Key:  key,
+				Path: expandPath(sessionData.Path),
 			})
 		} else {
 			// Key exists but has no session configured
@@ -257,35 +424,147 @@ func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
 }
 
 // Save persists the tmux configuration:
-// - Static config (search paths, discovery) to grove.yml
-// - Dynamic state (session mappings) to nav/sessions.yml
+// - Dynamic state (session mappings) to nav/sessions.yml or persist file
+// - Static config is only saved for inline persistence (persist=true)
 func (m *Manager) Save() error {
-	// Save static config to grove.yml
-	if err := m.saveStaticConfig(); err != nil {
-		return err
+	// Handle inline persistence (persist=true) - saves sessions directly in config file
+	if m.activeGroup != "default" && m.activeGroup != "" {
+		if groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]; exists {
+			if groupCfg.Persist != nil && groupCfg.Persist != false && groupCfg.Persist != "false" && groupCfg.Persist != "" {
+				if persistStr, ok := groupCfg.Persist.(string); !ok || persistStr == "true" {
+					// Inline persistence - save sessions to the nav config file (e.g., keys.toml)
+					groupCfg.Sessions = m.sessions
+					m.tmuxConfig.Groups[m.activeGroup] = groupCfg
+					if err := m.saveStaticConfig(); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 
-	// Save sessions to separate file
+	// Save sessions to separate file (persist="filename.toml") or state file
 	return m.saveSessions()
 }
 
-// saveStaticConfig saves the static tmux configuration to the grove config file
+// saveStaticConfig saves the static tmux configuration to the nav config file.
+// For inline persistence (persist=true), it uses navConfigPath which points to the
+// fragment file containing nav.groups (e.g., keys.toml), not the primary config.
+// Uses surgical text editing to preserve file structure, comments, and formatting.
 func (m *Manager) saveStaticConfig() error {
+	targetPath := m.navConfigPath
+
 	// Ensure the config directory exists
-	if err := os.MkdirAll(filepath.Dir(m.configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Determine format based on file extension
-	isTOML := strings.HasSuffix(m.configPath, ".toml")
+	if m.activeGroup == "" || m.activeGroup == "default" {
+		return nil
+	}
 
-	// Read the existing file into a generic map to preserve other contents
+	groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]
+	if !exists {
+		return nil
+	}
+
+	// Read the existing file
+	data, err := os.ReadFile(targetPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	content := string(data)
+	isTOML := strings.HasSuffix(targetPath, ".toml")
+
+	if isTOML {
+		content = m.updateTOMLSessions(content, m.activeGroup, groupCfg.Sessions)
+	} else {
+		// For YAML, fall back to full rewrite (less common case)
+		return m.saveStaticConfigFull()
+	}
+
+	return os.WriteFile(targetPath, []byte(content), 0o644)
+}
+
+// updateTOMLSessions performs a surgical update of the sessions section in a TOML file.
+// It preserves the rest of the file structure, comments, and formatting.
+func (m *Manager) updateTOMLSessions(content, group string, sessions map[string]TmuxSessionConfig) string {
+	sessionsHeader := fmt.Sprintf("[nav.groups.%s.sessions]", group)
+	groupHeader := fmt.Sprintf("[nav.groups.%s]", group)
+
+	// Build new sessions content
+	var sessionLines []string
+	// Sort keys for consistent output
+	keys := make([]string, 0, len(sessions))
+	for k := range sessions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		sessionLines = append(sessionLines, fmt.Sprintf("%s = %q", k, sessions[k].Path))
+	}
+	newSessionsContent := strings.Join(sessionLines, "\n")
+
+	// Check if sessions section already exists
+	if idx := strings.Index(content, sessionsHeader); idx != -1 {
+		// Find the end of the sessions section (next [...] header or EOF)
+		startOfValues := idx + len(sessionsHeader)
+		endIdx := len(content)
+
+		// Find next section header
+		remaining := content[startOfValues:]
+		if nextBracket := strings.Index(remaining, "\n["); nextBracket != -1 {
+			endIdx = startOfValues + nextBracket
+		}
+
+		// Replace the sessions section
+		newContent := content[:idx] + sessionsHeader + "\n" + newSessionsContent + "\n" + content[endIdx:]
+		return newContent
+	}
+
+	// Sessions section doesn't exist, need to add it after group header
+	if idx := strings.Index(content, groupHeader); idx != -1 {
+		// Find where this group's content ends (next [...] at same or higher level, or EOF)
+		startOfGroup := idx + len(groupHeader)
+		insertIdx := len(content)
+
+		// Find next section that's not a child of this group
+		remaining := content[startOfGroup:]
+		lines := strings.Split(remaining, "\n")
+		offset := startOfGroup
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "[") && !strings.HasPrefix(trimmed, "[nav.groups."+group+".") {
+				insertIdx = offset
+				break
+			}
+			offset += len(line) + 1 // +1 for newline
+		}
+
+		// Insert sessions section before the next section
+		insertion := "\n" + sessionsHeader + "\n" + newSessionsContent + "\n"
+		newContent := content[:insertIdx] + insertion + content[insertIdx:]
+		return newContent
+	}
+
+	// Group doesn't exist at all - append at end of nav section or file
+	// This is a fallback; normally the group should exist
+	return content + "\n" + sessionsHeader + "\n" + newSessionsContent + "\n"
+}
+
+// saveStaticConfigFull is the fallback that rewrites the entire config file.
+// Used for YAML files or when surgical editing isn't possible.
+func (m *Manager) saveStaticConfigFull() error {
+	targetPath := m.navConfigPath
+	isTOML := strings.HasSuffix(targetPath, ".toml")
+
 	var fullConfig map[string]interface{}
-	data, err := os.ReadFile(m.configPath)
+	data, err := os.ReadFile(targetPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing config file: %w", err)
 	}
-	// If file exists, unmarshal it
+
 	if len(data) > 0 {
 		if isTOML {
 			if _, err := toml.Decode(string(data), &fullConfig); err != nil {
@@ -300,12 +579,34 @@ func (m *Manager) saveStaticConfig() error {
 		fullConfig = make(map[string]interface{})
 	}
 
-	// Update the 'nav' section (static config only, no sessions)
-	// Remove legacy 'tmux' key if present (migration to 'nav')
-	delete(fullConfig, "tmux")
-	fullConfig["nav"] = m.tmuxConfig
+	navSection, ok := fullConfig["nav"].(map[string]interface{})
+	if !ok {
+		navSection = make(map[string]interface{})
+	}
 
-	// Marshal the full config back
+	groups, ok := navSection["groups"].(map[string]interface{})
+	if !ok {
+		groups = make(map[string]interface{})
+	}
+
+	if m.activeGroup != "" && m.activeGroup != "default" {
+		if groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]; exists {
+			groupMap, ok := groups[m.activeGroup].(map[string]interface{})
+			if !ok {
+				groupMap = make(map[string]interface{})
+			}
+			sessionsMap := make(map[string]string)
+			for key, sess := range groupCfg.Sessions {
+				sessionsMap[key] = sess.Path
+			}
+			groupMap["sessions"] = sessionsMap
+			groups[m.activeGroup] = groupMap
+		}
+	}
+
+	navSection["groups"] = groups
+	fullConfig["nav"] = navSection
+
 	var newData []byte
 	if isTOML {
 		var buf strings.Builder
@@ -321,35 +622,56 @@ func (m *Manager) saveStaticConfig() error {
 		}
 	}
 
-	return os.WriteFile(m.configPath, newData, 0o644)
+	return os.WriteFile(targetPath, newData, 0o644)
 }
 
 // saveSessions saves the session mappings to nav/sessions.yml
 func (m *Manager) saveSessions() error {
-	// Ensure the nav directory exists in the state folder
-	navDir := filepath.Dir(m.sessionsPath)
-	if err := os.MkdirAll(navDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create nav state directory: %w", err)
-	}
+	// Global locked keys
+	m.sessionsFile.LockedKeys = m.lockedKeys
 
 	// Update the sessions file structure based on active group
 	if m.activeGroup == "default" || m.activeGroup == "" {
 		m.sessionsFile.Sessions = m.sessions
-		m.sessionsFile.LockedKeys = m.lockedKeys
 	} else {
-		if m.sessionsFile.Groups == nil {
-			m.sessionsFile.Groups = make(map[string]GroupState)
+		// Check persist setting from in-memory config
+		var currentPersist interface{}
+		if groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]; exists {
+			currentPersist = groupCfg.Persist
 		}
-		m.sessionsFile.Groups[m.activeGroup] = GroupState{
-			Sessions:   m.sessions,
-			LockedKeys: m.lockedKeys,
+
+		isPersisted := false
+		if currentPersist != nil && currentPersist != false && currentPersist != "false" && currentPersist != "" {
+			isPersisted = true
+			if persistStr, ok := currentPersist.(string); ok && persistStr != "true" {
+				targetPath := persistStr
+				if !filepath.IsAbs(targetPath) {
+					targetPath = filepath.Join(filepath.Dir(m.configPath), targetPath)
+				}
+				if err := m.saveSessionsToFile(targetPath, m.sessions); err != nil {
+					return err
+				}
+			}
+		}
+
+		if !isPersisted {
+			if m.sessionsFile.Groups == nil {
+				m.sessionsFile.Groups = make(map[string]GroupState)
+			}
+			m.sessionsFile.Groups[m.activeGroup] = GroupState{
+				Sessions: m.sessions,
+			}
 		}
 	}
 
-	// Marshal to YAML
+	// Marshal to YAML for state file
 	data, err := yaml.Marshal(m.sessionsFile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sessions: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(m.sessionsPath), 0o755); err != nil {
+		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
 	return os.WriteFile(m.sessionsPath, data, 0o644)
@@ -365,11 +687,9 @@ func (m *Manager) UpdateSessionsAndLocks(sessions []models.TmuxSession, lockedKe
 
 	for _, session := range sessions {
 		// Only save sessions that have actual data
-		if session.Path != "" || session.Repository != "" {
+		if session.Path != "" {
 			sessionsMap[session.Key] = TmuxSessionConfig{
-				Path:        session.Path,
-				Repository:  session.Repository,
-				Description: session.Description,
+				Path: session.Path,
 			}
 		}
 	}
@@ -386,9 +706,7 @@ func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) er
 	}
 
 	m.sessions[key] = TmuxSessionConfig{
-		Path:        session.Path,
-		Repository:  session.Repository,
-		Description: session.Description,
+		Path: session.Path,
 	}
 
 	// Add key to available_keys if it's not there
@@ -553,12 +871,14 @@ func (m *Manager) GetGitStatuses() (map[string]models.GitStatus, error) {
 	statuses := make(map[string]models.GitStatus)
 
 	for _, session := range sessions {
-		if session.Path == "" || session.Repository == "" {
+		if session.Path == "" {
 			continue
 		}
 
-		status := m.GetGitStatus(session.Path, session.Repository)
-		statuses[session.Repository] = status
+		// Derive repo name from path
+		repoName := filepath.Base(session.Path)
+		status := m.GetGitStatus(session.Path, repoName)
+		statuses[repoName] = status
 	}
 
 	return statuses, nil
@@ -907,7 +1227,7 @@ func (m *Manager) RegenerateBindingsGo() error {
 			if session.Path == "" {
 				continue
 			}
-			comment := fmt.Sprintf("# %s: %s", session.Key, session.Repository)
+			comment := fmt.Sprintf("# %s: %s", session.Key, filepath.Base(session.Path))
 			bindings.WriteString(comment + "\n")
 			actionPart := fmt.Sprintf("run-shell \"%s '%s'\"", sessionizerPath, session.Path)
 			bindCmd := cfg.FormatBindKey(session.Key, actionPart, "-r")
@@ -1013,7 +1333,12 @@ func (m *Manager) SetTmuxConfig(cfg *TmuxConfig) {
 	m.tmuxConfig = cfg
 }
 
-// GetConfigPath returns the path to the config file
+// GetConfigPath returns the path to the primary config file
 func (m *Manager) GetConfigPath() string {
 	return m.configPath
+}
+
+// GetNavConfigPath returns the path to the file containing nav config (may be a fragment file like keys.toml)
+func (m *Manager) GetNavConfigPath() string {
+	return m.navConfigPath
 }

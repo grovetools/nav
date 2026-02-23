@@ -27,6 +27,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// resolveIcon converts icon references to actual icon characters.
+// Supports preset names like "IconEcosystem" or direct unicode characters.
+func resolveIcon(iconRef string) string {
+	switch iconRef {
+	case "IconTree":
+		return core_theme.IconTree
+	case "IconProject":
+		return core_theme.IconProject
+	case "IconRepo":
+		return core_theme.IconRepo
+	case "IconWorktree":
+		return core_theme.IconWorktree
+	case "IconEcosystem":
+		return core_theme.IconEcosystem
+	case "IconFolder":
+		return core_theme.IconFolder
+	case "IconHome":
+		return core_theme.IconHome
+	case "IconCloud":
+		return "󰅧"
+	case "IconCode":
+		return core_theme.IconCode
+	case "IconBriefcase":
+		return "󰃖"
+	default:
+		return iconRef
+	}
+}
+
 // Message for CWD project enrichment
 type cwdProjectEnrichedMsg struct {
 	project *manager.SessionizeProject
@@ -116,24 +145,15 @@ var keyManageCmd = &cobra.Command{
 		if mm, ok := finalModel.(*manageModel); ok {
 			// Save changes if any were made
 			if mm.changesMade {
-				fmt.Println("Saving changes...")
 				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-					fmt.Fprintf(os.Stderr, "Error saving sessions: %v\n", err)
 					return fmt.Errorf("failed to save sessions: %w", err)
 				}
 
 				if err := mgr.RegenerateBindings(); err != nil {
-					fmt.Fprintf(os.Stderr, "Error regenerating bindings: %v\n", err)
 					return fmt.Errorf("failed to regenerate bindings: %w", err)
 				}
 
-				if err := reloadTmuxConfig(); err != nil {
-					fmt.Println("Changes saved! Remember to reload your tmux config manually: tmux source-file ~/.tmux.conf")
-				} else {
-					fmt.Println("Changes saved and tmux config reloaded!")
-				}
-			} else {
-				fmt.Println("No changes to save.")
+				_ = reloadTmuxConfig() // Silent reload
 			}
 
 			// Execute command on exit if set
@@ -192,6 +212,21 @@ type manageModel struct {
 	commandOnExit   *exec.Cmd // Command to run after TUI exits
 	// Change tracking
 	changesMade bool
+	// Save to group state
+	saveToGroupMode    bool     // Whether we're in save-to-group mode
+	saveToGroupOptions []string // List of group options (existing + "New group...")
+	saveToGroupCursor  int      // Current selection in dropdown
+	saveToGroupNewMode bool     // Whether we're typing a new group name
+	saveToGroupInput   string   // Text input for new group name
+	// Confirmation state
+	confirmMode   string // "load", "clear", or "" for none
+	confirmSource string // Source group name for load confirmation
+	// Load from group state (when pressing L on default)
+	loadFromGroupMode    bool
+	loadFromGroupOptions []string
+	loadFromGroupCursor  int
+	// Default locked sessions (shared across all groups)
+	defaultLockedSessions map[string]models.TmuxSession
 }
 
 // Key bindings are defined in pkg/keymap/manage.go and re-exported via tui_keymap.go
@@ -215,19 +250,32 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		lockedKeysMap[key] = true
 	}
 
+	// Load default's sessions for locked keys (shared across all groups)
+	currentGroup := mgr.GetActiveGroup()
+	mgr.SetActiveGroup("default")
+	defaultSessions, _ := mgr.GetSessions()
+	defaultLockedSessions := make(map[string]models.TmuxSession)
+	for _, s := range defaultSessions {
+		if lockedKeysMap[s.Key] {
+			defaultLockedSessions[s.Key] = s
+		}
+	}
+	mgr.SetActiveGroup(currentGroup) // Restore original group
+
 	return manageModel{
-		cursor:            0,
-		sessions:          sessions,
-		manager:           mgr,
-		keys:              manageKeys,
-		help:              helpModel,
-		cwdPath:           cwdPath,
-		enrichedProjects:  enrichedProjects,
-		lockedKeys:        lockedKeysMap,
-		usedCache:         usedCache,
-		isLoading:         usedCache, // Start as loading if we used cache
-		enrichmentLoading: make(map[string]bool),
-		pathDisplayMode:   0, // Default to no paths
+		cursor:                0,
+		sessions:              sessions,
+		manager:               mgr,
+		keys:                  manageKeys,
+		help:                  helpModel,
+		cwdPath:               cwdPath,
+		enrichedProjects:      enrichedProjects,
+		lockedKeys:            lockedKeysMap,
+		usedCache:             usedCache,
+		isLoading:             usedCache, // Start as loading if we used cache
+		enrichmentLoading:     make(map[string]bool),
+		pathDisplayMode:       0, // Default to no paths
+		defaultLockedSessions: defaultLockedSessions,
 	}
 }
 
@@ -431,6 +479,132 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle confirmation mode
+		if m.confirmMode != "" {
+			switch {
+			case msg.Type == tea.KeyEsc, msg.String() == "n", msg.String() == "N":
+				m.confirmMode = ""
+				m.confirmSource = ""
+				m.message = "Cancelled"
+				return m, nil
+
+			case msg.String() == "y", msg.String() == "Y":
+				switch m.confirmMode {
+				case "load":
+					m.executeLoadIntoDefault(m.confirmSource)
+				case "clear":
+					m.executeClearGroup()
+				}
+				m.confirmMode = ""
+				m.confirmSource = ""
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle load from group mode
+		if m.loadFromGroupMode {
+			switch {
+			case msg.Type == tea.KeyEsc:
+				m.loadFromGroupMode = false
+				m.message = "Load from group cancelled"
+				return m, nil
+
+			case key.Matches(msg, m.keys.Up):
+				if m.loadFromGroupCursor > 0 {
+					m.loadFromGroupCursor--
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.Down):
+				if m.loadFromGroupCursor < len(m.loadFromGroupOptions)-1 {
+					m.loadFromGroupCursor++
+				}
+				return m, nil
+
+			case msg.Type == tea.KeyEnter:
+				selected := m.loadFromGroupOptions[m.loadFromGroupCursor]
+				m.loadFromGroupMode = false
+				if m.manager.ConfirmKeyUpdates() {
+					// Enter confirmation mode
+					m.confirmMode = "load"
+					m.confirmSource = selected
+					m.message = fmt.Sprintf("Load '%s' into default? This will replace non-locked mappings.", selected)
+				} else {
+					// Execute immediately without confirmation
+					m.executeLoadIntoDefault(selected)
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle save to group mode
+		if m.saveToGroupMode {
+			switch {
+			case msg.Type == tea.KeyEsc:
+				m.saveToGroupMode = false
+				m.saveToGroupNewMode = false
+				m.saveToGroupInput = ""
+				m.message = "Save to group cancelled"
+				return m, nil
+
+			case m.saveToGroupNewMode:
+				// Text input mode for new group name
+				switch msg.Type {
+				case tea.KeyEnter:
+					if m.saveToGroupInput != "" {
+						m.saveDefaultToGroup(m.saveToGroupInput)
+					} else {
+						m.message = "Group name cannot be empty"
+					}
+					m.saveToGroupMode = false
+					m.saveToGroupNewMode = false
+					m.saveToGroupInput = ""
+					return m, nil
+				case tea.KeyBackspace:
+					if len(m.saveToGroupInput) > 0 {
+						m.saveToGroupInput = m.saveToGroupInput[:len(m.saveToGroupInput)-1]
+					}
+					return m, nil
+				case tea.KeyRunes:
+					// Only allow alphanumeric and hyphens/underscores
+					for _, r := range msg.Runes {
+						if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+							m.saveToGroupInput += string(r)
+						}
+					}
+					return m, nil
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.Up):
+				if m.saveToGroupCursor > 0 {
+					m.saveToGroupCursor--
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.Down):
+				if m.saveToGroupCursor < len(m.saveToGroupOptions)-1 {
+					m.saveToGroupCursor++
+				}
+				return m, nil
+
+			case msg.Type == tea.KeyEnter:
+				selected := m.saveToGroupOptions[m.saveToGroupCursor]
+				if selected == "+ New group..." {
+					m.saveToGroupNewMode = true
+					m.saveToGroupInput = ""
+					m.message = "Enter new group name:"
+				} else {
+					m.saveDefaultToGroup(selected)
+					m.saveToGroupMode = false
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// Handle set key mode
 		if m.setKeyMode {
 			switch msg.Type {
@@ -560,19 +734,26 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case key.Matches(msg, m.keys.Lock):
-				// Toggle lock for current key
+				// Toggle lock for current key (only in default group)
+				if m.manager.GetActiveGroup() != "default" {
+					m.message = "Locked keys can only be modified in default group"
+					return m, nil
+				}
 				if m.cursor < len(m.sessions) {
 					currentKey := m.sessions[m.cursor].Key
+					currentSession := m.sessions[m.cursor]
 					if m.lockedKeys[currentKey] {
 						delete(m.lockedKeys, currentKey)
+						delete(m.defaultLockedSessions, currentKey)
 						m.message = fmt.Sprintf("Unlocked key '%s'", currentKey)
 					} else {
 						m.lockedKeys[currentKey] = true
+						m.defaultLockedSessions[currentKey] = currentSession
 						m.message = fmt.Sprintf("Locked key '%s'", currentKey)
 					}
-					m.changesMade = true
 					// Rebuild order to move locked keys to bottom
 					m.rebuildSessionsOrder()
+					m.saveChanges()
 				}
 				return m, nil
 
@@ -607,10 +788,10 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.sessions[targetPos].Repository = currentRepo
 						m.sessions[targetPos].Description = currentDesc
 
-						m.changesMade = true
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved up"
+						m.saveChanges()
 					} else {
 						m.message = "Cannot move past locked keys"
 					}
@@ -648,10 +829,10 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.sessions[targetPos].Repository = currentRepo
 						m.sessions[targetPos].Description = currentDesc
 
-						m.changesMade = true
 						// Move cursor with the row
 						m.cursor = targetPos
 						m.message = "Moved down"
+						m.saveChanges()
 					} else {
 						m.message = "Cannot move past locked keys"
 					}
@@ -683,19 +864,26 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Lock):
-			// Toggle lock (works outside move mode too)
+			// Toggle lock (only in default group)
+			if m.manager.GetActiveGroup() != "default" {
+				m.message = "Locked keys can only be modified in default group"
+				return m, nil
+			}
 			if m.cursor < len(m.sessions) {
 				currentKey := m.sessions[m.cursor].Key
+				currentSession := m.sessions[m.cursor]
 				if m.lockedKeys[currentKey] {
 					delete(m.lockedKeys, currentKey)
+					delete(m.defaultLockedSessions, currentKey)
 					m.message = fmt.Sprintf("Unlocked key '%s'", currentKey)
 				} else {
 					m.lockedKeys[currentKey] = true
+					m.defaultLockedSessions[currentKey] = currentSession
 					m.message = fmt.Sprintf("Locked key '%s'", currentKey)
 				}
-				m.changesMade = true
 				// Rebuild order to move locked keys to bottom
 				m.rebuildSessionsOrder()
+				m.saveChanges()
 			}
 			return m, nil
 
@@ -716,12 +904,93 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cycleGroup(-1)
 			return m, nil
 
+		case key.Matches(msg, m.keys.LoadDefault):
+			if m.manager.GetActiveGroup() == "default" {
+				// Show picker to choose which group to load from
+				m.loadFromGroupOptions = []string{}
+				for _, g := range m.manager.GetGroups() {
+					if g != "default" {
+						m.loadFromGroupOptions = append(m.loadFromGroupOptions, g)
+					}
+				}
+				if len(m.loadFromGroupOptions) == 0 {
+					m.message = "No other groups to load from"
+					return m, nil
+				}
+				m.loadFromGroupMode = true
+				m.loadFromGroupCursor = 0
+				m.message = "Select group to load from (↑/↓ to navigate, Enter to select, Esc to cancel)"
+				return m, nil
+			}
+			sourceGroup := m.manager.GetActiveGroup()
+			if m.manager.ConfirmKeyUpdates() {
+				// Enter confirmation mode
+				m.confirmMode = "load"
+				m.confirmSource = sourceGroup
+				m.message = fmt.Sprintf("Load '%s' into default? This will replace non-locked mappings.", sourceGroup)
+			} else {
+				// Execute immediately without confirmation
+				m.executeLoadIntoDefault(sourceGroup)
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.UnloadDefault):
+			// Check if there's anything to clear
+			hasNonLocked := false
+			for _, s := range m.sessions {
+				if s.Path != "" && !m.lockedKeys[s.Key] {
+					hasNonLocked = true
+					break
+				}
+			}
+			if !hasNonLocked {
+				m.message = "No non-locked mappings to clear"
+				return m, nil
+			}
+			if m.manager.ConfirmKeyUpdates() {
+				// Enter confirmation mode
+				m.confirmMode = "clear"
+				m.message = fmt.Sprintf("Clear all non-locked mappings from '%s'?", m.manager.GetActiveGroup())
+			} else {
+				// Execute immediately without confirmation
+				m.executeClearGroup()
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.SaveToGroup):
+			// Check if there are any mappings to save
+			hasMappings := false
+			for _, s := range m.sessions {
+				if s.Path != "" {
+					hasMappings = true
+					break
+				}
+			}
+			if !hasMappings {
+				m.message = "No mappings to save"
+				return m, nil
+			}
+
+			// Build list of existing groups (excluding current group and default)
+			m.saveToGroupOptions = []string{}
+			currentGroup := m.manager.GetActiveGroup()
+			for _, g := range m.manager.GetGroups() {
+				if g != currentGroup && g != "default" {
+					m.saveToGroupOptions = append(m.saveToGroupOptions, g)
+				}
+			}
+			// Add option to create new group
+			m.saveToGroupOptions = append(m.saveToGroupOptions, "+ New group...")
+
+			m.saveToGroupMode = true
+			m.saveToGroupCursor = 0
+			m.saveToGroupNewMode = false
+			m.saveToGroupInput = ""
+			m.message = "Select group to save to (↑/↓ to navigate, Enter to select, Esc to cancel)"
+			return m, nil
+
 		case key.Matches(msg, m.keys.Quit):
 			// Just quit - save happens after TUI exits
-			return m, tea.Quit
-
-		case key.Matches(msg, m.keys.Save):
-			// Save and exit - save happens after TUI exits
 			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.SetKey):
@@ -782,8 +1051,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Add to enriched projects map for immediate display
 			m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
 
-			m.changesMade = true
 			m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, m.cwdProject.Name)
+			m.saveChanges()
 			return m, nil
 
 		case key.Matches(msg, m.keys.Open):
@@ -873,8 +1142,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
-					m.changesMade = true
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
+					m.saveChanges()
 				} else {
 					m.message = "Press 'e' or Enter to map this key"
 				}
@@ -890,8 +1159,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Repository = ""
 					session.Description = ""
 
-					m.changesMade = true
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
+					m.saveChanges()
 				}
 			}
 
@@ -974,12 +1243,21 @@ func (m *manageModel) View() string {
 		activeGroup := m.manager.GetActiveGroup()
 		var tabs []string
 		for _, g := range groups {
+			iconStr := ""
+			if g != "default" {
+				if cfg, ok := m.manager.GetGroupConfig(g); ok && cfg.Icon != "" {
+					iconStr = resolveIcon(cfg.Icon) + " "
+				}
+			}
+
+			tabText := " " + iconStr + g + " "
+
 			if g == activeGroup {
 				// Active tab: highlighted with box characters
-				tabs = append(tabs, core_theme.DefaultTheme.Selected.Render(" "+g+" "))
+				tabs = append(tabs, core_theme.DefaultTheme.Selected.Render(tabText))
 			} else {
 				// Inactive tab: muted
-				tabs = append(tabs, core_theme.DefaultTheme.Muted.Render(" "+g+" "))
+				tabs = append(tabs, core_theme.DefaultTheme.Muted.Render(tabText))
 			}
 		}
 		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render("│")))
@@ -992,12 +1270,18 @@ func (m *manageModel) View() string {
 	b.WriteString("\n")
 
 	// Separate sessions into unlocked and locked
+	// Locked sessions always use default's mappings (shared across all groups)
 	var unlockedSessions []models.TmuxSession
 	var lockedSessions []models.TmuxSession
 
 	for _, s := range m.sessions {
 		if m.lockedKeys[s.Key] {
-			lockedSessions = append(lockedSessions, s)
+			// Use default's mapping for locked keys
+			if defaultSession, ok := m.defaultLockedSessions[s.Key]; ok {
+				lockedSessions = append(lockedSessions, defaultSession)
+			} else {
+				lockedSessions = append(lockedSessions, s)
+			}
 		} else {
 			unlockedSessions = append(unlockedSessions, s)
 		}
@@ -1340,9 +1624,60 @@ func (m *manageModel) View() string {
 
 	b.WriteString("\n\n")
 
+	// Show confirmation dialog if active
+	if m.confirmMode != "" {
+		b.WriteString("\n")
+		b.WriteString(core_theme.DefaultTheme.Warning.Render("  ⚠ " + m.message))
+		b.WriteString("\n")
+		b.WriteString(core_theme.DefaultTheme.Success.Render("    [Y]es") + "  " + core_theme.DefaultTheme.Error.Render("[N]o / Esc"))
+		b.WriteString("\n\n")
+	}
+
+	// Show load-from-group dropdown if active
+	if m.loadFromGroupMode {
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Load from Group") + "\n")
+		for i, opt := range m.loadFromGroupOptions {
+			if i == m.loadFromGroupCursor {
+				b.WriteString(core_theme.DefaultTheme.Selected.Render("  → " + opt))
+			} else {
+				b.WriteString(dimStyle.Render("    " + opt))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+
+	// Show save-to-group dropdown if active
+	if m.saveToGroupMode {
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Save to Group") + "\n")
+		if m.saveToGroupNewMode {
+			// Show text input for new group name
+			b.WriteString("  New group name: ")
+			b.WriteString(core_theme.DefaultTheme.Selected.Render(m.saveToGroupInput + "█"))
+			b.WriteString("\n")
+			b.WriteString(dimStyle.Render("  (Enter to confirm, Esc to cancel)"))
+		} else {
+			// Show dropdown options
+			for i, opt := range m.saveToGroupOptions {
+				if i == m.saveToGroupCursor {
+					b.WriteString(core_theme.DefaultTheme.Selected.Render("  → " + opt))
+				} else {
+					b.WriteString(dimStyle.Render("    " + opt))
+				}
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
 	// Always reserve space for message to prevent layout shift
-	if m.message != "" {
-		b.WriteString(dimStyle.Render(m.message) + "\n")
+	// Skip if in confirm mode (message shown in confirmation box)
+	if m.confirmMode == "" {
+		if m.message != "" {
+			b.WriteString(dimStyle.Render(m.message) + "\n")
+		} else {
+			b.WriteString("\n")
+		}
 	} else {
 		b.WriteString("\n")
 	}
@@ -1353,6 +1688,12 @@ func (m *manageModel) View() string {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MOVE MODE]")
 	} else if m.setKeyMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SET KEY MODE]")
+	} else if m.saveToGroupMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SAVE TO GROUP]")
+	} else if m.loadFromGroupMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [LOAD FROM GROUP]")
+	} else if m.confirmMode != "" {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [CONFIRM]")
 	}
 	b.WriteString(m.help.View() + modeIndicator)
 
@@ -1360,13 +1701,19 @@ func (m *manageModel) View() string {
 }
 
 // rebuildSessionsOrder ensures locked keys are always at the bottom
+// Locked keys use default's mappings (shared across all groups)
 func (m *manageModel) rebuildSessionsOrder() {
 	var unlocked []models.TmuxSession
 	var locked []models.TmuxSession
 
 	for _, s := range m.sessions {
 		if m.lockedKeys[s.Key] {
-			locked = append(locked, s)
+			// Use default's mapping for locked keys
+			if defaultSession, ok := m.defaultLockedSessions[s.Key]; ok {
+				locked = append(locked, defaultSession)
+			} else {
+				locked = append(locked, s)
+			}
 		} else {
 			unlocked = append(unlocked, s)
 		}
@@ -1426,6 +1773,18 @@ func (m *manageModel) getLockedKeysSlice() []string {
 	return lockedKeys
 }
 
+// saveChanges persists the current session state immediately.
+// Called after each change to ensure data is never lost.
+func (m *manageModel) saveChanges() {
+	if err := m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice()); err != nil {
+		m.message = fmt.Sprintf("Error saving: %v", err)
+		return
+	}
+	// Regenerate tmux bindings so changes take effect immediately
+	_ = m.manager.RegenerateBindings()
+	m.changesMade = false
+}
+
 // mapKeyToCwd maps the CWD to the target key index
 func (m *manageModel) mapKeyToCwd(targetIndex int) {
 	if targetIndex < 0 || targetIndex >= len(m.sessions) {
@@ -1464,13 +1823,12 @@ func (m *manageModel) mapKeyToCwd(targetIndex int) {
 	// Add to enriched projects map for immediate UI refresh
 	m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
 
-	m.changesMade = true
-
 	// Exit set key mode
 	m.setKeyMode = false
 
 	// Set success message
 	m.message = fmt.Sprintf("Mapped key '%s' to '%s'", targetSession.Key, m.cwdProject.Name)
+	m.saveChanges()
 }
 
 func min(a, b int) int {
@@ -1478,6 +1836,114 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// executeLoadIntoDefault performs the actual load operation after confirmation
+func (m *manageModel) executeLoadIntoDefault(sourceGroup string) {
+	// Get source sessions
+	m.manager.SetActiveGroup(sourceGroup)
+	sourceSessions, _ := m.manager.GetSessions()
+
+	// Switch to default
+	m.manager.SetActiveGroup("default")
+	m.sessions, _ = m.manager.GetSessions()
+
+	// Rebuild locked state
+	lockedKeys := m.manager.GetLockedKeys()
+	m.lockedKeys = make(map[string]bool)
+	for _, k := range lockedKeys {
+		m.lockedKeys[k] = true
+	}
+
+	// Replace non-locked default keys with source keys
+	for i := range m.sessions {
+		if !m.lockedKeys[m.sessions[i].Key] {
+			m.sessions[i].Path = ""
+			m.sessions[i].Repository = ""
+			m.sessions[i].Description = ""
+
+			for _, src := range sourceSessions {
+				if src.Key == m.sessions[i].Key && src.Path != "" {
+					m.sessions[i].Path = src.Path
+					m.sessions[i].Repository = src.Repository
+					m.sessions[i].Description = src.Description
+					break
+				}
+			}
+		}
+	}
+
+	m.message = fmt.Sprintf("Loaded '%s' into default", sourceGroup)
+	m.rebuildSessionsOrder()
+	m.saveChanges()
+}
+
+// executeClearGroup performs the actual clear operation after confirmation
+func (m *manageModel) executeClearGroup() {
+	count := 0
+	for i := range m.sessions {
+		if m.sessions[i].Path != "" && !m.lockedKeys[m.sessions[i].Key] {
+			m.sessions[i].Path = ""
+			m.sessions[i].Repository = ""
+			m.sessions[i].Description = ""
+			count++
+		}
+	}
+
+	groupName := m.manager.GetActiveGroup()
+	m.message = fmt.Sprintf("Cleared %d mappings from '%s'", count, groupName)
+	m.rebuildSessionsOrder()
+	m.saveChanges()
+}
+
+// saveDefaultToGroup saves current mappings to a target group
+func (m *manageModel) saveDefaultToGroup(targetGroup string) {
+	// Copy current sessions
+	sourceSessions := make([]models.TmuxSession, len(m.sessions))
+	copy(sourceSessions, m.sessions)
+	sourceGroup := m.manager.GetActiveGroup()
+
+	// Switch to target group
+	m.manager.SetActiveGroup(targetGroup)
+	targetSessions, _ := m.manager.GetSessions()
+
+	// Copy non-locked mappings from source to target
+	count := 0
+	for i := range targetSessions {
+		// Skip locked keys in target
+		if m.lockedKeys[targetSessions[i].Key] {
+			continue
+		}
+
+		// Find matching key in source
+		for _, src := range sourceSessions {
+			if src.Key == targetSessions[i].Key && src.Path != "" {
+				targetSessions[i].Path = src.Path
+				targetSessions[i].Repository = src.Repository
+				targetSessions[i].Description = src.Description
+				count++
+				break
+			}
+		}
+	}
+
+	// Save the target group
+	if err := m.manager.UpdateSessionsAndLocks(targetSessions, m.getLockedKeysSlice()); err != nil {
+		m.message = fmt.Sprintf("Error saving to group: %v", err)
+		m.manager.SetActiveGroup(sourceGroup)
+		return
+	}
+
+	// Regenerate bindings
+	if err := m.manager.RegenerateBindings(); err != nil {
+		m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
+	}
+
+	// Stay on target group
+	m.sessions = targetSessions
+	m.cursor = 0
+	m.rebuildSessionsOrder()
+	m.message = fmt.Sprintf("Saved %d mappings to '%s'", count, targetGroup)
 }
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string

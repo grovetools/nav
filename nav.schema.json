@@ -6,11 +6,32 @@
       "properties": {
         "prefix": {
           "type": "string"
+        },
+        "icon": {
+          "type": "string"
+        },
+        "persist": true,
+        "sessions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/TmuxSessionConfig"
+          },
+          "type": "object"
         }
       },
       "type": "object",
       "required": [
         "prefix"
+      ]
+    },
+    "TmuxSessionConfig": {
+      "properties": {
+        "path": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "path"
       ]
     }
   },
@@ -43,6 +64,12 @@
       },
       "type": "object",
       "description": "Workspace groups for multiple key prefixes"
+    },
+    "confirm_key_updates": {
+      "type": "boolean",
+      "description": "Show confirmation prompts for bulk key update operations (L/U). Defaults to true.",
+      "x-layer": "global",
+      "x-priority": "72"
     }
   },
   "type": "object",

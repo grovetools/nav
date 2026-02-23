@@ -146,3 +146,13 @@ func (m *Manager) GetGroups() []string {
 func (m *Manager) GetPrefixForGroup(group string) string {
 	return m.mgr.GetPrefixForGroup(group)
 }
+
+// GetGroupConfig returns the configuration for a specific group
+func (m *Manager) GetGroupConfig(group string) (manager.GroupRef, bool) {
+	return m.mgr.GetGroupConfig(group)
+}
+
+// ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations
+func (m *Manager) ConfirmKeyUpdates() bool {
+	return m.mgr.ConfirmKeyUpdates()
+}

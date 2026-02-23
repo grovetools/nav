@@ -15,15 +15,17 @@ type ManageKeyMap struct {
 	SetKey      key.Binding
 	Open        key.Binding
 	Delete      key.Binding // Overrides Base.Delete with "clear mapping" behavior
-	Save        key.Binding
 	MoveMode    key.Binding
 	Lock        key.Binding
 	MoveUp      key.Binding
 	MoveDown    key.Binding
 	ConfirmMove key.Binding
 	TogglePaths key.Binding
-	NextGroup   key.Binding
-	PrevGroup   key.Binding
+	NextGroup     key.Binding
+	PrevGroup     key.Binding
+	LoadDefault   key.Binding
+	UnloadDefault key.Binding
+	SaveToGroup   key.Binding
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
@@ -54,7 +56,10 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
 			k.Open,
 		),
-		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.Save, k.CopyPath),
+		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.CopyPath),
+		keymap.NewSection("Group Operations",
+			k.LoadDefault, k.UnloadDefault, k.SaveToGroup,
+		),
 		keymap.NewSection("Reorder",
 			k.MoveMode, k.Lock,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
@@ -91,10 +96,6 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 			key.WithKeys("d", "delete"),
 			key.WithHelp("d/del", "clear mapping"),
 		),
-		Save: key.NewBinding(
-			key.WithKeys("s", "ctrl+s"),
-			key.WithHelp("s/ctrl+s", "save & exit"),
-		),
 		MoveMode: key.NewBinding(
 			key.WithKeys("m"),
 			key.WithHelp("m", "enter move mode"),
@@ -126,6 +127,18 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		PrevGroup: key.NewBinding(
 			key.WithKeys("shift+tab"),
 			key.WithHelp("shift+tab", "prev group"),
+		),
+		LoadDefault: key.NewBinding(
+			key.WithKeys("L"),
+			key.WithHelp("L", "load group into default"),
+		),
+		UnloadDefault: key.NewBinding(
+			key.WithKeys("C"),
+			key.WithHelp("C", "clear group"),
+		),
+		SaveToGroup: key.NewBinding(
+			key.WithKeys("S"),
+			key.WithHelp("S", "save to group"),
 		),
 	}
 
