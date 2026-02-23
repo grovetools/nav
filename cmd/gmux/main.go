@@ -135,6 +135,7 @@ func init() {
 	rootCmd.AddCommand(kmCmd)
 	rootCmd.AddCommand(sessionizeCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(groupsCmd) // Group management TUI
 }
 
 func main() {

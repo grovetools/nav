@@ -21,6 +21,7 @@ type GroupRef struct {
 	Persist  interface{}                  `yaml:"persist,omitempty" toml:"persist,omitempty"`
 	Sessions map[string]TmuxSessionConfig `yaml:"sessions,omitempty" toml:"sessions,omitempty"`
 	Active   *bool                        `yaml:"active,omitempty" toml:"active,omitempty"`
+	Order    int                          `yaml:"order,omitempty" toml:"order,omitempty"` // Display order in group list
 }
 
 // GroupState holds the dynamic session state for a workspace group.

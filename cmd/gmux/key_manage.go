@@ -85,99 +85,109 @@ var keyManageCmd = &cobra.Command{
 	Short:   "Interactively manage tmux session key mappings",
 	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, 'e' to map CWD to an empty key, and space to unmap. Changes are auto-saved on exit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := tmux.NewManager(configDir)
-		if err != nil {
-			return fmt.Errorf("failed to initialize manager: %w", err)
-		}
-
-		// Detect current working directory for auto-selection
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get current working directory: %w", err)
-		}
-
-		// Auto-select group based on CWD or last accessed
-		if targetGroup == "" {
-			if matched := mgr.FindGroupForPath(cwd); matched != "" {
-				mgr.SetActiveGroup(matched)
-			} else if last := mgr.GetLastAccessedGroup(); last != "" {
-				mgr.SetActiveGroup(last)
-			} else {
-				mgr.SetActiveGroup("default")
-			}
-		} else {
-			mgr.SetActiveGroup(targetGroup)
-		}
-
-		// Get current sessions
-		sessions, err := mgr.GetSessions()
-		if err != nil {
-			return fmt.Errorf("failed to get sessions: %w", err)
-		}
-
-		if len(sessions) == 0 {
-			fmt.Println("No sessions configured")
-			return nil
-		}
-
-		// Try to load cached enriched data for instant startup
-		enrichedProjects := make(map[string]*manager.SessionizeProject)
-		usedCache := false
-		if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
-			// Convert cached projects to SessionizeProject, validating paths exist
-			for path, cached := range cache.EnrichedProjects {
-				// Validate that the path still exists
-				if _, err := os.Stat(path); err == nil {
-					enrichedProjects[path] = &manager.SessionizeProject{
-						WorkspaceNode: cached.WorkspaceNode,
-						GitStatus:     cached.GitStatus,
-						NoteCounts:    cached.NoteCounts,
-						PlanStats:     cached.PlanStats,
-					}
-				}
-				// Skip stale entries (paths that no longer exist)
-			}
-			usedCache = len(enrichedProjects) > 0
-		}
-
-		// Create the interactive model
-		m := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
-
-		// Run the interactive program
-		p := tea.NewProgram(&m, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			return fmt.Errorf("error running program: %w", err)
-		}
-
-		// Handle post-TUI logic
-		if mm, ok := finalModel.(*manageModel); ok {
-			// Save changes if any were made
-			if mm.changesMade {
-				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-					return fmt.Errorf("failed to save sessions: %w", err)
-				}
-
-				if err := mgr.RegenerateBindings(); err != nil {
-					return fmt.Errorf("failed to regenerate bindings: %w", err)
-				}
-
-				_ = reloadTmuxConfig() // Silent reload
-			}
-
-			// Execute command on exit if set
-			if mm.commandOnExit != nil {
-				mm.commandOnExit.Stdin = os.Stdin
-				mm.commandOnExit.Stdout = os.Stdout
-				mm.commandOnExit.Stderr = os.Stderr
-				if err := mm.commandOnExit.Run(); err != nil {
-					// Silently ignore popup close errors
-				}
-			}
-		}
-
-		return nil
+		return runKeyManageTUIImpl(cmd, args)
 	},
+}
+
+// runKeyManageTUIImpl runs the key manage TUI implementation.
+func runKeyManageTUIImpl(cmd *cobra.Command, args []string) error {
+	mgr, err := tmux.NewManager(configDir)
+	if err != nil {
+		return fmt.Errorf("failed to initialize manager: %w", err)
+	}
+
+	// Detect current working directory for auto-selection
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current working directory: %w", err)
+	}
+
+	// Auto-select group based on last accessed or CWD
+	if targetGroup == "" {
+		if last := mgr.GetLastAccessedGroup(); last != "" {
+			mgr.SetActiveGroup(last)
+		} else if matched := mgr.FindGroupForPath(cwd); matched != "" {
+			mgr.SetActiveGroup(matched)
+		} else {
+			mgr.SetActiveGroup("default")
+		}
+	} else {
+		mgr.SetActiveGroup(targetGroup)
+	}
+
+	// Get current sessions
+	sessions, err := mgr.GetSessions()
+	if err != nil {
+		return fmt.Errorf("failed to get sessions: %w", err)
+	}
+
+	if len(sessions) == 0 {
+		fmt.Println("No sessions configured")
+		return nil
+	}
+
+	// Try to load cached enriched data for instant startup
+	enrichedProjects := make(map[string]*manager.SessionizeProject)
+	usedCache := false
+	if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
+		// Convert cached projects to SessionizeProject, validating paths exist
+		for path, cached := range cache.EnrichedProjects {
+			// Validate that the path still exists
+			if _, err := os.Stat(path); err == nil {
+				enrichedProjects[path] = &manager.SessionizeProject{
+					WorkspaceNode: cached.WorkspaceNode,
+					GitStatus:     cached.GitStatus,
+					NoteCounts:    cached.NoteCounts,
+					PlanStats:     cached.PlanStats,
+				}
+			}
+			// Skip stale entries (paths that no longer exist)
+		}
+		usedCache = len(enrichedProjects) > 0
+	}
+
+	// Create the interactive model
+	m := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
+
+	// Run the interactive program
+	p := tea.NewProgram(&m, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		return fmt.Errorf("error running program: %w", err)
+	}
+
+	// Handle post-TUI logic
+	if mm, ok := finalModel.(*manageModel); ok {
+		// Save changes if any were made
+		if mm.changesMade {
+			if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
+				return fmt.Errorf("failed to save sessions: %w", err)
+			}
+
+			if err := mgr.RegenerateBindings(); err != nil {
+				return fmt.Errorf("failed to regenerate bindings: %w", err)
+			}
+
+			_ = reloadTmuxConfig() // Silent reload
+		}
+
+		// Execute command on exit if set
+		if mm.commandOnExit != nil {
+			mm.commandOnExit.Stdin = os.Stdin
+			mm.commandOnExit.Stdout = os.Stdout
+			mm.commandOnExit.Stderr = os.Stderr
+			if err := mm.commandOnExit.Run(); err != nil {
+				// Silently ignore popup close errors
+			}
+		}
+
+		// Handle handoff to other TUI
+		if mm.nextCommand == "groups" {
+			return runGroupsTUIImpl(cmd, args, true)
+		}
+	}
+
+	return nil
 }
 
 // Styles
@@ -241,6 +251,8 @@ type manageModel struct {
 	newGroupPrefix string
 	// Default locked sessions (shared across all groups)
 	defaultLockedSessions map[string]models.TmuxSession
+	// Handoff to other TUIs
+	nextCommand string // Command to run after TUI exits (e.g., "groups")
 }
 
 // Key bindings are defined in pkg/keymap/manage.go and re-exported via tui_keymap.go
@@ -1048,6 +1060,11 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.newGroupPrefix = ""
 			m.message = "Enter new group name:"
 			return m, nil
+
+		case key.Matches(msg, m.keys.Groups):
+			// Hand off to groups TUI
+			m.nextCommand = "groups"
+			return m, tea.Quit
 
 		case key.Matches(msg, m.keys.DeleteGroup):
 			if m.manager.GetActiveGroup() == "default" {

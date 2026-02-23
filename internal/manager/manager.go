@@ -360,7 +360,7 @@ func (m *Manager) GetActiveGroup() string {
 }
 
 // GetGroups returns a list of all available workspace groups (active only).
-// Always includes "default" as the first group, followed by other groups in sorted order.
+// Always includes "default" as the first group, followed by other groups sorted by Order, then alphabetically.
 func (m *Manager) GetGroups() []string {
 	groups := []string{"default"}
 	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
@@ -372,20 +372,22 @@ func (m *Manager) GetGroups() []string {
 				otherGroups = append(otherGroups, g)
 			}
 		}
-		// Sort alphabetically
-		for i := 0; i < len(otherGroups)-1; i++ {
-			for j := i + 1; j < len(otherGroups); j++ {
-				if otherGroups[i] > otherGroups[j] {
-					otherGroups[i], otherGroups[j] = otherGroups[j], otherGroups[i]
-				}
+		// Sort by Order field, then alphabetically for ties
+		sort.Slice(otherGroups, func(i, j int) bool {
+			groupI := m.tmuxConfig.Groups[otherGroups[i]]
+			groupJ := m.tmuxConfig.Groups[otherGroups[j]]
+			if groupI.Order != groupJ.Order {
+				return groupI.Order < groupJ.Order
 			}
-		}
+			return otherGroups[i] < otherGroups[j]
+		})
 		groups = append(groups, otherGroups...)
 	}
 	return groups
 }
 
 // GetAllGroups returns a list of all available workspace groups, including deactivated ones.
+// Sorted by Order field, then alphabetically for ties.
 func (m *Manager) GetAllGroups() []string {
 	groups := []string{"default"}
 	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
@@ -393,13 +395,15 @@ func (m *Manager) GetAllGroups() []string {
 		for g := range m.tmuxConfig.Groups {
 			otherGroups = append(otherGroups, g)
 		}
-		for i := 0; i < len(otherGroups)-1; i++ {
-			for j := i + 1; j < len(otherGroups); j++ {
-				if otherGroups[i] > otherGroups[j] {
-					otherGroups[i], otherGroups[j] = otherGroups[j], otherGroups[i]
-				}
+		// Sort by Order field, then alphabetically for ties
+		sort.Slice(otherGroups, func(i, j int) bool {
+			groupI := m.tmuxConfig.Groups[otherGroups[i]]
+			groupJ := m.tmuxConfig.Groups[otherGroups[j]]
+			if groupI.Order != groupJ.Order {
+				return groupI.Order < groupJ.Order
 			}
-		}
+			return otherGroups[i] < otherGroups[j]
+		})
 		groups = append(groups, otherGroups...)
 	}
 	return groups
@@ -420,6 +424,7 @@ func (m *Manager) CreateGroup(name, prefix string) error {
 	m.tmuxConfig.Groups[name] = GroupRef{
 		Prefix: prefix,
 		Active: &active,
+		Order:  len(m.tmuxConfig.Groups), // Set default order to end of list
 	}
 	return m.saveStaticConfigFull()
 }
@@ -428,6 +433,14 @@ func (m *Manager) CreateGroup(name, prefix string) error {
 func (m *Manager) DeleteGroup(name string) error {
 	if name == "default" {
 		return fmt.Errorf("cannot delete default group")
+	}
+	// If we're deleting the active group, switch to default first
+	// to prevent saveSessions() from re-adding the deleted group's state
+	if m.activeGroup == name {
+		m.SetActiveGroup("default")
+	}
+	if m.sessionsFile.LastAccessedGroup == name {
+		m.sessionsFile.LastAccessedGroup = "default"
 	}
 	if m.tmuxConfig.Groups != nil {
 		delete(m.tmuxConfig.Groups, name)
@@ -452,6 +465,93 @@ func (m *Manager) SetGroupActive(name string, active bool) error {
 		return m.saveStaticConfigFull()
 	}
 	return fmt.Errorf("group not found")
+}
+
+// RenameGroup renames a group, updating both static config and state.
+func (m *Manager) RenameGroup(oldName, newName string) error {
+	if oldName == "default" || newName == "default" {
+		return fmt.Errorf("cannot rename default group")
+	}
+	if oldName == newName {
+		return nil
+	}
+	if newName == "" {
+		return fmt.Errorf("new group name cannot be empty")
+	}
+	if _, exists := m.tmuxConfig.Groups[newName]; exists {
+		return fmt.Errorf("group %s already exists", newName)
+	}
+
+	// Swap in static config
+	if cfg, exists := m.tmuxConfig.Groups[oldName]; exists {
+		m.tmuxConfig.Groups[newName] = cfg
+		delete(m.tmuxConfig.Groups, oldName)
+	} else {
+		return fmt.Errorf("group %s not found", oldName)
+	}
+
+	// Swap in state/sessions file
+	if state, exists := m.sessionsFile.Groups[oldName]; exists {
+		m.sessionsFile.Groups[newName] = state
+		delete(m.sessionsFile.Groups, oldName)
+	}
+
+	// Update active string references
+	if m.activeGroup == oldName {
+		m.activeGroup = newName
+	}
+	if m.sessionsFile.LastAccessedGroup == oldName {
+		m.sessionsFile.LastAccessedGroup = newName
+	}
+
+	if err := m.saveStaticConfigFull(); err != nil {
+		return err
+	}
+	return m.saveSessions()
+}
+
+// SetGroupOrder sets the display order for a group.
+func (m *Manager) SetGroupOrder(name string, order int) error {
+	if name == "default" {
+		return nil // default group is always first
+	}
+	if ref, exists := m.tmuxConfig.Groups[name]; exists {
+		ref.Order = order
+		m.tmuxConfig.Groups[name] = ref
+		return m.saveStaticConfigFull()
+	}
+	return fmt.Errorf("group not found")
+}
+
+// SetGroupPrefix sets the prefix key for a group.
+func (m *Manager) SetGroupPrefix(name, prefix string) error {
+	if name == "default" {
+		return fmt.Errorf("use main prefix setting for default group")
+	}
+	if ref, exists := m.tmuxConfig.Groups[name]; exists {
+		ref.Prefix = prefix
+		m.tmuxConfig.Groups[name] = ref
+		return m.saveStaticConfigFull()
+	}
+	return fmt.Errorf("group not found")
+}
+
+// GetGroupSessionCount returns the number of sessions in a group.
+func (m *Manager) GetGroupSessionCount(name string) int {
+	if name == "default" {
+		return len(m.sessionsFile.Sessions)
+	}
+	// Check static config first (for inline persistence)
+	if ref, exists := m.tmuxConfig.Groups[name]; exists && ref.Sessions != nil {
+		if len(ref.Sessions) > 0 {
+			return len(ref.Sessions)
+		}
+	}
+	// Check state file
+	if state, exists := m.sessionsFile.Groups[name]; exists && state.Sessions != nil {
+		return len(state.Sessions)
+	}
+	return 0
 }
 
 // FindGroupForPath finds which group contains a session with the given path.
@@ -499,15 +599,13 @@ func (m *Manager) GetPrefixForGroup(group string) string {
 		return m.tmuxConfig.Prefix
 	}
 	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
-		if g, ok := m.tmuxConfig.Groups[group]; ok && g.Prefix != "" {
+		if g, ok := m.tmuxConfig.Groups[group]; ok {
+			// Return the group's prefix (empty string means no keybindings)
 			return g.Prefix
 		}
 	}
-	// Fallback to default prefix if group has no custom prefix
-	if m.tmuxConfig != nil && m.tmuxConfig.Prefix != "" {
-		return m.tmuxConfig.Prefix
-	}
-	return "<prefix>"
+	// Group not found, return empty (no keybindings)
+	return ""
 }
 
 func (m *Manager) GetLockedKeys() []string {
@@ -733,6 +831,10 @@ func (m *Manager) saveStaticConfigFull() error {
 		if groupCfg.Icon != "" {
 			groupMap["icon"] = groupCfg.Icon
 		}
+		// Save order if set
+		if groupCfg.Order != 0 {
+			groupMap["order"] = groupCfg.Order
+		}
 		// Save sessions if any
 		if len(groupCfg.Sessions) > 0 {
 			sessionsMap := make(map[string]string)
@@ -788,7 +890,21 @@ func (m *Manager) saveSessions() error {
 				if !filepath.IsAbs(targetPath) {
 					targetPath = filepath.Join(filepath.Dir(m.configPath), targetPath)
 				}
-				if err := m.saveSessionsToFile(targetPath, m.sessions); err != nil {
+				// Filter out locked keys - they're stored only in default
+				filteredSessions := make(map[string]TmuxSessionConfig)
+				for key, sess := range m.sessions {
+					isLocked := false
+					for _, lk := range m.lockedKeys {
+						if lk == key {
+							isLocked = true
+							break
+						}
+					}
+					if !isLocked {
+						filteredSessions[key] = sess
+					}
+				}
+				if err := m.saveSessionsToFile(targetPath, filteredSessions); err != nil {
 					return err
 				}
 			}
@@ -798,8 +914,22 @@ func (m *Manager) saveSessions() error {
 			if m.sessionsFile.Groups == nil {
 				m.sessionsFile.Groups = make(map[string]GroupState)
 			}
+			// Filter out locked keys - they're stored only in default
+			filteredSessions := make(map[string]TmuxSessionConfig)
+			for key, sess := range m.sessions {
+				isLocked := false
+				for _, lk := range m.lockedKeys {
+					if lk == key {
+						isLocked = true
+						break
+					}
+				}
+				if !isLocked {
+					filteredSessions[key] = sess
+				}
+			}
 			m.sessionsFile.Groups[m.activeGroup] = GroupState{
-				Sessions: m.sessions,
+				Sessions: filteredSessions,
 			}
 		}
 	}
@@ -1314,6 +1444,11 @@ func (m *Manager) RegenerateBindingsGo() error {
 		}
 
 		prefix := m.GetPrefix()
+		// Skip groups without a prefix - they're just saved favorites, no keybindings
+		if prefix == "" {
+			continue
+		}
+
 		tableName := "nav-workspaces"
 		if group != "default" {
 			tableName = "nav-" + group

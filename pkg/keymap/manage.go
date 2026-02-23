@@ -28,6 +28,7 @@ type ManageKeyMap struct {
 	SaveToGroup   key.Binding
 	NewGroup      key.Binding
 	DeleteGroup   key.Binding
+	Groups        key.Binding // Launch group manager TUI
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
@@ -50,6 +51,7 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 		keymap.NewSection("Groups",
 			k.NextGroup,
 			k.PrevGroup,
+			k.Groups,
 			k.NewGroup,
 			k.DeleteGroup,
 			k.LoadDefault,
@@ -151,6 +153,10 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		DeleteGroup: key.NewBinding(
 			key.WithKeys("D"),
 			key.WithHelp("D", "delete group"),
+		),
+		Groups: key.NewBinding(
+			key.WithKeys("E"),
+			key.WithHelp("E", "manage groups"),
 		),
 	}
 

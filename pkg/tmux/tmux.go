@@ -191,3 +191,23 @@ func (m *Manager) SetLastAccessedGroup(group string) error {
 func (m *Manager) GetLastAccessedGroup() string {
 	return m.mgr.GetLastAccessedGroup()
 }
+
+// RenameGroup renames a group, updating both static config and state
+func (m *Manager) RenameGroup(oldName, newName string) error {
+	return m.mgr.RenameGroup(oldName, newName)
+}
+
+// SetGroupOrder sets the display order for a group
+func (m *Manager) SetGroupOrder(name string, order int) error {
+	return m.mgr.SetGroupOrder(name, order)
+}
+
+// SetGroupPrefix sets the prefix key for a group
+func (m *Manager) SetGroupPrefix(name, prefix string) error {
+	return m.mgr.SetGroupPrefix(name, prefix)
+}
+
+// GetGroupSessionCount returns the number of sessions in a group
+func (m *Manager) GetGroupSessionCount(name string) int {
+	return m.mgr.GetGroupSessionCount(name)
+}
