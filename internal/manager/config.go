@@ -8,6 +8,7 @@ package manager
 // Project discovery is handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
 	Prefix              string              `yaml:"prefix,omitempty" toml:"prefix,omitempty" jsonschema:"description=Prefix key for nav bindings. Options: '<prefix>' (default), '<prefix> X' (sub-table under prefix), 'C-g' (dedicated root key), or '' (direct root with modifiers)." jsonschema_extras:"x-layer=global,x-priority=69"`
+	DefaultIcon         string              `yaml:"default_icon,omitempty" toml:"default_icon,omitempty" jsonschema:"description=Icon for the default group. Defaults to home icon."`
 	AvailableKeys       []string            `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
 	ShowChildProcesses  bool                `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`
 	Groups              map[string]GroupRef `yaml:"groups,omitempty" toml:"groups,omitempty" jsonschema:"description=Workspace groups for multiple key prefixes"`

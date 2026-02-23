@@ -48,6 +48,10 @@
       "x-layer": "global",
       "x-priority": "69"
     },
+    "default_icon": {
+      "type": "string",
+      "description": "Icon for the default group. Defaults to home icon."
+    },
     "available_keys": {
       "items": {
         "type": "string"

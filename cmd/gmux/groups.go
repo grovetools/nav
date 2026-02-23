@@ -14,39 +14,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// resolvePrefixDisplay converts prefix placeholders to actual keys for display
+func resolvePrefixDisplay(prefix string) string {
+	switch prefix {
+	case "<prefix>":
+		return "C-b"
+	case "<grove>":
+		return "C-g"
+	case "":
+		return "(none)"
+	default:
+		if strings.HasPrefix(prefix, "<prefix> ") {
+			return "C-b " + strings.TrimPrefix(prefix, "<prefix> ")
+		}
+		if strings.HasPrefix(prefix, "<grove> ") {
+			return "C-g " + strings.TrimPrefix(prefix, "<grove> ")
+		}
+		return prefix
+	}
+}
+
 var groupsCmd = &cobra.Command{
 	Use:   "groups",
 	Short: "Interactively manage workspace groups",
 	Long:  `Open an interactive table to manage workspace groups. Create, rename, reorder, and delete groups.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runGroupsTUIImpl(cmd, args, false)
+		return runNavTUIWithView(viewGroups)
 	},
-}
-
-// runGroupsTUIImpl runs the groups TUI. If returnToKM is true, it will return
-// "km" as next command to let the caller know to chain to key manage TUI.
-func runGroupsTUIImpl(cmd *cobra.Command, args []string, _ bool) error {
-	mgr, err := tmux.NewManager(configDir)
-	if err != nil {
-		return fmt.Errorf("failed to initialize manager: %w", err)
-	}
-
-	m := newGroupsModel(mgr)
-	p := tea.NewProgram(&m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running program: %w", err)
-	}
-
-	// Handle handoff back to key manage if needed
-	if gm, ok := finalModel.(*groupsModel); ok {
-		if gm.nextCommand == "km" {
-			// Run key manage TUI by calling the function directly
-			return runKeyManageTUIImpl(cmd, args)
-		}
-	}
-
-	return nil
 }
 
 // groupsModel is the model for the groups management TUI.
@@ -239,17 +233,13 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case key.Matches(msg, m.keys.MoveUp):
 				if m.cursor > 1 { // Can't move before default (index 0)
-					// Swap orders
 					currentGroup := m.groups[m.cursor]
 					prevGroup := m.groups[m.cursor-1]
 
-					// Get current orders
-					currentCfg, _ := m.manager.GetGroupConfig(currentGroup)
-					prevCfg, _ := m.manager.GetGroupConfig(prevGroup)
-
-					// Swap orders
-					_ = m.manager.SetGroupOrder(currentGroup, prevCfg.Order)
-					_ = m.manager.SetGroupOrder(prevGroup, currentCfg.Order)
+					// Use position-based ordering: current goes to prev's position, prev goes to current's
+					// Position in list (excluding default at 0) determines order
+					_ = m.manager.SetGroupOrder(currentGroup, m.cursor-2) // Move up
+					_ = m.manager.SetGroupOrder(prevGroup, m.cursor-1)    // Move down
 
 					// Refresh list
 					m.groups = m.manager.GetAllGroups()
@@ -260,17 +250,12 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case key.Matches(msg, m.keys.MoveDown):
 				if m.cursor < len(m.groups)-1 && m.cursor > 0 { // Can't move default
-					// Swap orders
 					currentGroup := m.groups[m.cursor]
 					nextGroup := m.groups[m.cursor+1]
 
-					// Get current orders
-					currentCfg, _ := m.manager.GetGroupConfig(currentGroup)
-					nextCfg, _ := m.manager.GetGroupConfig(nextGroup)
-
-					// Swap orders
-					_ = m.manager.SetGroupOrder(currentGroup, nextCfg.Order)
-					_ = m.manager.SetGroupOrder(nextGroup, currentCfg.Order)
+					// Use position-based ordering
+					_ = m.manager.SetGroupOrder(currentGroup, m.cursor) // Move down
+					_ = m.manager.SetGroupOrder(nextGroup, m.cursor-1)  // Move up
 
 					// Refresh list
 					m.groups = m.manager.GetAllGroups()
@@ -293,10 +278,10 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.help.Toggle()
 			return m, nil
 
-		case key.Matches(msg, m.keys.Quit):
+		case key.Matches(msg, m.keys.Quit), msg.Type == tea.KeyEsc:
 			// Hand back to km
 			m.nextCommand = "km"
-			return m, tea.Quit
+			return m, nil // Don't quit - parent will handle view switch
 
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
@@ -384,12 +369,12 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Toggle), key.Matches(msg, m.keys.Select):
-			// Switch to this group and exit
+			// Switch to this group
 			groupName := m.groups[m.cursor]
 			m.manager.SetActiveGroup(groupName)
 			_ = m.manager.SetLastAccessedGroup(groupName)
 			m.nextCommand = "km"
-			return m, tea.Quit
+			return m, nil // Don't quit - parent will handle view switch
 		}
 	}
 
@@ -419,25 +404,41 @@ func (m *groupsModel) View() string {
 	var rows [][]string
 
 	for i, g := range m.groups {
-		var prefix, status string
+		var icon, prefix, status string
 		sessionCount := m.manager.GetGroupSessionCount(g)
 
 		if g == "default" {
-			prefix = m.manager.GetPrefixForGroup("default")
+			if defIcon := m.manager.GetDefaultIcon(); defIcon != "" {
+				icon = resolveIcon(defIcon)
+			} else {
+				icon = core_theme.IconHome
+			}
+			prefix = resolvePrefixDisplay(m.manager.GetPrefixForGroup("default"))
 			status = ""
 		} else {
 			cfg, ok := m.manager.GetGroupConfig(g)
 			if ok {
-				prefix = cfg.Prefix
+				if cfg.Icon != "" {
+					icon = resolveIcon(cfg.Icon)
+				} else {
+					icon = core_theme.IconFolderStar // Default for groups without icon
+				}
+				prefix = resolvePrefixDisplay(cfg.Prefix)
 				if cfg.Active != nil && !*cfg.Active {
 					status = core_theme.DefaultTheme.Muted.Render("(Inactive)")
 				}
 			}
 		}
 
+		// Combine icon with name
+		displayName := g
+		if icon != "" {
+			displayName = icon + " " + g
+		}
+
 		rows = append(rows, []string{
 			fmt.Sprintf("%d", i+1),
-			g,
+			displayName,
 			prefix,
 			fmt.Sprintf("%d", sessionCount),
 			status,

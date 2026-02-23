@@ -211,3 +211,8 @@ func (m *Manager) SetGroupPrefix(name, prefix string) error {
 func (m *Manager) GetGroupSessionCount(name string) int {
 	return m.mgr.GetGroupSessionCount(name)
 }
+
+// GetDefaultIcon returns the configured icon for the default group
+func (m *Manager) GetDefaultIcon() string {
+	return m.mgr.GetDefaultIcon()
+}

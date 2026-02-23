@@ -31,26 +31,34 @@ import (
 // Supports preset names like "IconEcosystem" or direct unicode characters.
 func resolveIcon(iconRef string) string {
 	switch iconRef {
-	case "IconTree":
+	case "IconTree", "tree":
 		return core_theme.IconTree
-	case "IconProject":
+	case "IconProject", "project":
 		return core_theme.IconProject
-	case "IconRepo":
+	case "IconRepo", "repo":
 		return core_theme.IconRepo
-	case "IconWorktree":
+	case "IconWorktree", "worktree":
 		return core_theme.IconWorktree
-	case "IconEcosystem":
+	case "IconEcosystem", "ecosystem":
 		return core_theme.IconEcosystem
-	case "IconFolder":
+	case "IconFolder", "folder":
 		return core_theme.IconFolder
-	case "IconHome":
+	case "IconFolderStar", "folder-star", "star":
+		return core_theme.IconFolderStar
+	case "IconHome", "home":
 		return core_theme.IconHome
-	case "IconCloud":
+	case "IconCloud", "cloud":
 		return "󰅧"
-	case "IconCode":
+	case "IconCode", "code":
 		return core_theme.IconCode
-	case "IconBriefcase":
+	case "IconBriefcase", "briefcase", "work":
 		return "󰃖"
+	case "IconKeyboard", "keyboard":
+		return core_theme.IconKeyboard
+	case "IconNote", "note":
+		return core_theme.IconNote
+	case "IconPlan", "plan":
+		return core_theme.IconPlan
 	default:
 		return iconRef
 	}
@@ -85,109 +93,8 @@ var keyManageCmd = &cobra.Command{
 	Short:   "Interactively manage tmux session key mappings",
 	Long:    `Open an interactive table to map/unmap sessions to keys. Use arrow keys to navigate, 'e' to map CWD to an empty key, and space to unmap. Changes are auto-saved on exit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runKeyManageTUIImpl(cmd, args)
+		return runNavTUI()
 	},
-}
-
-// runKeyManageTUIImpl runs the key manage TUI implementation.
-func runKeyManageTUIImpl(cmd *cobra.Command, args []string) error {
-	mgr, err := tmux.NewManager(configDir)
-	if err != nil {
-		return fmt.Errorf("failed to initialize manager: %w", err)
-	}
-
-	// Detect current working directory for auto-selection
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current working directory: %w", err)
-	}
-
-	// Auto-select group based on last accessed or CWD
-	if targetGroup == "" {
-		if last := mgr.GetLastAccessedGroup(); last != "" {
-			mgr.SetActiveGroup(last)
-		} else if matched := mgr.FindGroupForPath(cwd); matched != "" {
-			mgr.SetActiveGroup(matched)
-		} else {
-			mgr.SetActiveGroup("default")
-		}
-	} else {
-		mgr.SetActiveGroup(targetGroup)
-	}
-
-	// Get current sessions
-	sessions, err := mgr.GetSessions()
-	if err != nil {
-		return fmt.Errorf("failed to get sessions: %w", err)
-	}
-
-	if len(sessions) == 0 {
-		fmt.Println("No sessions configured")
-		return nil
-	}
-
-	// Try to load cached enriched data for instant startup
-	enrichedProjects := make(map[string]*manager.SessionizeProject)
-	usedCache := false
-	if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
-		// Convert cached projects to SessionizeProject, validating paths exist
-		for path, cached := range cache.EnrichedProjects {
-			// Validate that the path still exists
-			if _, err := os.Stat(path); err == nil {
-				enrichedProjects[path] = &manager.SessionizeProject{
-					WorkspaceNode: cached.WorkspaceNode,
-					GitStatus:     cached.GitStatus,
-					NoteCounts:    cached.NoteCounts,
-					PlanStats:     cached.PlanStats,
-				}
-			}
-			// Skip stale entries (paths that no longer exist)
-		}
-		usedCache = len(enrichedProjects) > 0
-	}
-
-	// Create the interactive model
-	m := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
-
-	// Run the interactive program
-	p := tea.NewProgram(&m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running program: %w", err)
-	}
-
-	// Handle post-TUI logic
-	if mm, ok := finalModel.(*manageModel); ok {
-		// Save changes if any were made
-		if mm.changesMade {
-			if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-				return fmt.Errorf("failed to save sessions: %w", err)
-			}
-
-			if err := mgr.RegenerateBindings(); err != nil {
-				return fmt.Errorf("failed to regenerate bindings: %w", err)
-			}
-
-			_ = reloadTmuxConfig() // Silent reload
-		}
-
-		// Execute command on exit if set
-		if mm.commandOnExit != nil {
-			mm.commandOnExit.Stdin = os.Stdin
-			mm.commandOnExit.Stdout = os.Stdout
-			mm.commandOnExit.Stderr = os.Stderr
-			if err := mm.commandOnExit.Run(); err != nil {
-				// Silently ignore popup close errors
-			}
-		}
-
-		// Handle handoff to other TUI
-		if mm.nextCommand == "groups" {
-			return runGroupsTUIImpl(cmd, args, true)
-		}
-	}
-
-	return nil
 }
 
 // Styles
@@ -1062,9 +969,9 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Groups):
-			// Hand off to groups TUI
+			// Switch to groups view
 			m.nextCommand = "groups"
-			return m, tea.Quit
+			return m, nil // Don't quit - parent will handle view switch
 
 		case key.Matches(msg, m.keys.DeleteGroup):
 			if m.manager.GetActiveGroup() == "default" {
@@ -1338,7 +1245,7 @@ func (m *manageModel) View() string {
 	case "<grove>":
 		hotkey = "C-g → key"
 	case "":
-		hotkey = "direct"
+		hotkey = "no prefix"
 	default:
 		if strings.HasPrefix(prefix, "<prefix> ") {
 			key := strings.TrimPrefix(prefix, "<prefix> ")
@@ -1362,23 +1269,34 @@ func (m *manageModel) View() string {
 		var tabs []string
 		for _, g := range groups {
 			iconStr := ""
-			if g != "default" {
+			if g == "default" {
+				// Use configured default_icon or fall back to IconHome
+				if defIcon := m.manager.GetDefaultIcon(); defIcon != "" {
+					iconStr = resolveIcon(defIcon) + " "
+				} else {
+					iconStr = core_theme.IconHome + " "
+				}
+			} else {
 				if cfg, ok := m.manager.GetGroupConfig(g); ok && cfg.Icon != "" {
 					iconStr = resolveIcon(cfg.Icon) + " "
+				} else {
+					// Default icon for groups without configured icon
+					iconStr = core_theme.IconFolderStar + " "
 				}
 			}
 
-			tabText := " " + iconStr + g + " "
+			tabText := iconStr + g
 
 			if g == activeGroup {
-				// Active tab: highlighted with box characters
-				tabs = append(tabs, core_theme.DefaultTheme.Selected.Render(tabText))
+				// Active tab: arrow indicator + highlighted text
+				arrow := core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold)
+				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText))
 			} else {
-				// Inactive tab: muted
-				tabs = append(tabs, core_theme.DefaultTheme.Muted.Render(tabText))
+				// Inactive tab: space placeholder (same width as arrow) + muted text
+				tabs = append(tabs, "  "+core_theme.DefaultTheme.Muted.Render(tabText))
 			}
 		}
-		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render("│")))
+		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render(" │")))
 	}
 
 	// Show move mode indicator

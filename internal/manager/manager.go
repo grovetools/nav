@@ -618,6 +618,14 @@ func (m *Manager) GetPrefix() string {
 	return m.GetPrefixForGroup(m.activeGroup)
 }
 
+// GetDefaultIcon returns the configured icon for the default group.
+func (m *Manager) GetDefaultIcon() string {
+	if m.tmuxConfig == nil {
+		return ""
+	}
+	return m.tmuxConfig.DefaultIcon
+}
+
 func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
 	if m.tmuxConfig == nil {
 		return []models.TmuxSession{}, nil
