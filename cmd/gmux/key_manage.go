@@ -920,12 +920,17 @@ func (m *manageModel) View() string {
 	switch prefix {
 	case "<prefix>":
 		hotkey = "C-b → key"
+	case "<grove>":
+		hotkey = "C-g → key"
 	case "":
 		hotkey = "direct"
 	default:
 		if strings.HasPrefix(prefix, "<prefix> ") {
 			key := strings.TrimPrefix(prefix, "<prefix> ")
 			hotkey = fmt.Sprintf("C-b %s → key", key)
+		} else if strings.HasPrefix(prefix, "<grove> ") {
+			key := strings.TrimPrefix(prefix, "<grove> ")
+			hotkey = fmt.Sprintf("C-g %s → key", key)
 		} else {
 			hotkey = fmt.Sprintf("%s → key", prefix)
 		}

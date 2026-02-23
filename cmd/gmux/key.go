@@ -98,15 +98,20 @@ var keyListCmd = &cobra.Command{
 		var prefixMode string
 		switch prefix {
 		case "<prefix>":
-			prefixMode = "Native Tmux Prefix"
+			prefixMode = "Native Tmux Prefix (C-b → key)"
+		case "<grove>":
+			prefixMode = "Grove Popups (C-g → key)"
 		case "":
 			prefixMode = "Direct Root"
 		default:
 			if strings.HasPrefix(prefix, "<prefix> ") {
 				key := strings.TrimPrefix(prefix, "<prefix> ")
-				prefixMode = fmt.Sprintf("Prefix + %s", key)
+				prefixMode = fmt.Sprintf("Prefix + %s (C-b %s → key)", key, key)
+			} else if strings.HasPrefix(prefix, "<grove> ") {
+				key := strings.TrimPrefix(prefix, "<grove> ")
+				prefixMode = fmt.Sprintf("Grove + %s (C-g %s → key)", key, key)
 			} else {
-				prefixMode = fmt.Sprintf("Prefix: %s", prefix)
+				prefixMode = fmt.Sprintf("Prefix: %s (%s → key)", prefix, prefix)
 			}
 		}
 		ulogKey.Info("Prefix Mode").
@@ -818,12 +823,17 @@ var keyRegenerateCmd = &cobra.Command{
 		switch prefix {
 		case "<prefix>":
 			prefixMode = "Native Tmux Prefix"
+		case "<grove>":
+			prefixMode = "Grove Popups"
 		case "":
 			prefixMode = "Direct Root"
 		default:
 			if strings.HasPrefix(prefix, "<prefix> ") {
 				key := strings.TrimPrefix(prefix, "<prefix> ")
 				prefixMode = fmt.Sprintf("Prefix + %s", key)
+			} else if strings.HasPrefix(prefix, "<grove> ") {
+				key := strings.TrimPrefix(prefix, "<grove> ")
+				prefixMode = fmt.Sprintf("Grove + %s", key)
 			} else {
 				prefixMode = fmt.Sprintf("Prefix: %s", prefix)
 			}
