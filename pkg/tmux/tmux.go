@@ -126,3 +126,23 @@ func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
 func (m *Manager) GetPrefix() string {
 	return m.mgr.GetPrefix()
 }
+
+// SetActiveGroup switches the manager to operate on a different workspace group
+func (m *Manager) SetActiveGroup(group string) {
+	m.mgr.SetActiveGroup(group)
+}
+
+// GetActiveGroup returns the name of the currently active workspace group
+func (m *Manager) GetActiveGroup() string {
+	return m.mgr.GetActiveGroup()
+}
+
+// GetGroups returns a list of all available workspace groups
+func (m *Manager) GetGroups() []string {
+	return m.mgr.GetGroups()
+}
+
+// GetPrefixForGroup returns the configured prefix for a specific group
+func (m *Manager) GetPrefixForGroup(group string) string {
+	return m.mgr.GetPrefixForGroup(group)
+}

@@ -1,6 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/grovetools/nav/internal/manager/tmux-config",
+  "$defs": {
+    "GroupRef": {
+      "properties": {
+        "prefix": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "prefix"
+      ]
+    }
+  },
   "properties": {
     "prefix": {
       "type": "string",
@@ -23,6 +36,13 @@
       "description": "Show child processes in pane list",
       "x-layer": "global",
       "x-priority": "71"
+    },
+    "groups": {
+      "additionalProperties": {
+        "$ref": "#/$defs/GroupRef"
+      },
+      "type": "object",
+      "description": "Workspace groups for multiple key prefixes"
     }
   },
   "type": "object",

@@ -22,10 +22,12 @@ type ManageKeyMap struct {
 	MoveDown    key.Binding
 	ConfirmMove key.Binding
 	TogglePaths key.Binding
+	NextGroup   key.Binding
+	PrevGroup   key.Binding
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.MoveMode, k.Lock, k.TogglePaths, k.Quit}
+	return []key.Binding{k.MoveMode, k.Lock, k.TogglePaths, k.NextGroup, k.Quit}
 }
 
 func (k ManageKeyMap) FullHelp() [][]key.Binding {
@@ -41,8 +43,14 @@ func (k ManageKeyMap) FullHelp() [][]key.Binding {
 // Only includes bindings that the manage TUI actually implements.
 func (k ManageKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
+		keymap.NewSection("Groups",
+			k.NextGroup,
+			k.PrevGroup,
+		),
 		keymap.NavigationSection(
 			k.Up, k.Down,
+			k.PageUp, k.PageDown,
+			k.Top, k.Bottom,
 			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
 			k.Open,
 		),
@@ -110,6 +118,14 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		TogglePaths: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "toggle paths"),
+		),
+		NextGroup: key.NewBinding(
+			key.WithKeys("tab"),
+			key.WithHelp("tab", "next group"),
+		),
+		PrevGroup: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("shift+tab", "prev group"),
 		),
 	}
 

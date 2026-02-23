@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -20,6 +21,10 @@ import (
 var ulogKey = grovelogging.NewUnifiedLogger("gmux.key")
 
 // (listStyle is now declared in main.go)
+
+// Group flags for multi-group support
+var targetGroup string
+var listAllGroups bool
 
 var keyCmd = &cobra.Command{
 	Use:   "key",
@@ -80,6 +85,40 @@ var keyListCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
+
+		// Handle --all-groups flag
+		if listAllGroups {
+			groups := mgr.GetGroups()
+			for _, g := range groups {
+				mgr.SetActiveGroup(g)
+				sessions, err := mgr.GetSessions()
+				if err != nil {
+					continue
+				}
+
+				prefix := mgr.GetPrefix()
+				var prefixMode string
+				if prefix == "<prefix>" {
+					prefixMode = "Native Tmux Prefix"
+				} else {
+					prefixMode = prefix
+				}
+
+				fmt.Printf("\n--- Group: %s (Prefix: %s) ---\n", g, prefixMode)
+				if len(sessions) > 0 {
+					displaySessionsTable(sessions)
+				} else {
+					fmt.Println("No sessions configured")
+				}
+			}
+			return nil
+		}
+
+		// Set target group if specified
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -114,8 +153,14 @@ var keyListCmd = &cobra.Command{
 				prefixMode = fmt.Sprintf("Prefix: %s (%s → key)", prefix, prefix)
 			}
 		}
+
+		// Show group info if not default
+		groupInfo := ""
+		if targetGroup != "" && targetGroup != "default" {
+			groupInfo = fmt.Sprintf(" [Group: %s]", targetGroup)
+		}
 		ulogKey.Info("Prefix Mode").
-			Pretty(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Active Prefix: %s", prefixMode)) + "\n").
+			Pretty(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Active Prefix: %s%s", prefixMode, groupInfo)) + "\n").
 			PrettyOnly().
 			Emit()
 
@@ -156,6 +201,11 @@ var keyUpdateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
+
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -311,6 +361,11 @@ var keyEditCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
+
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -438,6 +493,10 @@ var keyAddCmd = &cobra.Command{
 		mgr, err := tmux.NewManager(configDir)
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
+
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
 		}
 
 		// Get current sessions to see which keys are available
@@ -664,6 +723,11 @@ var keyUnmapCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
+
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		sessions, err := mgr.GetSessions()
 		if err != nil {
 			return fmt.Errorf("failed to get sessions: %w", err)
@@ -817,6 +881,10 @@ var keyRegenerateCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
 
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		// Show prefix mode
 		prefix := mgr.GetPrefix()
 		var prefixMode string
@@ -848,17 +916,47 @@ var keyRegenerateCmd = &cobra.Command{
 			return fmt.Errorf("failed to regenerate bindings: %w", err)
 		}
 
+		// Auto-reload tmux on all running servers
+		reloadAllTmuxServers()
+
 		ulogKey.Success("Bindings regenerated").
-			Pretty(core_theme.IconSuccess + " Bindings regenerated successfully!").
+			Pretty(core_theme.IconSuccess + " Bindings regenerated and tmux reloaded!").
 			PrettyOnly().
 			Emit()
 		return nil
 	},
 }
 
+// reloadAllTmuxServers reloads the nav bindings on all running tmux servers
+func reloadAllTmuxServers() {
+	bindingsFile := filepath.Join(os.Getenv("HOME"), ".cache", "grove", "nav", "generated-bindings.conf")
+
+	// List all tmux sockets and reload each one
+	socketsDir := "/tmp"
+	if entries, err := os.ReadDir(socketsDir); err == nil {
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "tmux-") {
+				socketPath := filepath.Join(socketsDir, entry.Name())
+				if sockets, err := os.ReadDir(socketPath); err == nil {
+					for _, sock := range sockets {
+						serverName := sock.Name()
+						_ = exec.Command("tmux", "-L", serverName, "source-file", bindingsFile).Run()
+					}
+				}
+			}
+		}
+	}
+	// Also try default server (no -L flag)
+	_ = exec.Command("tmux", "source-file", bindingsFile).Run()
+}
+
 func init() {
 	// Add the new --style flag to the command
 	keyListCmd.Flags().StringVar(&listStyle, "style", "table", "Output style: table or compact")
+	keyListCmd.Flags().BoolVarP(&listAllGroups, "all-groups", "a", false, "List all workspace groups")
+
+	// Add group flag to keyCmd (persistent so it applies to all subcommands)
+	keyCmd.PersistentFlags().StringVarP(&targetGroup, "group", "g", "", "Target workspace group")
 
 	keyCmd.AddCommand(keyListCmd)
 	keyCmd.AddCommand(keyUpdateCmd)

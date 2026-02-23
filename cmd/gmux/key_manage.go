@@ -61,6 +61,10 @@ var keyManageCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
 
+		if targetGroup != "" {
+			mgr.SetActiveGroup(targetGroup)
+		}
+
 		// Get current sessions
 		sessions, err := mgr.GetSessions()
 		if err != nil {
@@ -704,6 +708,14 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pathDisplayMode = (m.pathDisplayMode + 1) % 3
 			return m, nil
 
+		case key.Matches(msg, m.keys.NextGroup):
+			m.cycleGroup(1)
+			return m, nil
+
+		case key.Matches(msg, m.keys.PrevGroup):
+			m.cycleGroup(-1)
+			return m, nil
+
 		case key.Matches(msg, m.keys.Quit):
 			// Just quit - save happens after TUI exits
 			return m, tea.Quit
@@ -886,16 +898,32 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
 				m.cursor--
-				// Rebuild sessions order based on locked status
-				m.rebuildSessionsOrder()
 			}
 
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
-				// Rebuild sessions order based on locked status
-				m.rebuildSessionsOrder()
 			}
+
+		case key.Matches(msg, m.keys.PageUp):
+			// Move up by half page (5 rows)
+			m.cursor -= 5
+			if m.cursor < 0 {
+				m.cursor = 0
+			}
+
+		case key.Matches(msg, m.keys.PageDown):
+			// Move down by half page (5 rows)
+			m.cursor += 5
+			if m.cursor >= len(m.sessions) {
+				m.cursor = len(m.sessions) - 1
+			}
+
+		case key.Matches(msg, m.keys.Top):
+			m.cursor = 0
+
+		case key.Matches(msg, m.keys.Bottom):
+			m.cursor = len(m.sessions) - 1
 		}
 	}
 
@@ -935,8 +963,27 @@ func (m *manageModel) View() string {
 			hotkey = fmt.Sprintf("%s → key", prefix)
 		}
 	}
+
 	title := fmt.Sprintf("%s Session Hotkeys (%s)", core_theme.IconKeyboard, hotkey)
 	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
+
+	// Render group tabs if multiple groups exist
+	groups := m.manager.GetGroups()
+	if len(groups) > 1 {
+		b.WriteString("\n")
+		activeGroup := m.manager.GetActiveGroup()
+		var tabs []string
+		for _, g := range groups {
+			if g == activeGroup {
+				// Active tab: highlighted with box characters
+				tabs = append(tabs, core_theme.DefaultTheme.Selected.Render(" "+g+" "))
+			} else {
+				// Inactive tab: muted
+				tabs = append(tabs, core_theme.DefaultTheme.Muted.Render(" "+g+" "))
+			}
+		}
+		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render("│")))
+	}
 
 	// Show move mode indicator
 	if m.moveMode {
@@ -1279,7 +1326,7 @@ func (m *manageModel) View() string {
 	// Render locked section if there are locked keys
 	if len(lockedRows) > 0 {
 		b.WriteString("\n")
-		b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconLock + " Locked"))
+		b.WriteString(core_theme.DefaultTheme.Muted.Render(core_theme.IconLock + " Locked"))
 		b.WriteString("\n")
 
 		var lockedTableStr string
@@ -1326,6 +1373,48 @@ func (m *manageModel) rebuildSessionsOrder() {
 	}
 
 	m.sessions = append(unlocked, locked...)
+}
+
+// cycleGroup switches to the next or previous workspace group
+func (m *manageModel) cycleGroup(dir int) {
+	// Save changes for current group before switching
+	if m.changesMade {
+		_ = m.manager.UpdateSessionsAndLocks(m.sessions, m.getLockedKeysSlice())
+	}
+
+	groups := m.manager.GetGroups()
+	if len(groups) <= 1 {
+		m.message = "No other groups configured"
+		return
+	}
+
+	currentIdx := 0
+	for i, g := range groups {
+		if g == m.manager.GetActiveGroup() {
+			currentIdx = i
+			break
+		}
+	}
+
+	nextIdx := (currentIdx + dir) % len(groups)
+	if nextIdx < 0 {
+		nextIdx = len(groups) - 1
+	}
+
+	newGroup := groups[nextIdx]
+	m.manager.SetActiveGroup(newGroup)
+
+	// Reload sessions for the new group
+	m.sessions, _ = m.manager.GetSessions()
+	lockedKeysSlice := m.manager.GetLockedKeys()
+	m.lockedKeys = make(map[string]bool)
+	for _, key := range lockedKeysSlice {
+		m.lockedKeys[key] = true
+	}
+	m.cursor = 0
+	m.rebuildSessionsOrder()
+	m.changesMade = false
+	m.message = fmt.Sprintf("Switched to group: %s", newGroup)
 }
 
 // getLockedKeysSlice converts the locked keys map to a slice

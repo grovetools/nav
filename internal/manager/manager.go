@@ -29,6 +29,8 @@ type Manager struct {
 	configPath   string
 	sessionsPath string
 	tmuxClient   *tmux.Client
+	activeGroup  string
+	sessionsFile TmuxSessionsFile
 }
 
 // expandPath expands ~ to home directory
@@ -94,9 +96,9 @@ func NewManager(configDir string) (*Manager, error) {
 	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
 	sessions := make(map[string]TmuxSessionConfig)
 	var lockedKeys []string
+	var sessionsFile TmuxSessionsFile
 
 	if data, err := os.ReadFile(sessionsPath); err == nil {
-		var sessionsFile TmuxSessionsFile
 		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
 			// Ensure sessions map is not nil before assigning
 			if sessionsFile.Sessions != nil {
@@ -106,6 +108,14 @@ func NewManager(configDir string) (*Manager, error) {
 		}
 	}
 	// If file doesn't exist or is empty, sessions will be an empty map
+	if sessions == nil {
+		sessions = make(map[string]TmuxSessionConfig)
+	}
+	if sessionsFile.Groups == nil {
+		sessionsFile.Groups = make(map[string]GroupState)
+	}
+	sessionsFile.Sessions = sessions
+	sessionsFile.LockedKeys = lockedKeys
 
 	// Initialize tmux client
 	tmuxClient, clientErr := tmux.NewClient()
@@ -123,20 +133,95 @@ func NewManager(configDir string) (*Manager, error) {
 		configPath:   configPath,
 		sessionsPath: sessionsPath,
 		tmuxClient:   tmuxClient,
+		activeGroup:  "default",
+		sessionsFile: sessionsFile,
 	}, nil
+}
+
+// SetActiveGroup switches the manager to operate on a different workspace group.
+// When switching groups, sessions and lockedKeys are swapped to the group's state.
+func (m *Manager) SetActiveGroup(group string) {
+	if group == "" {
+		group = "default"
+	}
+	m.activeGroup = group
+	if group == "default" {
+		m.sessions = m.sessionsFile.Sessions
+		m.lockedKeys = m.sessionsFile.LockedKeys
+	} else {
+		if m.sessionsFile.Groups == nil {
+			m.sessionsFile.Groups = make(map[string]GroupState)
+		}
+		state, exists := m.sessionsFile.Groups[group]
+		if !exists {
+			state = GroupState{Sessions: make(map[string]TmuxSessionConfig)}
+			m.sessionsFile.Groups[group] = state
+		}
+		if state.Sessions == nil {
+			state.Sessions = make(map[string]TmuxSessionConfig)
+			m.sessionsFile.Groups[group] = state
+		}
+		m.sessions = state.Sessions
+		m.lockedKeys = state.LockedKeys
+	}
+}
+
+// GetActiveGroup returns the name of the currently active workspace group.
+func (m *Manager) GetActiveGroup() string {
+	return m.activeGroup
+}
+
+// GetGroups returns a list of all available workspace groups.
+// Always includes "default" as the first group, followed by other groups in sorted order.
+func (m *Manager) GetGroups() []string {
+	groups := []string{"default"}
+	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
+		// Collect group names and sort for deterministic ordering
+		var otherGroups []string
+		for g := range m.tmuxConfig.Groups {
+			otherGroups = append(otherGroups, g)
+		}
+		// Sort alphabetically
+		for i := 0; i < len(otherGroups)-1; i++ {
+			for j := i + 1; j < len(otherGroups); j++ {
+				if otherGroups[i] > otherGroups[j] {
+					otherGroups[i], otherGroups[j] = otherGroups[j], otherGroups[i]
+				}
+			}
+		}
+		groups = append(groups, otherGroups...)
+	}
+	return groups
+}
+
+// GetPrefixForGroup returns the configured prefix for a specific group.
+func (m *Manager) GetPrefixForGroup(group string) string {
+	if group == "default" || group == "" {
+		if m.tmuxConfig == nil || m.tmuxConfig.Prefix == "" {
+			return "<prefix>"
+		}
+		return m.tmuxConfig.Prefix
+	}
+	if m.tmuxConfig != nil && m.tmuxConfig.Groups != nil {
+		if g, ok := m.tmuxConfig.Groups[group]; ok && g.Prefix != "" {
+			return g.Prefix
+		}
+	}
+	// Fallback to default prefix if group has no custom prefix
+	if m.tmuxConfig != nil && m.tmuxConfig.Prefix != "" {
+		return m.tmuxConfig.Prefix
+	}
+	return "<prefix>"
 }
 
 func (m *Manager) GetLockedKeys() []string {
 	return m.lockedKeys
 }
 
-// GetPrefix returns the configured prefix for nav bindings.
+// GetPrefix returns the configured prefix for the active group's nav bindings.
 // Defaults to "<prefix>" (native tmux prefix table) for backwards compatibility.
 func (m *Manager) GetPrefix() string {
-	if m.tmuxConfig == nil || m.tmuxConfig.Prefix == "" {
-		return "<prefix>" // Default mode: bind to native tmux prefix table
-	}
-	return m.tmuxConfig.Prefix
+	return m.GetPrefixForGroup(m.activeGroup)
 }
 
 func (m *Manager) GetSessions() ([]models.TmuxSession, error) {
@@ -247,14 +332,22 @@ func (m *Manager) saveSessions() error {
 		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
-	// Create the sessions file structure
-	sessionsFile := TmuxSessionsFile{
-		Sessions:   m.sessions,
-		LockedKeys: m.lockedKeys,
+	// Update the sessions file structure based on active group
+	if m.activeGroup == "default" || m.activeGroup == "" {
+		m.sessionsFile.Sessions = m.sessions
+		m.sessionsFile.LockedKeys = m.lockedKeys
+	} else {
+		if m.sessionsFile.Groups == nil {
+			m.sessionsFile.Groups = make(map[string]GroupState)
+		}
+		m.sessionsFile.Groups[m.activeGroup] = GroupState{
+			Sessions:   m.sessions,
+			LockedKeys: m.lockedKeys,
+		}
 	}
 
 	// Marshal to YAML
-	data, err := yaml.Marshal(sessionsFile)
+	data, err := yaml.Marshal(m.sessionsFile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sessions: %w", err)
 	}
@@ -739,81 +832,104 @@ func (m *Manager) hasSession(name string) bool {
 	return err == nil && exists
 }
 
-// RegenerateBindingsGo generates tmux key bindings in Go (replacing Python script)
+// RegenerateBindingsGo generates tmux key bindings in Go (replacing Python script).
+// It processes all configured workspace groups and generates separate binding files.
 func (m *Manager) RegenerateBindingsGo() error {
-	sessions, err := m.GetSessions()
-	if err != nil {
-		return fmt.Errorf("failed to get sessions: %w", err)
-	}
+	// Preserve current active group
+	originalGroup := m.activeGroup
+	defer m.SetActiveGroup(originalGroup)
 
-	// Create keygen config for prefix handling
-	cfg := keygen.Config{
-		Prefix:    m.GetPrefix(),
-		TableName: "nav-workspaces",
-	}
+	groups := m.GetGroups()
+	var masterBindings strings.Builder
+	masterBindings.WriteString("# Auto-generated nav workspace bindings\n")
+	masterBindings.WriteString("# Generated by grove nav\n\n")
 
-	var bindings strings.Builder
-	bindings.WriteString("# Auto-generated tmux key bindings from grove.yml\n")
-	bindings.WriteString("# Generated by grove-tmux\n")
-	bindings.WriteString(fmt.Sprintf("# Prefix mode: %s\n\n", m.GetPrefix()))
-
-	// Add hook to record session access when switching sessions via native tmux commands
-	bindings.WriteString("# Hook to track session switches for history\n")
 	binDir := paths.BinDir()
-	bindings.WriteString(fmt.Sprintf("set-hook -g client-session-changed 'run-shell -b \"HOME=$HOME PATH=$PATH:%s nav record-session\"'\n\n", binDir))
 
-	// Generate entry point and escape hatches using keygen package
-	entryPoint := cfg.GenerateEntryPoint()
-	if len(entryPoint) > 0 {
-		bindings.WriteString(strings.Join(entryPoint, "\n"))
-		bindings.WriteString("\n")
-	}
-
-	escapeHatches := cfg.GenerateEscapeHatches("nav key list | less -R")
-	if len(escapeHatches) > 0 {
-		bindings.WriteString(strings.Join(escapeHatches, "\n"))
-		bindings.WriteString("\n")
-	}
-
-	// Use nav sessionize with proper environment to ensure it works in tmux shell context
-	// HOME is needed for config directory resolution, PATH for finding the binary
-	sessionizerPath := fmt.Sprintf("HOME=$HOME PATH=$PATH:%s nav sessionize", binDir)
-
-	// Sort sessions by key for consistent output
-	sortedSessions := make([]models.TmuxSession, len(sessions))
-	copy(sortedSessions, sessions)
-	// Sort by key
-	for i := 0; i < len(sortedSessions)-1; i++ {
-		for j := i + 1; j < len(sortedSessions); j++ {
-			if sortedSessions[i].Key > sortedSessions[j].Key {
-				sortedSessions[i], sortedSessions[j] = sortedSessions[j], sortedSessions[i]
-			}
-		}
-	}
-
-	bindings.WriteString("# --- Workspace Bindings ---\n")
-	for _, session := range sortedSessions {
-		if session.Path == "" {
+	for _, group := range groups {
+		m.SetActiveGroup(group)
+		sessions, err := m.GetSessions()
+		if err != nil {
 			continue
 		}
 
-		comment := fmt.Sprintf("# %s: %s", session.Key, session.Repository)
-		if session.Description != "" {
-			comment = fmt.Sprintf("# %s: %s - %s", session.Key, session.Repository, session.Description)
+		prefix := m.GetPrefix()
+		tableName := "nav-workspaces"
+		if group != "default" {
+			tableName = "nav-" + group
 		}
 
-		bindings.WriteString(comment + "\n")
+		cfg := keygen.Config{
+			Prefix:    prefix,
+			TableName: tableName,
+		}
 
-		// Build the action for this binding
-		actionPart := fmt.Sprintf("run-shell \"%s '%s'\"", sessionizerPath, session.Path)
+		var bindings strings.Builder
+		bindings.WriteString(fmt.Sprintf("# Group: %s\n", group))
+		bindings.WriteString(fmt.Sprintf("# Prefix mode: %s\n\n", prefix))
 
-		// Use keygen to format the bind-key command with -r flag for repeatable
-		bindCmd := cfg.FormatBindKey(session.Key, actionPart, "-r")
-		bindings.WriteString(bindCmd + "\n\n")
+		if group == "default" {
+			bindings.WriteString("# Hook to track session switches for history\n")
+			bindings.WriteString(fmt.Sprintf("set-hook -g client-session-changed 'run-shell -b \"HOME=$HOME PATH=$PATH:%s nav record-session\"'\n\n", binDir))
+		}
+
+		entryPoint := cfg.GenerateEntryPoint()
+		if len(entryPoint) > 0 {
+			bindings.WriteString(strings.Join(entryPoint, "\n"))
+			bindings.WriteString("\n")
+		}
+
+		helpCmd := "nav key list | less -R"
+		if group != "default" {
+			helpCmd = fmt.Sprintf("nav key list --group %s | less -R", group)
+		}
+		escapeHatches := cfg.GenerateEscapeHatches(helpCmd)
+		if len(escapeHatches) > 0 {
+			bindings.WriteString(strings.Join(escapeHatches, "\n"))
+			bindings.WriteString("\n")
+		}
+
+		sessionizerPath := fmt.Sprintf("HOME=$HOME PATH=$PATH:%s nav sessionize", binDir)
+
+		// Sort sessions by key for consistent output
+		sortedSessions := make([]models.TmuxSession, len(sessions))
+		copy(sortedSessions, sessions)
+		for i := 0; i < len(sortedSessions)-1; i++ {
+			for j := i + 1; j < len(sortedSessions); j++ {
+				if sortedSessions[i].Key > sortedSessions[j].Key {
+					sortedSessions[i], sortedSessions[j] = sortedSessions[j], sortedSessions[i]
+				}
+			}
+		}
+
+		bindings.WriteString("# --- Workspace Bindings ---\n")
+		for _, session := range sortedSessions {
+			if session.Path == "" {
+				continue
+			}
+			comment := fmt.Sprintf("# %s: %s", session.Key, session.Repository)
+			bindings.WriteString(comment + "\n")
+			actionPart := fmt.Sprintf("run-shell \"%s '%s'\"", sessionizerPath, session.Path)
+			bindCmd := cfg.FormatBindKey(session.Key, actionPart, "-r")
+			bindings.WriteString(bindCmd + "\n\n")
+		}
+
+		if group == "default" {
+			masterBindings.WriteString(bindings.String())
+		} else {
+			groupFilename := fmt.Sprintf("generated-bindings-%s.conf", group)
+			groupFile := filepath.Join(paths.CacheDir(), "nav", groupFilename)
+			if err := os.WriteFile(groupFile, []byte(bindings.String()), 0o644); err != nil {
+				return fmt.Errorf("failed to write group bindings file %s: %w", groupFilename, err)
+			}
+
+			masterBindings.WriteString(fmt.Sprintf("\n# Source group: %s\n", group))
+			masterBindings.WriteString(fmt.Sprintf("source-file %s\n", groupFile))
+		}
 	}
 
-	bindingsFile := filepath.Join(paths.CacheDir(), "nav", "generated-bindings.conf")
-	return os.WriteFile(bindingsFile, []byte(bindings.String()), 0o644)
+	masterFile := filepath.Join(paths.CacheDir(), "nav", "generated-bindings.conf")
+	return os.WriteFile(masterFile, []byte(masterBindings.String()), 0o644)
 }
 
 // DetectTmuxKeyForPath detects the tmux session key for a given working directory
