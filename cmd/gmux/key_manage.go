@@ -914,8 +914,24 @@ func (m *manageModel) View() string {
 
 	var b strings.Builder
 
-	// Title with mode indicators
-	b.WriteString(core_theme.DefaultTheme.Header.Render("Session Hotkeys"))
+	// Title with key mapping
+	prefix := m.manager.GetPrefix()
+	var hotkey string
+	switch prefix {
+	case "<prefix>":
+		hotkey = "C-b → key"
+	case "":
+		hotkey = "direct"
+	default:
+		if strings.HasPrefix(prefix, "<prefix> ") {
+			key := strings.TrimPrefix(prefix, "<prefix> ")
+			hotkey = fmt.Sprintf("C-b %s → key", key)
+		} else {
+			hotkey = fmt.Sprintf("%s → key", prefix)
+		}
+	}
+	title := fmt.Sprintf("%s Session Hotkeys (%s)", core_theme.IconKeyboard, hotkey)
+	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
 
 	// Show move mode indicator
 	if m.moveMode {
@@ -944,13 +960,8 @@ func (m *manageModel) View() string {
 		gitHeader = "Git " + spinner
 	}
 
-	plansHeader := "Plans"
-	if m.enrichmentLoading["plans"] {
-		plansHeader = "Plans " + spinner
-	}
-
 	// Build headers based on path display mode
-	headers := []string{"#", "Key", "CX", "Repository", "Branch/Worktree", gitHeader, plansHeader, "Ecosystem"}
+	headers := []string{"#", "Key", "Repository", "Branch/Worktree", gitHeader, "Ecosystem"}
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "Path")
 	}
@@ -962,8 +973,6 @@ func (m *manageModel) View() string {
 	for i, s := range unlockedSessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
-		planStatus := ""
-		cxStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1046,20 +1055,6 @@ func (m *manageModel) View() string {
 					gitStatus = formatChanges(projInfo.GitStatus.StatusInfo, projInfo.GitStatus)
 				}
 
-				// Format Plan status
-				if projInfo.PlanStats != nil {
-					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
-				}
-				if projInfo.ContextStatus != "" {
-					switch projInfo.ContextStatus {
-					case "H":
-						cxStatus = core_theme.DefaultTheme.Success.Render("H")
-					case "C":
-						cxStatus = core_theme.DefaultTheme.Info.Render("C")
-					case "X":
-						cxStatus = core_theme.DefaultTheme.Error.Render("X")
-					}
-				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1092,11 +1087,9 @@ func (m *manageModel) View() string {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
-			cxStatus,
 			repository,
 			branchWorktreeDisplay,
 			gitStatus,
-			planStatus,
 			ecosystem,
 		}
 		// Add path column if enabled
@@ -1120,8 +1113,6 @@ func (m *manageModel) View() string {
 	for i, s := range lockedSessions {
 		var ecosystem, repository, worktree string
 		gitStatus := ""
-		planStatus := ""
-		cxStatus := ""
 
 		if s.Path != "" {
 			cleanPath := filepath.Clean(s.Path)
@@ -1204,20 +1195,6 @@ func (m *manageModel) View() string {
 					gitStatus = formatChanges(projInfo.GitStatus.StatusInfo, projInfo.GitStatus)
 				}
 
-				// Format Plan status
-				if projInfo.PlanStats != nil {
-					planStatus = formatPlanStatsForKeyManage(projInfo.PlanStats)
-				}
-				if projInfo.ContextStatus != "" {
-					switch projInfo.ContextStatus {
-					case "H":
-						cxStatus = core_theme.DefaultTheme.Success.Render("H")
-					case "C":
-						cxStatus = core_theme.DefaultTheme.Info.Render("C")
-					case "X":
-						cxStatus = core_theme.DefaultTheme.Error.Render("X")
-					}
-				}
 			} else {
 				// Fallback if no enriched data
 				repository = filepath.Base(s.Path)
@@ -1250,11 +1227,9 @@ func (m *manageModel) View() string {
 		row := []string{
 			fmt.Sprintf("%d", i+1),
 			s.Key,
-			cxStatus,
 			repository,
 			branchWorktreeDisplay,
 			gitStatus,
-			planStatus,
 			ecosystem,
 		}
 		// Add path column if enabled
@@ -1299,7 +1274,7 @@ func (m *manageModel) View() string {
 	// Render locked section if there are locked keys
 	if len(lockedRows) > 0 {
 		b.WriteString("\n")
-		b.WriteString(core_theme.DefaultTheme.Header.Render("Locked Keys"))
+		b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconLock + " Locked"))
 		b.WriteString("\n")
 
 		var lockedTableStr string

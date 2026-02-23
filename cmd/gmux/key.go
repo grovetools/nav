@@ -93,6 +93,27 @@ var keyListCmd = &cobra.Command{
 			return nil
 		}
 
+		// Show prefix mode information
+		prefix := mgr.GetPrefix()
+		var prefixMode string
+		switch prefix {
+		case "<prefix>":
+			prefixMode = "Native Tmux Prefix"
+		case "":
+			prefixMode = "Direct Root"
+		default:
+			if strings.HasPrefix(prefix, "<prefix> ") {
+				key := strings.TrimPrefix(prefix, "<prefix> ")
+				prefixMode = fmt.Sprintf("Prefix + %s", key)
+			} else {
+				prefixMode = fmt.Sprintf("Prefix: %s", prefix)
+			}
+		}
+		ulogKey.Info("Prefix Mode").
+			Pretty(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Active Prefix: %s", prefixMode)) + "\n").
+			PrettyOnly().
+			Emit()
+
 		// Check the style flag to determine output format
 		if listStyle == "compact" {
 			keyStyle := core_theme.DefaultTheme.Highlight
@@ -781,6 +802,50 @@ func setParentForClonedProjectsInKeyAdd(projects []manager.DiscoveredProject) {
 	}
 }
 
+var keyRegenerateCmd = &cobra.Command{
+	Use:   "regenerate",
+	Short: "Regenerate tmux key bindings configuration",
+	Long:  `Regenerate the tmux key bindings file based on current configuration and sessions.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		mgr, err := tmux.NewManager(configDir)
+		if err != nil {
+			return fmt.Errorf("failed to initialize manager: %w", err)
+		}
+
+		// Show prefix mode
+		prefix := mgr.GetPrefix()
+		var prefixMode string
+		switch prefix {
+		case "<prefix>":
+			prefixMode = "Native Tmux Prefix"
+		case "":
+			prefixMode = "Direct Root"
+		default:
+			if strings.HasPrefix(prefix, "<prefix> ") {
+				key := strings.TrimPrefix(prefix, "<prefix> ")
+				prefixMode = fmt.Sprintf("Prefix + %s", key)
+			} else {
+				prefixMode = fmt.Sprintf("Prefix: %s", prefix)
+			}
+		}
+		ulogKey.Info("Regenerating bindings").
+			Field("prefix_mode", prefixMode).
+			Pretty(fmt.Sprintf("%s Regenerating bindings (Prefix: %s)...", core_theme.IconRunning, prefixMode)).
+			PrettyOnly().
+			Emit()
+
+		if err := mgr.RegenerateBindings(); err != nil {
+			return fmt.Errorf("failed to regenerate bindings: %w", err)
+		}
+
+		ulogKey.Success("Bindings regenerated").
+			Pretty(core_theme.IconSuccess + " Bindings regenerated successfully!").
+			PrettyOnly().
+			Emit()
+		return nil
+	},
+}
+
 func init() {
 	// Add the new --style flag to the command
 	keyListCmd.Flags().StringVar(&listStyle, "style", "table", "Output style: table or compact")
@@ -790,4 +855,5 @@ func init() {
 	keyCmd.AddCommand(keyEditCmd)
 	keyCmd.AddCommand(keyAddCmd)
 	keyCmd.AddCommand(keyUnmapCmd)
+	keyCmd.AddCommand(keyRegenerateCmd)
 }

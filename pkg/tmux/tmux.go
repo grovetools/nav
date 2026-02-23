@@ -121,3 +121,8 @@ func (m *Manager) GetAvailableKeys() []string {
 func (m *Manager) UpdateSessionKey(oldKey, newKey string) error {
 	return m.mgr.UpdateSessionKey(oldKey, newKey)
 }
+
+// GetPrefix returns the configured prefix for nav bindings
+func (m *Manager) GetPrefix() string {
+	return m.mgr.GetPrefix()
+}

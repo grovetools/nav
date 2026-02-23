@@ -2,6 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/grovetools/nav/internal/manager/tmux-config",
   "properties": {
+    "prefix": {
+      "type": "string",
+      "description": "Prefix key for nav bindings. Options: '\u003cprefix\u003e' (default)",
+      "x-layer": "global",
+      "x-priority": "69"
+    },
     "available_keys": {
       "items": {
         "type": "string"
