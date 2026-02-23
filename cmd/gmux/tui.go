@@ -70,6 +70,7 @@ type sessionizeModel struct {
 
 	// Filter mode
 	filterDirty bool // Whether to filter to only projects with dirty Git status
+	filterGroup bool // Whether to filter to only projects in the active group
 
 	// Context-only projects (shown but not selectable during filtered search in focus mode)
 	contextOnlyPaths map[string]bool
@@ -94,9 +95,47 @@ type sessionizeModel struct {
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
 	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
-	ti.Placeholder = "Press / to filter..."
+	ti.Placeholder = ""
+	ti.Prompt = "> "
 	ti.CharLimit = 256
 	ti.Width = 50
+
+	// Determine initial group based on context priority
+	initialGroup := "default"
+	autoEnableGroupFilter := false
+
+	// 1. Current working directory match (most specific - we're inside a mapped project)
+	cwd, err := os.Getwd()
+	if err == nil && cwd != "" {
+		if cwdGroup := mgr.FindGroupForPath(cwd); cwdGroup != "" {
+			initialGroup = cwdGroup
+			autoEnableGroupFilter = true
+		}
+	}
+
+	// 2. Ecosystem focus match (if CWD didn't match a mapped project)
+	if initialGroup == "default" && cwdFocusPath != "" {
+		focusNodeName := filepath.Base(cwdFocusPath)
+		groups := mgr.GetGroups()
+		for _, g := range groups {
+			if strings.EqualFold(g, focusNodeName) {
+				initialGroup = g
+				autoEnableGroupFilter = true
+				break
+			}
+		}
+	}
+
+	// 3. Last accessed group (don't auto-enable filter for this)
+	if initialGroup == "default" {
+		if lastGroup := mgr.GetLastAccessedGroup(); lastGroup != "" {
+			initialGroup = lastGroup
+		}
+	}
+
+	// Set the active group before fetching sessions
+	mgr.SetActiveGroup(initialGroup)
+	_ = mgr.SetLastAccessedGroup(initialGroup)
 
 	// Build key mapping from sessions
 	keyMap := make(map[string]string)
@@ -237,7 +276,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		availableKeys:            availableKeys,
 		sessions:                 sessions,
 		help:                     helpModel,
-		focusedProject:           focusedProject,
 		worktreesFolded:          worktreesFolded,
 		showGitStatus:            showGitStatus,
 		showBranch:               showBranch,
@@ -249,10 +287,64 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		showBinary:               showBinary,
 		showLink:                 showLink,
 		showCx:                   showCx,
+		filterGroup:              autoEnableGroupFilter,
+		// Clear ecosystem focus when group filter is auto-enabled
+		focusedProject: func() *manager.SessionizeProject {
+			if autoEnableGroupFilter {
+				return nil
+			}
+			return focusedProject
+		}(),
 		contextOnlyPaths:         make(map[string]bool),
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
 		enrichmentLoading:        make(map[string]bool),
+	}
+}
+
+// cycleGroup switches to the next or previous workspace group
+func (m *sessionizeModel) cycleGroup(dir int) {
+	groups := m.manager.GetGroups()
+	if len(groups) <= 1 {
+		m.statusMessage = "No other groups configured"
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		return
+	}
+
+	currentIdx := 0
+	for i, g := range groups {
+		if g == m.manager.GetActiveGroup() {
+			currentIdx = i
+			break
+		}
+	}
+
+	nextIdx := (currentIdx + dir) % len(groups)
+	if nextIdx < 0 {
+		nextIdx = len(groups) - 1
+	}
+
+	newGroup := groups[nextIdx]
+	m.manager.SetActiveGroup(newGroup)
+	_ = m.manager.SetLastAccessedGroup(newGroup)
+
+	// Reload sessions and keyMap
+	m.sessions, _ = m.manager.GetSessions()
+	m.keyMap = make(map[string]string)
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, err := filepath.Abs(expandedPath)
+			if err == nil {
+				m.keyMap[filepath.Clean(absPath)] = s.Key
+			}
+		}
+	}
+
+	if m.filterGroup {
+		m.updateFiltered()
+		m.cursor = 0
+		m.moveCursorToFirstSelectable()
 	}
 }
 
@@ -739,6 +831,23 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.manager, m.configDir))
 
 		case key.Matches(msg, sessionizeKeys.ClearFocus):
+			// Clear group filter if active
+			if m.filterGroup {
+				m.filterGroup = false
+				m.updateFiltered()
+				m.cursor = 0
+				m.moveCursorToFirstSelectable()
+				return m, updateDaemonFocusCmd(m.getVisiblePaths())
+			}
+			// Clear ecosystem picker mode if active
+			if m.ecosystemPickerMode {
+				m.ecosystemPickerMode = false
+				m.updateFiltered()
+				m.cursor = 0
+				m.moveCursorToFirstSelectable()
+				return m, updateDaemonFocusCmd(m.getVisiblePaths())
+			}
+			// Clear focused project if set
 			if m.focusedProject != nil {
 				m.focusedProject = nil
 				m.updateFiltered()
@@ -755,10 +864,37 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterDirty = !m.filterDirty
 			// Clear text filter to make them mutually exclusive
 			m.filterInput.SetValue("")
+			if m.filterDirty {
+				m.filterGroup = false
+			}
 			m.updateFiltered()
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
 			return m, nil
+
+		case key.Matches(msg, sessionizeKeys.FilterGroup):
+			m.filterGroup = !m.filterGroup
+			m.filterInput.SetValue("") // Clear text filter
+			if m.filterGroup {
+				m.filterDirty = false
+				// Check if there are any mappings in the current group
+				if len(m.keyMap) == 0 {
+					m.statusMessage = fmt.Sprintf("No key mappings in group '%s'. Press Tab to switch groups.", m.manager.GetActiveGroup())
+					m.statusTimeout = time.Now().Add(3 * time.Second)
+				}
+			}
+			m.updateFiltered()
+			m.cursor = 0
+			m.moveCursorToFirstSelectable()
+			return m, nil
+
+		case key.Matches(msg, sessionizeKeys.NextGroup):
+			m.cycleGroup(1)
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+
+		case key.Matches(msg, sessionizeKeys.PrevGroup):
+			m.cycleGroup(-1)
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, sessionizeKeys.ToggleHold):
 			// Toggle on-hold plans visibility
@@ -1178,9 +1314,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Quit):
-			// If dirty filter is active, clear it first
-			if m.filterDirty {
+			// If filters are active, clear them first
+			if m.filterDirty || m.filterGroup {
 				m.filterDirty = false
+				m.filterGroup = false
 				m.updateFiltered()
 				m.cursor = 0
 				m.moveCursorToFirstSelectable()
@@ -1437,6 +1574,67 @@ func (m *sessionizeModel) updateFiltered() {
 		projectsToFilter = m.projects
 	}
 
+	// Apply group filter if active
+	if m.filterGroup {
+		pathsToKeep := make(map[string]bool)
+
+		// Build a map of path -> project for ancestor lookups
+		projectByPath := make(map[string]*manager.SessionizeProject)
+		for _, p := range m.projects {
+			projectByPath[p.Path] = p
+		}
+
+		// Iterate over all projects to find ones in the group and their ancestors
+		for _, p := range m.projects {
+			// Check if this project has a key mapping using the same logic as tui_table.go
+			hasKey := false
+			cleanPath := filepath.Clean(p.Path)
+			if _, ok := m.keyMap[cleanPath]; ok {
+				hasKey = true
+			} else {
+				// Try normalized path match
+				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+				if err == nil {
+					for keyPath := range m.keyMap {
+						normalizedKeyPath, err := pathutil.NormalizeForLookup(keyPath)
+						if err == nil && normalizedKeyPath == normalizedCleanPath {
+							hasKey = true
+							break
+						}
+					}
+				}
+			}
+
+			if hasKey {
+				// Mark this project and walk up the full hierarchy
+				pathsToKeep[p.Path] = true
+
+				// Walk up ancestors using GetHierarchicalParent
+				current := p
+				for {
+					parentPath := current.GetHierarchicalParent()
+					if parentPath == "" {
+						break
+					}
+					pathsToKeep[parentPath] = true
+					parent, exists := projectByPath[parentPath]
+					if !exists {
+						break
+					}
+					current = parent
+				}
+			}
+		}
+
+		var filtered []*manager.SessionizeProject
+		for _, p := range projectsToFilter {
+			if pathsToKeep[p.Path] {
+				filtered = append(filtered, p)
+			}
+		}
+		projectsToFilter = filtered
+	}
+
 	// Apply dirty filter if active
 	if m.filterDirty {
 		pathsToKeep := make(map[string]bool)
@@ -1617,6 +1815,59 @@ func (m *sessionizeModel) updateFiltered() {
 						m.filtered = append(m.filtered[:1], append(focusedWorktrees, m.filtered[1:]...)...)
 					}
 				}
+			}
+		} else if m.filterGroup {
+			// Group filter mode: Build hierarchical tree based on GetHierarchicalParent()
+			m.filtered = []*manager.SessionizeProject{}
+
+			// Build lookup maps
+			projectByPath := make(map[string]*manager.SessionizeProject)
+			childrenByParent := make(map[string][]*manager.SessionizeProject)
+			var roots []*manager.SessionizeProject
+
+			for _, p := range projectsToFilter {
+				projectByPath[p.Path] = p
+			}
+
+			// Categorize projects into roots and children
+			for _, p := range projectsToFilter {
+				parentPath := p.GetHierarchicalParent()
+				// Also check ParentEcosystemPath as fallback
+				if parentPath == "" || projectByPath[parentPath] == nil {
+					if p.ParentEcosystemPath != "" && projectByPath[p.ParentEcosystemPath] != nil {
+						parentPath = p.ParentEcosystemPath
+					}
+				}
+
+				if parentPath != "" && projectByPath[parentPath] != nil {
+					childrenByParent[parentPath] = append(childrenByParent[parentPath], p)
+				} else {
+					roots = append(roots, p)
+				}
+			}
+
+			// Sort roots alphabetically
+			sort.Slice(roots, func(i, j int) bool {
+				return strings.ToLower(roots[i].Name) < strings.ToLower(roots[j].Name)
+			})
+
+			// Recursive function to add project and its children
+			var addWithChildren func(p *manager.SessionizeProject)
+			addWithChildren = func(p *manager.SessionizeProject) {
+				m.filtered = append(m.filtered, p)
+				children := childrenByParent[p.Path]
+				// Sort children alphabetically
+				sort.Slice(children, func(i, j int) bool {
+					return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
+				})
+				for _, child := range children {
+					addWithChildren(child)
+				}
+			}
+
+			// Build the tree starting from roots
+			for _, root := range roots {
+				addWithChildren(root)
 			}
 		} else {
 			// Normal mode: Group worktrees under their parents and respect fold state
@@ -1935,6 +2186,57 @@ func (m sessionizeModel) View() string {
 
 	var b strings.Builder
 
+	// Render group tabs (always show so users can switch groups and set keys)
+	groups := m.manager.GetGroups()
+	if len(groups) > 0 {
+		// Add muted/italic label
+		labelStyle := lipgloss.NewStyle().Faint(true).Italic(true)
+		b.WriteString(labelStyle.Render("Key group: "))
+
+		activeGroup := m.manager.GetActiveGroup()
+		var tabs []string
+		for _, g := range groups {
+			iconStr := ""
+			if g == "default" {
+				// Use configured default_icon or fall back to IconHome
+				if defIcon := m.manager.GetDefaultIcon(); defIcon != "" {
+					iconStr = resolveIcon(defIcon) + " "
+				} else {
+					iconStr = core_theme.IconHome + " "
+				}
+			} else {
+				if cfg, ok := m.manager.GetGroupConfig(g); ok && cfg.Icon != "" {
+					iconStr = resolveIcon(cfg.Icon) + " "
+				} else {
+					// Default icon for groups without configured icon
+					iconStr = core_theme.IconFolderStar + " "
+				}
+			}
+
+			tabText := iconStr + g
+
+			// Always reserve space for filter icon on all tabs
+			filterSpace := " " + core_theme.DefaultTheme.Muted.Render(core_theme.IconFilter)
+
+			if g == activeGroup {
+				// Active tab: arrow indicator + highlighted text
+				filterIndicator := filterSpace
+				if m.filterGroup {
+					// Use Violet accent color for active filter to stand out
+					violetStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
+					filterIndicator = " " + violetStyle.Render(core_theme.IconFilter)
+				}
+				arrow := core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold)
+				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText)+filterIndicator)
+			} else {
+				// Inactive tab: space placeholder (same width as arrow) + muted text + filter space
+				tabs = append(tabs, "  "+core_theme.DefaultTheme.Muted.Render(tabText)+filterSpace)
+			}
+		}
+		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render(" │")))
+		b.WriteString("\n")
+	}
+
 	// Header with filter input (always at top)
 	var header strings.Builder
 
@@ -1942,8 +2244,7 @@ func (m sessionizeModel) View() string {
 		header.WriteString(core_theme.DefaultTheme.Warning.Render("[DIRTY] "))
 	}
 	if m.ecosystemPickerMode {
-		header.WriteString(core_theme.DefaultTheme.Info.Render("[Select Ecosystem to Focus]"))
-		header.WriteString(" ")
+		header.WriteString(core_theme.DefaultTheme.Muted.Render(core_theme.IconEcosystem + " Select ecosystem to focus"))
 	} else if m.focusedProject != nil {
 		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("[Focus: %s]", m.focusedProject.Name))
 		header.WriteString(focusIndicator)
@@ -1954,22 +2255,18 @@ func (m sessionizeModel) View() string {
 		header.WriteString(core_theme.DefaultTheme.Success.Render("[" + m.statusMessage + "]"))
 		header.WriteString(" ")
 	}
-	header.WriteString(m.filterInput.View())
+	// Only show filter input when actively searching
+	if m.filterInput.Value() != "" || m.filterInput.Focused() {
+		header.WriteString(m.filterInput.View())
+	}
 
 	b.WriteString(header.String())
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	// Render projects using table view
 	b.WriteString(m.renderTable())
 
-	// Help text at bottom
-	if len(m.filtered) == 0 {
-		if len(m.projects) == 0 {
-			b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No projects found"))
-		} else {
-			b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No matching projects"))
-		}
-	}
+	// Note: "No matching projects" message is already rendered by renderTable()
 
 	// Icon legend
 	legendStyle := core_theme.DefaultTheme.Muted
@@ -2028,7 +2325,7 @@ func (m sessionizeModel) View() string {
 	if m.ecosystemPickerMode {
 		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
 	} else if m.focusedProject != nil {
-		b.WriteString(helpStyle.Render("Press ? for help • Press ctrl+g to clear ecosystem focus • ") + togglesDisplay)
+		b.WriteString(helpStyle.Render("Press ? for help • Press 0 to clear ecosystem focus • ") + togglesDisplay)
 	} else {
 		b.WriteString(helpStyle.Render("Press ? for help • ") + togglesDisplay)
 	}
@@ -2059,7 +2356,7 @@ func (m sessionizeModel) viewKeyEditor() string {
 		selectedProject = project.Name
 	}
 
-	b.WriteString(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Select key for: %s", selectedProject)))
+	b.WriteString(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Select key for: %s (Group: %s)", selectedProject, m.manager.GetActiveGroup())))
 	b.WriteString("\n")
 	b.WriteString(core_theme.DefaultTheme.Muted.Render(selectedPath))
 	b.WriteString("\n\n")

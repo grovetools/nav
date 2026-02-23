@@ -174,8 +174,8 @@ var sessionizeCmd = &cobra.Command{
 		// Create the interactive model
 		m := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache, cwdFocusPath)
 
-		// If a focused project was loaded from state, update the filtered list
-		if m.focusedProject != nil {
+		// If a focused project was loaded from state or group filter is active, update the filtered list
+		if m.focusedProject != nil || m.filterGroup {
 			m.updateFiltered()
 		}
 

@@ -16,6 +16,9 @@ type SessionizeKeyMap struct {
 	FocusEcosystem   key.Binding
 	ClearFocus       key.Binding
 	ToggleWorktrees  key.Binding
+	NextGroup        key.Binding
+	PrevGroup        key.Binding
+	FilterGroup      key.Binding
 	ToggleGitStatus  key.Binding
 	ToggleBranch     key.Binding
 	ToggleNoteCounts key.Binding
@@ -64,6 +67,10 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.ClearFocus,
 			k.ToggleWorktrees,
 			k.FilterDirty,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Groups")),
+			k.NextGroup,
+			k.PrevGroup,
+			k.FilterGroup,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Context Management")),
 			k.ToggleHotContext,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
@@ -104,6 +111,11 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.FilterDirty,
 			k.ToggleHotContext,
 		),
+		keymap.NewSection("Groups",
+			k.NextGroup,
+			k.PrevGroup,
+			k.FilterGroup,
+		),
 		keymap.NewSection("Columns",
 			k.ToggleCx,
 			k.ToggleGitStatus,
@@ -127,8 +139,8 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 	km := SessionizeKeyMap{
 		Base: keymap.Load(cfg, "nav.sessionize"),
 		EditKey: key.NewBinding(
-			key.WithKeys("ctrl+e"),
-			key.WithHelp("ctrl+e", "edit key mapping"),
+			key.WithKeys("ctrl+k"),
+			key.WithHelp("ctrl+k", "edit key mapping"),
 		),
 		ClearKey: key.NewBinding(
 			key.WithKeys("ctrl+x"),
@@ -143,12 +155,24 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 			key.WithHelp("@", "focus ecosystem"),
 		),
 		ClearFocus: key.NewBinding(
-			key.WithKeys("ctrl+g"),
-			key.WithHelp("ctrl+g", "clear ecosystem focus"),
+			key.WithKeys("0"),
+			key.WithHelp("0", "clear ecosystem focus"),
 		),
 		ToggleWorktrees: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "toggle worktrees"),
+		),
+		NextGroup: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("tab", "toggle worktrees"),
+			key.WithHelp("tab", "next group"),
+		),
+		PrevGroup: key.NewBinding(
+			key.WithKeys("shift+tab"),
+			key.WithHelp("S-tab", "prev group"),
+		),
+		FilterGroup: key.NewBinding(
+			key.WithKeys("F"),
+			key.WithHelp("F", "filter to group"),
 		),
 		ToggleGitStatus: key.NewBinding(
 			key.WithKeys("s"),

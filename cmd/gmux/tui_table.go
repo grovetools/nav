@@ -28,8 +28,8 @@ func (m sessionizeModel) renderTable() string {
 	}
 
 	// Calculate visible items based on terminal height
-	// Reserve space for: header (3 lines), table header/borders (4 lines), help (1 line), search paths (2 lines)
-	visibleHeight := m.height - 10
+	// Reserve space for: tab bar (1 line), header (2 lines), table header/borders (4 lines), footer/icons (2 lines), help (2 lines), buffer (2 lines)
+	visibleHeight := m.height - 13
 	if visibleHeight < 5 {
 		visibleHeight = 5 // Minimum visible items
 	}
@@ -216,6 +216,72 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		} else {
 			// This is a grandchild (e.g., worktree of a sub-project)
 			prefix = "  └─ "
+		}
+	} else if m.filterGroup {
+		// Group filter mode - show tree structure based on hierarchy
+		// Use GetHierarchicalParent() to determine parent-child relationships
+		// similar to how focus mode works
+
+		// Build set of paths in filtered list for quick lookup
+		filteredPaths := make(map[string]bool)
+		for _, p := range m.filtered {
+			filteredPaths[p.Path] = true
+		}
+
+		// Check hierarchical parent first, then fall back to ParentEcosystemPath
+		parentPath := project.GetHierarchicalParent()
+		parentInFiltered := parentPath != "" && filteredPaths[parentPath]
+
+		// If hierarchical parent not in filtered list, try ParentEcosystemPath
+		if !parentInFiltered && project.ParentEcosystemPath != "" {
+			if filteredPaths[project.ParentEcosystemPath] {
+				parentPath = project.ParentEcosystemPath
+				parentInFiltered = true
+			}
+		}
+
+		if !parentInFiltered {
+			// This is a root node (parent not in filtered list) - no prefix
+			prefix = ""
+		} else {
+			// Parent is in the filtered list - this is a child
+			// Determine depth: is this a direct child or grandchild?
+			// Check if grandparent is also in filtered list
+			grandparentInFiltered := false
+			if parentInFiltered {
+				for _, p := range m.filtered {
+					if p.Path == parentPath {
+						gpPath := p.GetHierarchicalParent()
+						if gpPath != "" && filteredPaths[gpPath] {
+							grandparentInFiltered = true
+						}
+						break
+					}
+				}
+			}
+
+			if grandparentInFiltered {
+				// This is a grandchild - use extra indentation
+				prefix = "  └─ "
+			} else {
+				// This is a direct child
+				// Check if it's the last child of its parent
+				isLast := true
+				if projectIndex >= 0 {
+					for j := projectIndex + 1; j < len(m.filtered); j++ {
+						nextProj := m.filtered[j]
+						if nextProj.GetHierarchicalParent() == parentPath {
+							isLast = false
+							break
+						}
+					}
+				}
+				if isLast {
+					prefix = "└─ "
+				} else {
+					prefix = "├─ "
+				}
+			}
 		}
 	} else {
 		// Normal mode - only show worktree indicator
