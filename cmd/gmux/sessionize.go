@@ -500,6 +500,16 @@ func groupClonedProjectsAsEcosystem(projects []manager.SessionizeProject) []mana
 		return projects
 	}
 
+	var filteredProjects []manager.SessionizeProject
+	for i := range projects {
+		// Skip temporary source-repo directories created by cx
+		if projects[i].ParentEcosystemPath == cxEcoPath && projects[i].Name == "source-repo" {
+			continue
+		}
+		filteredProjects = append(filteredProjects, projects[i])
+	}
+	projects = filteredProjects
+
 	var clonedProjectIndices []int
 	for i := range projects {
 		// Cloned repos are now identified by their ParentEcosystemPath pointing to cx ecosystem

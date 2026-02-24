@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -216,28 +218,26 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 					}
 				}
 
-				// Get projects for enrichment
-				projectMap := make(map[string]*manager.SessionizeProject)
-				if projects, err := m.manager.GetAvailableProjects(); err == nil {
-					for i := range projects {
-						projectMap[projects[i].Path] = &projects[i]
-					}
-				}
-
 				// Build history items
-				var items []historyItem
+				var historyAccesses []*workspace.ProjectAccess
 				for _, access := range history.Projects {
-					proj := projectMap[access.Path]
-					if proj == nil {
-						// Create minimal project with workspace node for unknown paths
-						proj = &manager.SessionizeProject{
-							WorkspaceNode: &workspace.WorkspaceNode{Path: access.Path},
-						}
-					}
-					items = append(items, historyItem{project: proj, access: access})
+					historyAccesses = append(historyAccesses, access)
 				}
-				if len(items) > 15 {
-					items = items[:15]
+				sort.Slice(historyAccesses, func(i, j int) bool {
+					return historyAccesses[i].LastAccessed.After(historyAccesses[j].LastAccessed)
+				})
+
+				var items []historyItem
+				for _, access := range historyAccesses {
+					if len(items) >= 15 {
+						break
+					}
+					node, err := workspace.GetProjectByPath(access.Path)
+					if err != nil {
+						node = &workspace.WorkspaceNode{Path: access.Path, Name: filepath.Base(access.Path)}
+					}
+					proj := &manager.SessionizeProject{WorkspaceNode: node}
+					items = append(items, historyItem{project: proj, access: access})
 				}
 				hm := newHistoryModel(items, m.manager, keyMap)
 				m.historyModel = hm

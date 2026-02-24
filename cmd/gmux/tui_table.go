@@ -19,12 +19,24 @@ import (
 
 // renderTable renders the table view for projects
 func (m sessionizeModel) renderTable() string {
+	// Handle empty state - still show table structure for visual stability
 	if len(m.filtered) == 0 {
-		if len(m.projects) == 0 {
-			return core_theme.DefaultTheme.Muted.Render("No projects found")
-		} else {
-			return core_theme.DefaultTheme.Muted.Render("No matching projects")
+		workspaceHeader := "WORKSPACE"
+		if m.filterInput.Focused() {
+			// Thin cursor when in insert mode (left one-eighth block, very thin)
+			workspaceHeader = core_theme.IconSearch + " " + m.filterInput.Value() + "▏"
+		} else if m.filterInput.Value() != "" {
+			// Fat block cursor when in normal mode (not focused)
+			workspaceHeader = core_theme.IconSearch + " " + m.filterInput.Value() + "█"
 		}
+		headers := []string{workspaceHeader}
+		emptyMessage := "No matching projects"
+		if len(m.projects) == 0 {
+			emptyMessage = "No projects found"
+		}
+		// Render empty table with message as single row
+		rows := [][]string{{core_theme.DefaultTheme.Muted.Render(emptyMessage)}}
+		return table.SelectableTable(headers, rows, -1) // -1 = no selection
 	}
 
 	// Calculate visible items based on terminal height
@@ -68,7 +80,15 @@ func (m sessionizeModel) renderTable() string {
 	spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
 
 	// Define table headers based on what's enabled
-	headers := []string{"WORKSPACE"}
+	workspaceHeader := "WORKSPACE"
+	if m.filterInput.Focused() {
+		// Thin cursor when in insert mode (left one-eighth block, very thin)
+		workspaceHeader = core_theme.IconSearch + " " + m.filterInput.Value() + "▏"
+	} else if m.filterInput.Value() != "" {
+		// Fat block cursor when in normal mode (not focused)
+		workspaceHeader = core_theme.IconSearch + " " + m.filterInput.Value() + "█"
+	}
+	headers := []string{workspaceHeader}
 	if showCxColumn {
 		cxHeader := "CX"
 		if m.enrichmentLoading["cxstats"] {
@@ -295,27 +315,46 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 
 	// Apply subtle styling for different workspace types (only to the name, not icon)
 	var nameStyled string
-	switch project.Kind {
-	case workspace.KindEcosystemWorktree,
-		workspace.KindStandaloneProjectWorktree,
-		workspace.KindEcosystemSubProjectWorktree,
-		workspace.KindEcosystemWorktreeSubProjectWorktree:
-		// Worktrees use faint/dim styling for visual distinction
-		if m.focusedProject != nil && project.Path == m.focusedProject.Path {
-			// Don't apply faint styling to the focused project itself
+
+	// In group filter mode or text search, context-only items (parents without key bindings/matches) are muted
+	isContextOnly := (m.filterGroup || m.filterInput.Value() != "") && m.contextOnlyPaths[project.Path]
+
+	if isContextOnly {
+		// Context-only items in group filter mode are muted
+		nameStyled = core_theme.DefaultTheme.Muted.Render(project.Name)
+		iconStyled = core_theme.DefaultTheme.Muted.Render(icon + " ")
+	} else {
+		switch project.Kind {
+		case workspace.KindEcosystemWorktree,
+			workspace.KindStandaloneProjectWorktree,
+			workspace.KindEcosystemSubProjectWorktree,
+			workspace.KindEcosystemWorktreeSubProjectWorktree:
+			// Worktrees use faint/dim styling for visual distinction (unless they match a filter)
+			if m.focusedProject != nil && project.Path == m.focusedProject.Path {
+				// Don't apply faint styling to the focused project itself
+				nameStyled = project.Name
+			} else if m.filterGroup || m.filterInput.Value() != "" {
+				// In group filter or text search mode, matched worktrees are shown normally
+				nameStyled = project.Name
+			} else {
+				nameStyled = lipgloss.NewStyle().Faint(true).Render(project.Name)
+			}
+		case workspace.KindEcosystemRoot:
+			// Ecosystem roots are normal weight
 			nameStyled = project.Name
-		} else {
-			nameStyled = lipgloss.NewStyle().Faint(true).Render(project.Name)
+		default:
+			// Sub-projects and standalone projects are normal weight
+			nameStyled = project.Name
 		}
-	case workspace.KindEcosystemRoot:
-		// Ecosystem roots are normal weight
-		nameStyled = project.Name
-	default:
-		// Sub-projects and standalone projects are normal weight
-		nameStyled = project.Name
 	}
 
-	workspaceName = prefix + iconStyled + nameStyled
+	// Add fold indicator if this node has children and is currently folded
+	foldIndicator := ""
+	if m.hasChildren[project.Path] && m.foldedPaths[project.Path] {
+		foldIndicator = core_theme.DefaultTheme.Muted.Render(" ⋯")
+	}
+
+	workspaceName = prefix + iconStyled + nameStyled + foldIndicator
 
 	// --- KEY ---
 	keyMapping := ""

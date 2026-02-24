@@ -10,10 +10,12 @@ import (
 // SessionizeKeyMap defines the key bindings for the sessionize TUI
 type SessionizeKeyMap struct {
 	keymap.Base
+	ToggleKey    key.Binding
 	EditKey      key.Binding
 	ClearKey     key.Binding
 	CloseSession key.Binding
 	FocusEcosystem   key.Binding
+	FocusCurrent     key.Binding
 	ClearFocus       key.Binding
 	ToggleWorktrees  key.Binding
 	NextGroup        key.Binding
@@ -53,6 +55,7 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
 			k.RefreshProjects,
+			k.ToggleKey,
 			k.EditKey,
 			k.ClearKey,
 			k.CopyPath,
@@ -105,6 +108,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 		),
 		keymap.NewSection("Focus",
 			k.FocusEcosystem,
+			k.FocusCurrent,
 			k.ClearFocus,
 			k.ToggleWorktrees,
 			k.FilterDirty,
@@ -127,6 +131,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.ToggleBinary,
 			k.ToggleLink,
 		),
+		k.FoldSection(),
 		keymap.SystemSection(k.Help, k.Quit),
 	}
 }
@@ -137,6 +142,10 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 	km := SessionizeKeyMap{
 		Base: keymap.Load(cfg, "nav.sessionize"),
+		ToggleKey: key.NewBinding(
+			key.WithKeys(" "),
+			key.WithHelp("space", "quick map/unmap"),
+		),
 		EditKey: key.NewBinding(
 			key.WithKeys("ctrl+k"),
 			key.WithHelp("ctrl+k", "edit key mapping"),
@@ -152,6 +161,10 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		FocusEcosystem: key.NewBinding(
 			key.WithKeys("@"),
 			key.WithHelp("@", "focus ecosystem"),
+		),
+		FocusCurrent: key.NewBinding(
+			key.WithKeys("."),
+			key.WithHelp(".", "focus current ecosystem"),
 		),
 		ClearFocus: key.NewBinding(
 			key.WithKeys("0"),

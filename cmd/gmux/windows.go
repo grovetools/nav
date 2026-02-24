@@ -193,7 +193,32 @@ func (m windowsModel) View() string {
 		b.WriteString(core_theme.DefaultTheme.Header.Render(header))
 		b.WriteString("\n\n")
 
-		for i, win := range m.filteredWindows {
+		visibleHeight := m.height - 15 // Leave room for tab bar
+		if visibleHeight < 5 {
+			visibleHeight = 5
+		}
+		if visibleHeight > 15 {
+			visibleHeight = 15 // Cap at reasonable size
+		}
+		start := 0
+		end := len(m.filteredWindows)
+		if end > visibleHeight {
+			start = m.cursor - visibleHeight/2
+			if start < 0 {
+				start = 0
+			}
+			end = start + visibleHeight
+			if end > len(m.filteredWindows) {
+				end = len(m.filteredWindows)
+				start = end - visibleHeight
+				if start < 0 {
+					start = 0
+				}
+			}
+		}
+
+		for i := start; i < end; i++ {
+			win := m.filteredWindows[i]
 			cursor := " "
 			if m.cursor == i {
 				cursor = "→"
@@ -217,7 +242,11 @@ func (m windowsModel) View() string {
 			b.WriteString("\n")
 		}
 
-		b.WriteString("\n")
+		if len(m.filteredWindows) > visibleHeight {
+			b.WriteString(core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("\n(%d-%d of %d)\n", start+1, end, len(m.filteredWindows))))
+		} else {
+			b.WriteString("\n")
+		}
 
 		switch m.mode {
 		case "filter":
@@ -255,7 +284,32 @@ func (m windowsModel) View() string {
 	listBuilder.WriteString(core_theme.DefaultTheme.Header.Render(header))
 	listBuilder.WriteString("\n\n")
 
-	for i, win := range m.filteredWindows {
+	visibleHeight := m.height - 15 // Leave room for tab bar
+	if visibleHeight < 5 {
+		visibleHeight = 5
+	}
+	if visibleHeight > 15 {
+		visibleHeight = 15 // Cap at reasonable size
+	}
+	start := 0
+	end := len(m.filteredWindows)
+	if end > visibleHeight {
+		start = m.cursor - visibleHeight/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + visibleHeight
+		if end > len(m.filteredWindows) {
+			end = len(m.filteredWindows)
+			start = end - visibleHeight
+			if start < 0 {
+				start = 0
+			}
+		}
+	}
+
+	for i := start; i < end; i++ {
+		win := m.filteredWindows[i]
 		cursor := " "
 		if m.cursor == i {
 			cursor = "→"
@@ -292,7 +346,11 @@ func (m windowsModel) View() string {
 		listBuilder.WriteString("\n")
 	}
 
-	listBuilder.WriteString("\n")
+	if len(m.filteredWindows) > visibleHeight {
+		listBuilder.WriteString(core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("\n(%d-%d of %d)\n", start+1, end, len(m.filteredWindows))))
+	} else {
+		listBuilder.WriteString("\n")
+	}
 
 	// Footer for list
 	switch m.mode {
@@ -315,9 +373,9 @@ func (m windowsModel) View() string {
 	previewBuilder.WriteString("\n\n")
 
 	// Calculate max height for preview (account for header, footer, padding)
-	maxPreviewHeight := m.height - 6 // Leave room for headers and footer
-	if maxPreviewHeight < 1 {
-		maxPreviewHeight = 1
+	maxPreviewHeight := m.height - 15 // Leave significant room for tab bar, headers, and footer
+	if maxPreviewHeight < 5 {
+		maxPreviewHeight = 5
 	}
 
 	// Wrap preview content and limit to maxPreviewHeight
@@ -336,9 +394,9 @@ func (m windowsModel) View() string {
 		lineCount++
 	}
 
-	// Use lipgloss to create side-by-side layout with height constraints
-	listStyle := lipgloss.NewStyle().Width(listWidth).Height(m.height)
-	previewStyle := lipgloss.NewStyle().Width(previewWidth).Height(m.height)
+	// Use lipgloss to create side-by-side layout (no fixed height to avoid pushing tab bar off-screen)
+	listStyle := lipgloss.NewStyle().Width(listWidth)
+	previewStyle := lipgloss.NewStyle().Width(previewWidth)
 
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Top,

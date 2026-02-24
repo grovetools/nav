@@ -19,6 +19,7 @@ import (
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
+	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
 	"github.com/grovetools/nav/internal/manager"
@@ -55,6 +56,9 @@ type sessionizeModel struct {
 	ecosystemPickerMode bool // True when showing only ecosystems for selection
 	focusedProject      *manager.SessionizeProject
 	worktreesFolded     bool // Whether worktrees are hidden/collapsed
+	foldedPaths         map[string]bool // Paths that are currently folded closed
+	hasChildren         map[string]bool // Cheap tracking of parent nodes
+	sequence            *keymap.SequenceState // Core standard vim sequence tracker
 
 	// View toggles
 	showGitStatus  bool // Whether to fetch and show Git status
@@ -160,12 +164,8 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	// Get available keys
 	availableKeys := mgr.GetAvailableKeys()
 
-	// Create running sessions map
+	// Create running sessions map and get current session name if we're in tmux
 	runningSessions := make(map[string]bool)
-	// Will be populated via commands
-
-
-	// Get current session name if we're in tmux
 	currentSession := ""
 	if os.Getenv("TMUX") != "" {
 		client, err := tmuxclient.NewClient()
@@ -173,6 +173,12 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 			ctx := context.Background()
 			if current, err := client.GetCurrentSession(ctx); err == nil {
 				currentSession = current
+			}
+			// Populate running sessions synchronously to avoid reordering flash
+			if sessionNames, err := client.ListSessions(ctx); err == nil {
+				for _, name := range sessionNames {
+					runningSessions[name] = true
+				}
 			}
 		}
 	}
@@ -197,6 +203,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	// Load previously focused ecosystem and fold state
 	var focusedProject *manager.SessionizeProject
 	var worktreesFolded bool
+	foldedPaths := make(map[string]bool)
 	// Set sensible defaults for toggles
 	showGitStatus := true
 	showBranch := true
@@ -254,9 +261,12 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		if state.ShowCx != nil {
 			showCx = *state.ShowCx
 		}
+		for _, p := range state.FoldedPaths {
+			foldedPaths[p] = true
+		}
 	}
 
-	return sessionizeModel{
+	m := sessionizeModel{
 		rulesState:               make(map[string]grovecontext.RuleStatus),
 		projects:                 projects,
 		filtered:                 projects,
@@ -300,7 +310,16 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		usedCache:                usedCache,
 		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
 		enrichmentLoading:        make(map[string]bool),
+		foldedPaths:              foldedPaths,
+		hasChildren:              make(map[string]bool),
+		sequence:                 keymap.NewSequenceState(),
 	}
+
+	// Synchronously apply initial filters to prevent UI flash
+	m.updateFiltered()
+	m.moveCursorToFirstSelectable()
+
+	return m
 }
 
 // cycleGroup switches to the next or previous workspace group
@@ -366,6 +385,11 @@ func (m sessionizeModel) buildState() *manager.SessionizerState {
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
+	}
+	for path, folded := range m.foldedPaths {
+		if folded {
+			state.FoldedPaths = append(state.FoldedPaths, path)
+		}
 	}
 	return state
 }
@@ -825,6 +849,69 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Process standard vim sequences (folding, dd)
+		res, idx := m.sequence.Process(msg,
+			m.keys.FoldOpen,
+			m.keys.FoldClose,
+			m.keys.FoldToggle,
+			m.keys.FoldOpenAll,
+			m.keys.FoldCloseAll,
+			m.keys.Delete,
+		)
+		switch res {
+		case keymap.SequenceMatch:
+			m.sequence.Clear()
+			switch idx {
+			case 0: // FoldOpen (zo)
+				if m.cursor < len(m.filtered) {
+					delete(m.foldedPaths, m.filtered[m.cursor].Path)
+					_ = m.buildState().Save(m.configDir)
+					m.updateFiltered()
+				}
+			case 1: // FoldClose (zc)
+				if m.cursor < len(m.filtered) {
+					p := m.filtered[m.cursor]
+					if m.hasChildren[p.Path] {
+						m.foldedPaths[p.Path] = true
+						_ = m.buildState().Save(m.configDir)
+						m.updateFiltered()
+					}
+				}
+			case 2: // FoldToggle (za)
+				if m.cursor < len(m.filtered) {
+					p := m.filtered[m.cursor]
+					if m.hasChildren[p.Path] {
+						if m.foldedPaths[p.Path] {
+							delete(m.foldedPaths, p.Path)
+						} else {
+							m.foldedPaths[p.Path] = true
+						}
+						_ = m.buildState().Save(m.configDir)
+						m.updateFiltered()
+					}
+				}
+			case 3: // FoldOpenAll (zR)
+				m.foldedPaths = make(map[string]bool)
+				_ = m.buildState().Save(m.configDir)
+				m.updateFiltered()
+			case 4: // FoldCloseAll (zM)
+				for path := range m.hasChildren {
+					m.foldedPaths[path] = true
+				}
+				_ = m.buildState().Save(m.configDir)
+				m.updateFiltered()
+			case 5: // Delete (dd) - clear filter
+				m.filterInput.SetValue("")
+				m.updateFiltered()
+				m.cursor = 0
+				m.moveCursorToFirstSelectable()
+			}
+			return m, nil
+		case keymap.SequencePending:
+			return m, nil // Wait for the rest of the sequence
+		}
+		m.sequence.Clear()
+
 		// Handle non-letter key bindings that should work even in search mode
 		switch {
 		case key.Matches(msg, sessionizeKeys.RefreshProjects):
@@ -965,13 +1052,9 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.filterInput.Focused() {
 			switch msg.Type {
 			case tea.KeyEsc:
-				if m.ecosystemPickerMode {
-					m.ecosystemPickerMode = false
-					m.updateFiltered()
-					return m, nil
-				}
+				// Vim-style: Escape exits search but preserves filter value
+				// Stay in ecosystem picker mode if active - second Escape will cancel it
 				m.filterInput.Blur()
-				m.updateFiltered()
 				return m, nil
 			case tea.KeyEnter:
 				// Handle ecosystem picker mode
@@ -995,17 +1078,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, updateDaemonFocusCmd(m.getVisiblePaths())
 				}
-				// Select current project even while filtering
-				if m.cursor < len(m.filtered) {
-					m.selected = m.filtered[m.cursor]
-					// Save cache before quitting to persist enrichment data
-					projects := make([]manager.SessionizeProject, len(m.projects))
-					for i, p := range m.projects {
-						projects[i] = *p
-					}
-					_ = manager.SaveProjectCache(m.configDir, projects)
-					return m, tea.Quit
-				}
+				// Vim-style: Enter confirms filter and blurs (keeps value), press Enter again to select
+				m.filterInput.Blur()
 				return m, nil
 			case tea.KeyUp:
 				// Navigate up while filtering
@@ -1163,11 +1237,53 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterInput.Focus()
 			return m, textinput.Blink
 
+		// Vim-style: 'i' re-enters search (insert mode) if filter has value
+		case msg.Type == tea.KeyRunes && string(msg.Runes) == "i":
+			if m.filterInput.Value() != "" {
+				m.filterInput.Focus()
+				return m, textinput.Blink
+			}
+
 		case key.Matches(msg, m.keys.FocusEcosystem):
+			m.filterGroup = false // Clear group filter when entering ecosystem picker
 			m.ecosystemPickerMode = true
 			m.updateFiltered()
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
+			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+
+		case key.Matches(msg, m.keys.FocusCurrent):
+			// Focus on the ecosystem containing the current working directory
+			cwd, err := os.Getwd()
+			if err != nil {
+				return m, nil
+			}
+			// Find the ecosystem that contains CWD
+			var targetEcosystem *manager.SessionizeProject
+			for _, p := range m.projects {
+				if !p.IsEcosystem() || p.IsWorktree() {
+					continue
+				}
+				// Check if CWD is inside this ecosystem
+				if strings.HasPrefix(cwd, p.Path+string(filepath.Separator)) || cwd == p.Path {
+					targetEcosystem = p
+					break
+				}
+			}
+			if targetEcosystem == nil {
+				m.statusMessage = "Current directory not inside a known ecosystem"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+			// Clear filters and focus on the ecosystem
+			m.filterGroup = false
+			m.filterDirty = false
+			m.filterInput.SetValue("")
+			m.focusedProject = targetEcosystem
+			m.updateFiltered()
+			m.cursor = 0
+			m.moveCursorToFirstSelectable()
+			_ = m.buildState().Save(m.configDir)
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
 		case key.Matches(msg, m.keys.ToggleGitStatus):
@@ -1257,6 +1373,49 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
+		case key.Matches(msg, m.keys.ToggleKey):
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				cleanPath := filepath.Clean(project.Path)
+				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+				if err != nil {
+					return m, nil
+				}
+
+				mappedKey := ""
+				for path, k := range m.keyMap {
+					normPath, err := pathutil.NormalizeForLookup(path)
+					if err == nil && normPath == normalizedCleanPath {
+						mappedKey = k
+						break
+					}
+				}
+
+				if mappedKey != "" {
+					m.clearKeyMapping(project.Path)
+					m.statusMessage = fmt.Sprintf("Unmapped key '%s'", mappedKey)
+				} else {
+					// Find first available key
+					usedKeys := make(map[string]bool)
+					for _, k := range m.keyMap {
+						usedKeys[k] = true
+					}
+					for _, k := range m.availableKeys {
+						if !usedKeys[k] {
+							m.updateKeyMapping(project.Path, k)
+							m.statusMessage = fmt.Sprintf("Mapped '%s' to key '%s'", project.Name, k)
+							break
+						}
+					}
+					if m.statusMessage == "" {
+						m.statusMessage = "No available keys!"
+					}
+				}
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+			return m, nil
+
 		case key.Matches(msg, m.keys.ClearKey):
 			// Clear key mapping for the selected project
 			if m.cursor < len(m.filtered) {
@@ -1314,16 +1473,18 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, m.keys.Quit):
-			// If filters are active, clear them first
-			if m.filterDirty || m.filterGroup {
-				m.filterDirty = false
-				m.filterGroup = false
+		// Escape when not in filter mode cancels ecosystem picker
+		case msg.Type == tea.KeyEsc:
+			if m.ecosystemPickerMode {
+				m.ecosystemPickerMode = false
+				m.filterInput.SetValue("") // Clear any filter
 				m.updateFiltered()
 				m.cursor = 0
 				m.moveCursorToFirstSelectable()
-				return m, m.enrichVisibleProjects()
+				return m, nil
 			}
+
+		case key.Matches(msg, m.keys.Quit):
 			// Save cache before quitting to persist enrichment data
 			projects := make([]manager.SessionizeProject, len(m.projects))
 			for i, p := range m.projects {
@@ -1465,12 +1626,26 @@ func (m *sessionizeModel) updateFiltered() {
 
 	if m.ecosystemPickerMode {
 		m.filtered = []*manager.SessionizeProject{}
+		m.contextOnlyPaths = make(map[string]bool) // Clear context-only paths so all ecosystems are selectable
+		m.hasChildren = make(map[string]bool)
 
 		// Separate into main ecosystems and worktrees
 		mainEcosystemsMap := make(map[string]*manager.SessionizeProject)
 		worktreesByParent := make(map[string][]*manager.SessionizeProject)
+		ecoOrder := make(map[string]int)
 
-		for _, p := range m.projects {
+		for i, p := range m.projects {
+			// Track earliest occurrence to sort ecosystems by recent access
+			if p.IsEcosystem() && !p.IsWorktree() {
+				if _, exists := ecoOrder[p.Path]; !exists {
+					ecoOrder[p.Path] = i
+				}
+			} else if p.RootEcosystemPath != "" {
+				if _, exists := ecoOrder[p.RootEcosystemPath]; !exists {
+					ecoOrder[p.RootEcosystemPath] = i
+				}
+			}
+
 			if !p.IsEcosystem() {
 				continue
 			}
@@ -1501,6 +1676,11 @@ func (m *sessionizeModel) updateFiltered() {
 			if mainEcosystems[j].Name == "cx-repos" {
 				return false
 			}
+			idxI, okI := ecoOrder[mainEcosystems[i].Path]
+			idxJ, okJ := ecoOrder[mainEcosystems[j].Path]
+			if okI && okJ && idxI != idxJ {
+				return idxI < idxJ
+			}
 			return strings.ToLower(mainEcosystems[i].Name) < strings.ToLower(mainEcosystems[j].Name)
 		})
 
@@ -1508,6 +1688,13 @@ func (m *sessionizeModel) updateFiltered() {
 			m.filtered = append(m.filtered, eco)
 
 			if worktrees, hasWorktrees := worktreesByParent[eco.Path]; hasWorktrees {
+				m.hasChildren[eco.Path] = true
+
+				// Skip children if folded (unless text searching)
+				if filter == "" && m.foldedPaths[eco.Path] {
+					continue
+				}
+
 				sort.Slice(worktrees, func(i, j int) bool {
 					iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
 					jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
@@ -1526,8 +1713,20 @@ func (m *sessionizeModel) updateFiltered() {
 	// 1. Determine base set of projects (Focus vs Global)
 	var baseProjects []*manager.SessionizeProject
 	if m.focusedProject != nil {
+		// Build a set of ecosystem worktree paths to filter out their subprojects
+		ecoWorktreePaths := make(map[string]bool)
 		for _, p := range m.projects {
-			if p.Path == m.focusedProject.Path || p.IsChildOf(m.focusedProject.Path) {
+			if p.Kind == workspace.KindEcosystemWorktree && p.RootEcosystemPath == m.focusedProject.Path {
+				ecoWorktreePaths[p.Path] = true
+			}
+		}
+
+		for _, p := range m.projects {
+			// Skip subprojects that are inside ecosystem worktrees (show only the worktree parent itself)
+			if p.ParentEcosystemPath != "" && ecoWorktreePaths[p.ParentEcosystemPath] {
+				continue
+			}
+			if p.Path == m.focusedProject.Path || p.IsChildOf(m.focusedProject.Path) || p.RootEcosystemPath == m.focusedProject.Path || p.ParentEcosystemPath == m.focusedProject.Path {
 				baseProjects = append(baseProjects, p)
 			}
 		}
@@ -1657,6 +1856,7 @@ func (m *sessionizeModel) updateFiltered() {
 	// 5. Structure Hierarchical Roots & Children
 	childrenByParent := make(map[string][]*manager.SessionizeProject)
 	var roots []*manager.SessionizeProject
+	m.hasChildren = make(map[string]bool)
 
 	for path := range finalIncludedPaths {
 		p := projectByPath[path]
@@ -1679,6 +1879,7 @@ func (m *sessionizeModel) updateFiltered() {
 
 		if parentPath != "" {
 			childrenByParent[parentPath] = append(childrenByParent[parentPath], p)
+			m.hasChildren[parentPath] = true
 		} else {
 			roots = append(roots, p)
 		}
@@ -1724,6 +1925,12 @@ func (m *sessionizeModel) updateFiltered() {
 	var flatten func(p *manager.SessionizeProject)
 	flatten = func(p *manager.SessionizeProject) {
 		m.filtered = append(m.filtered, p)
+
+		// Check for active folding (ignored if actively text searching)
+		if filter == "" && m.foldedPaths[p.Path] && m.hasChildren[p.Path] {
+			return
+		}
+
 		children := childrenByParent[p.Path]
 
 		sort.Slice(children, func(i, j int) bool {
@@ -1799,18 +2006,13 @@ func (m sessionizeModel) View() string {
 
 	b.WriteString("\n")
 
-	// Footer with search, status indicators, and help
+	// Footer with status indicators and help
 	helpStyle := core_theme.DefaultTheme.Muted
 	violetStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
 
-	// Search/filter input line
-	if m.filterInput.Value() != "" || m.filterInput.Focused() {
-		b.WriteString("  " + m.filterInput.View() + "\n")
-	}
-
 	// Mode and status indicators
 	if m.ecosystemPickerMode {
-		b.WriteString("  " + core_theme.DefaultTheme.Muted.Render(core_theme.IconEcosystem+" Select ecosystem to focus") + "\n")
+		b.WriteString("  " + core_theme.DefaultTheme.Info.Render(core_theme.IconEcosystem+" Select ecosystem to focus") + "\n")
 	} else if m.focusedProject != nil {
 		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s [%s]", core_theme.IconEcosystem, m.focusedProject.Name))
 		b.WriteString("  " + focusIndicator + "\n")

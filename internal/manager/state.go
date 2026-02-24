@@ -14,8 +14,9 @@ import (
 
 // SessionizerState holds the persistent state for the gmux sessionizer
 type SessionizerState struct {
-	FocusedEcosystemPath string `yaml:"focused_ecosystem_path,omitempty"`
-	WorktreesFolded      bool   `yaml:"worktrees_folded,omitempty"`
+	FocusedEcosystemPath string   `yaml:"focused_ecosystem_path,omitempty"`
+	WorktreesFolded      bool     `yaml:"worktrees_folded,omitempty"`
+	FoldedPaths          []string `yaml:"folded_paths,omitempty"`
 	ShowGitStatus        *bool  `yaml:"show_git_status,omitempty"`
 	ShowBranch           *bool  `yaml:"show_branch,omitempty"`
 	ShowNoteCounts       *bool  `yaml:"show_note_counts,omitempty"`

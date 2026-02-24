@@ -1349,13 +1349,14 @@ func (m *manageModel) View() string {
 
 			// Check if this is the move target
 			isMoveTarget := m.moveToGroupMode && m.moveToGroupCursor < len(m.moveToGroupOptions) && m.moveToGroupOptions[m.moveToGroupCursor] == g
+			isLoadTarget := m.loadFromGroupMode && m.loadFromGroupCursor < len(m.loadFromGroupOptions) && m.loadFromGroupOptions[m.loadFromGroupCursor] == g
 
 			if g == activeGroup {
 				// Active tab: arrow indicator + highlighted text
 				arrow := core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold)
 				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText))
-			} else if isMoveTarget {
-				// Move target: success/green style to show where session will go
+			} else if isMoveTarget || isLoadTarget {
+				// Move or Load target: success/green style to show affected group
 				arrow := core_theme.DefaultTheme.Success.Render(core_theme.IconArrow)
 				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Success.Render(tabText))
 			} else {
@@ -1429,6 +1430,11 @@ func (m *manageModel) View() string {
 						if parentProj.Kind == workspace.KindEcosystemRoot {
 							parentIcon = core_theme.IconEcosystem
 						}
+						// For cx-repos bare repos, extract the real name from RepoShorthand
+						if parentProj.RepoShorthand != "" {
+							parts := strings.Split(parentProj.RepoShorthand, "/")
+							parentName = parts[len(parts)-1]
+						}
 					}
 
 					parentIconStyled := core_theme.DefaultTheme.Muted.Render(parentIcon + " ")
@@ -1463,8 +1469,14 @@ func (m *manageModel) View() string {
 					// Use the root ecosystem for the Ecosystem column
 					if projInfo.RootEcosystemPath != "" {
 						ecosystem = filepath.Base(projInfo.RootEcosystemPath)
+						if ecosystem == "cx" {
+							ecosystem = "cx-repos"
+						}
 					} else {
 						ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
+						if ecosystem == "cx" {
+							ecosystem = "cx-repos"
+						}
 					}
 
 					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
@@ -1569,6 +1581,11 @@ func (m *manageModel) View() string {
 						if parentProj.Kind == workspace.KindEcosystemRoot {
 							parentIcon = core_theme.IconEcosystem
 						}
+						// For cx-repos bare repos, extract the real name from RepoShorthand
+						if parentProj.RepoShorthand != "" {
+							parts := strings.Split(parentProj.RepoShorthand, "/")
+							parentName = parts[len(parts)-1]
+						}
 					}
 
 					parentIconStyled := core_theme.DefaultTheme.Muted.Render(parentIcon + " ")
@@ -1603,8 +1620,14 @@ func (m *manageModel) View() string {
 					// Use the root ecosystem for the Ecosystem column
 					if projInfo.RootEcosystemPath != "" {
 						ecosystem = filepath.Base(projInfo.RootEcosystemPath)
+						if ecosystem == "cx" {
+							ecosystem = "cx-repos"
+						}
 					} else {
 						ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
+						if ecosystem == "cx" {
+							ecosystem = "cx-repos"
+						}
 					}
 
 					// If the parent ecosystem path differs from the root, this is inside an ecosystem worktree
