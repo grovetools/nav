@@ -35,8 +35,7 @@ type SessionizeKeyMap struct {
 }
 
 func (k SessionizeKeyMap) ShortHelp() []key.Binding {
-	// Return empty to show no help in footer - all help goes in popup
-	return []key.Binding{}
+	return []key.Binding{k.Search, k.FocusEcosystem, k.Help, k.Quit}
 }
 
 func (k SessionizeKeyMap) FullHelp() [][]key.Binding {

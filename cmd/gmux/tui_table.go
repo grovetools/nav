@@ -166,128 +166,75 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		}
 	}
 
-	// Determine prefix based on mode and project type
-	prefix := ""
-	if m.ecosystemPickerMode {
-		// In ecosystem picker mode - show tree structure for worktrees
-		if project.IsWorktree() {
-			// Check if this is the last worktree of its parent
-			isLast := true
-			for j := range m.filtered {
-				if m.filtered[j].IsWorktree() &&
-					m.filtered[j].ParentProjectPath == project.ParentProjectPath &&
-					m.filtered[j].Path != project.Path {
-					// Found another worktree after this one
-					if m.filtered[j].Name > project.Name {
-						isLast = false
-						break
-					}
-				}
-			}
-			if isLast {
-				prefix = "└─ "
-			} else {
-				prefix = "├─ "
-			}
-		}
-		// Main ecosystem - no prefix
-	} else if m.focusedProject != nil {
-		// In focus mode - use hierarchical parent to determine indentation
-		if project.Path == m.focusedProject.Path {
-			// This is the focused ecosystem - no prefix
-			prefix = ""
-		} else if project.GetHierarchicalParent() == m.focusedProject.Path {
-			// This is a direct child of the focused project
-			// Check if it's the last direct child
-			isLast := true
-			if projectIndex >= 0 {
-				for j := projectIndex + 1; j < len(m.filtered); j++ {
-					if m.filtered[j].GetHierarchicalParent() == m.focusedProject.Path {
-						isLast = false
-						break
-					}
-				}
-			}
-			if isLast {
-				prefix = "└─ "
-			} else {
-				prefix = "├─ "
-			}
-		} else {
-			// This is a grandchild (e.g., worktree of a sub-project)
-			prefix = "  └─ "
-		}
-	} else if m.filterGroup {
-		// Group filter mode - show tree structure based on hierarchy
-		// Use GetHierarchicalParent() to determine parent-child relationships
-		// similar to how focus mode works
+	// Determine prefix based on tree structure
+	parentPath := project.GetHierarchicalParent()
+	parentInFiltered := false
 
-		// Build set of paths in filtered list for quick lookup
-		filteredPaths := make(map[string]bool)
+	for _, p := range m.filtered {
+		if p.Path == parentPath {
+			parentInFiltered = true
+			break
+		}
+	}
+
+	if !parentInFiltered && project.ParentEcosystemPath != "" {
 		for _, p := range m.filtered {
-			filteredPaths[p.Path] = true
-		}
-
-		// Check hierarchical parent first, then fall back to ParentEcosystemPath
-		parentPath := project.GetHierarchicalParent()
-		parentInFiltered := parentPath != "" && filteredPaths[parentPath]
-
-		// If hierarchical parent not in filtered list, try ParentEcosystemPath
-		if !parentInFiltered && project.ParentEcosystemPath != "" {
-			if filteredPaths[project.ParentEcosystemPath] {
+			if p.Path == project.ParentEcosystemPath {
 				parentPath = project.ParentEcosystemPath
 				parentInFiltered = true
+				break
+			}
+		}
+	}
+
+	prefix := ""
+	if parentInFiltered {
+		// Find depth
+		depth := 0
+		curr := parentPath
+		for curr != "" {
+			found := false
+			for _, p := range m.filtered {
+				if p.Path == curr {
+					depth++
+					curr = p.GetHierarchicalParent()
+					if curr == "" {
+						curr = p.ParentEcosystemPath
+					}
+					found = true
+					break
+				}
+			}
+			if !found {
+				break
 			}
 		}
 
-		if !parentInFiltered {
-			// This is a root node (parent not in filtered list) - no prefix
-			prefix = ""
+		// Check if it's the last child
+		isLast := true
+		if projectIndex >= 0 {
+			for j := projectIndex + 1; j < len(m.filtered); j++ {
+				nextProj := m.filtered[j]
+				nextParent := nextProj.GetHierarchicalParent()
+				if nextParent == "" {
+					nextParent = nextProj.ParentEcosystemPath
+				}
+
+				if nextParent == parentPath {
+					isLast = false
+					break
+				}
+			}
+		}
+
+		indent := strings.Repeat("  ", depth-1)
+		if isLast {
+			prefix = indent + "└─ "
 		} else {
-			// Parent is in the filtered list - this is a child
-			// Determine depth: is this a direct child or grandchild?
-			// Check if grandparent is also in filtered list
-			grandparentInFiltered := false
-			if parentInFiltered {
-				for _, p := range m.filtered {
-					if p.Path == parentPath {
-						gpPath := p.GetHierarchicalParent()
-						if gpPath != "" && filteredPaths[gpPath] {
-							grandparentInFiltered = true
-						}
-						break
-					}
-				}
-			}
-
-			if grandparentInFiltered {
-				// This is a grandchild - use extra indentation
-				prefix = "  └─ "
-			} else {
-				// This is a direct child
-				// Check if it's the last child of its parent
-				isLast := true
-				if projectIndex >= 0 {
-					for j := projectIndex + 1; j < len(m.filtered); j++ {
-						nextProj := m.filtered[j]
-						if nextProj.GetHierarchicalParent() == parentPath {
-							isLast = false
-							break
-						}
-					}
-				}
-				if isLast {
-					prefix = "└─ "
-				} else {
-					prefix = "├─ "
-				}
-			}
+			prefix = indent + "├─ "
 		}
-	} else {
-		// Normal mode - only show worktree indicator
-		if project.IsWorktree() {
-			prefix = "└─ "
-		}
+	} else if m.ecosystemPickerMode && project.IsWorktree() {
+		prefix = "└─ "
 	}
 
 	// Determine workspace icon based on project kind

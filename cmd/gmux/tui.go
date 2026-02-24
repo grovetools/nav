@@ -25,7 +25,7 @@ import (
 	"github.com/grovetools/nav/pkg/tmux"
 )
 
-var pageStyle = lipgloss.NewStyle().Padding(1, 2)
+var pageStyle = lipgloss.NewStyle()
 
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
@@ -96,7 +96,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	// Create text input for filtering (start unfocused)
 	ti := textinput.New()
 	ti.Placeholder = ""
-	ti.Prompt = "> "
+	ti.Prompt = core_theme.DefaultTheme.Muted.Render("󰍉 ")
 	ti.CharLimit = 256
 	ti.Width = 50
 
@@ -180,6 +180,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	helpModel := help.NewBuilder().
 		WithKeys(sessionizeKeys).
 		WithTitle("Project Sessionizer - Help").
+		WithLegend("Icons: " + core_theme.IconBullet + " current • " + core_theme.IconBullet + " active • " + core_theme.IconEcosystem + " ecosystem • " + core_theme.IconRepo + " repo • " + core_theme.IconWorktree + " worktree • " + core_theme.IconGitBranch + " branch").
 		Build()
 
 	// Build project map for fast lookups and initialize enrichment status
@@ -1462,7 +1463,6 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 func (m *sessionizeModel) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
 
-	// Handle ecosystem picker mode - show ecosystems with their worktrees in a tree
 	if m.ecosystemPickerMode {
 		m.filtered = []*manager.SessionizeProject{}
 
@@ -1475,7 +1475,6 @@ func (m *sessionizeModel) updateFiltered() {
 				continue
 			}
 
-			// Apply filter
 			matchesFilter := filter == "" ||
 				strings.Contains(strings.ToLower(p.Name), filter) ||
 				strings.Contains(strings.ToLower(p.Path), filter)
@@ -1485,21 +1484,17 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 
 			if p.IsWorktree() && p.ParentProjectPath != "" {
-				// This is a worktree - group by parent
 				worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
 			} else {
-				// This is a main ecosystem
 				mainEcosystemsMap[p.Path] = p
 			}
 		}
 
-		// Convert map to slice and sort
 		var mainEcosystems []*manager.SessionizeProject
 		for _, eco := range mainEcosystemsMap {
 			mainEcosystems = append(mainEcosystems, eco)
 		}
 		sort.Slice(mainEcosystems, func(i, j int) bool {
-			// Always put cx-repos at the top in ecosystem picker
 			if mainEcosystems[i].Name == "cx-repos" {
 				return true
 			}
@@ -1509,22 +1504,17 @@ func (m *sessionizeModel) updateFiltered() {
 			return strings.ToLower(mainEcosystems[i].Name) < strings.ToLower(mainEcosystems[j].Name)
 		})
 
-		// Build filtered list: main ecosystem followed by its worktrees
 		for _, eco := range mainEcosystems {
 			m.filtered = append(m.filtered, eco)
 
 			if worktrees, hasWorktrees := worktreesByParent[eco.Path]; hasWorktrees {
-				// Sort worktrees: ecosystem worktrees first, then regular worktrees, both alphabetically
 				sort.Slice(worktrees, func(i, j int) bool {
 					iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
 					jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
 
-					// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
 					if iIsEcoWT != jIsEcoWT {
 						return iIsEcoWT
 					}
-
-					// Otherwise sort alphabetically
 					return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
 				})
 				m.filtered = append(m.filtered, worktrees...)
@@ -1533,644 +1523,225 @@ func (m *sessionizeModel) updateFiltered() {
 		return
 	}
 
-	// Create a working list of projects, either all projects or just the focused ecosystem
-	var projectsToFilter []*manager.SessionizeProject
+	// 1. Determine base set of projects (Focus vs Global)
+	var baseProjects []*manager.SessionizeProject
 	if m.focusedProject != nil {
-		// Add the focused project itself
-		projectsToFilter = append(projectsToFilter, m.focusedProject)
-
-		// This map will only track sub-projects, not ecosystem worktrees, for grandchild traversal
-		directChildrenSubProjects := make(map[string]bool)
-
-		// Add all direct children (ecosystem children and ecosystem worktrees)
 		for _, p := range m.projects {
-			if p.IsChildOf(m.focusedProject.Path) {
-				projectsToFilter = append(projectsToFilter, p)
-
-				// IMPORTANT: Only track sub-projects for finding their worktrees later.
-				// An ecosystem worktree (like website-infra) is also an ecosystem, so this check excludes it.
-				if !p.IsEcosystem() {
-					directChildrenSubProjects[p.Path] = true
-				}
-			}
-		}
-
-		// Now, only add worktrees of the direct *sub-project* children
-		// IMPORTANT: Exclude worktrees that are located inside ecosystem worktrees.
-		// For KindEcosystemWorktreeSubProjectWorktree, GetHierarchicalParent() returns the
-		// ecosystem worktree path (not the git parent), so we can filter them out by checking
-		// that the hierarchical parent matches the ParentProjectPath.
-		for _, p := range m.projects {
-			if p.IsWorktree() && p.ParentProjectPath != "" && directChildrenSubProjects[p.ParentProjectPath] {
-				// Only include if the hierarchical parent is the same as the git parent
-				// (i.e., this is a normal worktree, not one inside an ecosystem worktree)
-				if p.GetHierarchicalParent() == p.ParentProjectPath {
-					projectsToFilter = append(projectsToFilter, p)
-				}
+			if p.Path == m.focusedProject.Path || p.IsChildOf(m.focusedProject.Path) {
+				baseProjects = append(baseProjects, p)
 			}
 		}
 	} else {
-		// No focus, use all projects
-		projectsToFilter = m.projects
+		baseProjects = m.projects
 	}
 
-	// Apply group filter if active
-	if m.filterGroup {
-		pathsToKeep := make(map[string]bool)
-
-		// Build a map of path -> project for ancestor lookups
-		projectByPath := make(map[string]*manager.SessionizeProject)
-		for _, p := range m.projects {
-			projectByPath[p.Path] = p
-		}
-
-		// Iterate over all projects to find ones in the group and their ancestors
-		for _, p := range m.projects {
-			// Check if this project has a key mapping using the same logic as tui_table.go
-			hasKey := false
-			cleanPath := filepath.Clean(p.Path)
-			if _, ok := m.keyMap[cleanPath]; ok {
-				hasKey = true
-			} else {
-				// Try normalized path match
-				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
-				if err == nil {
-					for keyPath := range m.keyMap {
-						normalizedKeyPath, err := pathutil.NormalizeForLookup(keyPath)
-						if err == nil && normalizedKeyPath == normalizedCleanPath {
-							hasKey = true
-							break
-						}
-					}
-				}
+	// 2. Apply text filter to find direct and implicitly related matches
+	matchedPaths := make(map[string]bool)
+	if filter != "" {
+		directMatches := make(map[string]bool)
+		for _, p := range baseProjects {
+			if strings.Contains(strings.ToLower(p.Name), filter) ||
+				strings.Contains(strings.ToLower(p.Path), filter) {
+				directMatches[p.Path] = true
 			}
+		}
+		// Include worktrees if their parent matched
+		for _, p := range baseProjects {
+			if p.IsWorktree() && directMatches[p.ParentProjectPath] {
+				matchedPaths[p.Path] = true
+			} else if directMatches[p.Path] {
+				matchedPaths[p.Path] = true
+			}
+		}
+	} else {
+		for _, p := range baseProjects {
+			matchedPaths[p.Path] = true
+		}
+	}
 
-			if hasKey {
-				// Mark this project and walk up the full hierarchy
-				pathsToKeep[p.Path] = true
+	// 3. Apply attribute filters (Group, Dirty, Hold, Folding)
+	pathsToKeep := make(map[string]bool)
 
-				// Walk up ancestors using GetHierarchicalParent
-				current := p
-				for {
-					parentPath := current.GetHierarchicalParent()
-					if parentPath == "" {
-						break
-					}
-					pathsToKeep[parentPath] = true
-					parent, exists := projectByPath[parentPath]
-					if !exists {
-						break
-					}
-					current = parent
+	hasKey := func(p *manager.SessionizeProject) bool {
+		cleanPath := filepath.Clean(p.Path)
+		if _, ok := m.keyMap[cleanPath]; ok {
+			return true
+		}
+		normalized, err := pathutil.NormalizeForLookup(cleanPath)
+		if err == nil {
+			for keyPath := range m.keyMap {
+				normKey, err := pathutil.NormalizeForLookup(keyPath)
+				if err == nil && normKey == normalized {
+					return true
 				}
 			}
 		}
-
-		var filtered []*manager.SessionizeProject
-		for _, p := range projectsToFilter {
-			if pathsToKeep[p.Path] {
-				filtered = append(filtered, p)
-			}
-		}
-		projectsToFilter = filtered
+		return false
 	}
 
-	// Apply dirty filter if active
-	if m.filterDirty {
-		pathsToKeep := make(map[string]bool)
-
-		// Iterate over all projects to find dirty ones and their ancestors
-		for _, p := range m.projects {
-			if p.GetGitStatus() != nil && p.GetGitStatus().IsDirty {
-				// Mark this project
-				pathsToKeep[p.Path] = true
-
-				// Mark ancestors to preserve hierarchy
-				if p.ParentProjectPath != "" {
-					pathsToKeep[p.ParentProjectPath] = true
-				}
-				if p.ParentEcosystemPath != "" {
-					pathsToKeep[p.ParentEcosystemPath] = true
-				}
-			}
-		}
-
-		// Filter projectsToFilter to only include paths we want to keep
-		var filtered []*manager.SessionizeProject
-		for _, p := range projectsToFilter {
-			if pathsToKeep[p.Path] {
-				filtered = append(filtered, p)
-			}
-		}
-		projectsToFilter = filtered
-	}
-
-	// Apply on-hold filter
-	if !m.showOnHold {
-		var nonHoldProjects []*manager.SessionizeProject
-		for _, p := range projectsToFilter {
-			if p.PlanStats == nil || p.PlanStats.PlanStatus != "hold" {
-				nonHoldProjects = append(nonHoldProjects, p)
-			}
-		}
-		projectsToFilter = nonHoldProjects
-	}
-
-	// Build map of active groups. A group is identified by GetGroupingKey(), which returns:
-	// - For project worktrees: the parent project path
-	// - For all other nodes: the node's own path
-	activeGroups := make(map[string]bool)
-	for _, p := range projectsToFilter {
-		groupKey := p.GetGroupingKey()
-		if groupKey == "" { // Should not happen, but as a safeguard
+	for _, p := range baseProjects {
+		if filter != "" && !matchedPaths[p.Path] {
 			continue
 		}
 
-		sessionName := p.Identifier()
-		if m.runningSessions[sessionName] {
-			activeGroups[groupKey] = true
+		keep := true
+		if m.filterGroup && !hasKey(p) {
+			keep = false
+		}
+		if m.filterDirty && (p.GetGitStatus() == nil || !p.GetGitStatus().IsDirty) {
+			keep = false
+		}
+		if !m.showOnHold && p.PlanStats != nil && p.PlanStats.PlanStatus == "hold" {
+			keep = false
+		}
+		// Hide worktrees only when folded AND group filter is not active
+		// (group filter should always show worktrees for context)
+		if filter == "" && m.worktreesFolded && !m.filterGroup && p.IsWorktree() {
+			keep = false
+		}
+
+		if keep {
+			pathsToKeep[p.Path] = true
 		}
 	}
 
-	if filter == "" {
-		// Default View: Group-aware sorting with inactive worktree filtering
-		// Clear context-only paths when not filtering
-		m.contextOnlyPaths = make(map[string]bool)
+	// 4. Trace Ancestry to Build Context Tree
+	projectByPath := make(map[string]*manager.SessionizeProject)
+	for _, p := range baseProjects {
+		projectByPath[p.Path] = p
+	}
 
-		if m.focusedProject != nil {
-			// Focus mode: Different handling for ecosystems vs regular projects
-			if m.focusedProject.IsEcosystem() {
-				// For ecosystems, we show all direct children by default
-				// regardless of whether they are worktrees or sub-projects
-				m.filtered = []*manager.SessionizeProject{}
+	m.contextOnlyPaths = make(map[string]bool)
+	finalIncludedPaths := make(map[string]bool)
 
-				// First, add the focused ecosystem itself
-				for _, p := range projectsToFilter {
-					if p.Path == m.focusedProject.Path {
-						m.filtered = append(m.filtered, p)
-						break
-					}
+	for path := range pathsToKeep {
+		finalIncludedPaths[path] = true
+
+		currentPath := path
+		for {
+			p, exists := projectByPath[currentPath]
+			if !exists {
+				break
+			}
+
+			parentPath := p.GetHierarchicalParent()
+			if parentPath == "" || projectByPath[parentPath] == nil {
+				if p.ParentEcosystemPath != "" && projectByPath[p.ParentEcosystemPath] != nil {
+					parentPath = p.ParentEcosystemPath
 				}
+			}
 
-				// Collect and sort all direct children (both sub-projects and worktrees)
-				var directChildren []*manager.SessionizeProject
-				var grandchildren []*manager.SessionizeProject
+			if parentPath == "" || parentPath == currentPath {
+				break
+			}
+			if m.focusedProject != nil && parentPath == m.focusedProject.GetHierarchicalParent() {
+				break
+			}
 
-				for _, p := range projectsToFilter {
-					if p.Path == m.focusedProject.Path {
-						continue // Skip the focused project itself
-					}
+			finalIncludedPaths[parentPath] = true
+			if !pathsToKeep[parentPath] {
+				m.contextOnlyPaths[parentPath] = true // Context-only nodes
+			}
 
-					// Check if this is a direct child
-					if p.GetHierarchicalParent() == m.focusedProject.Path {
-						directChildren = append(directChildren, p)
-					} else {
-						// This might be a grandchild (worktree of a child project)
-						grandchildren = append(grandchildren, p)
-					}
-				}
+			currentPath = parentPath
+		}
+	}
 
-				// Sort direct children: ecosystem worktrees first, then other children, both alphabetically
-				sort.Slice(directChildren, func(i, j int) bool {
-					iIsEcoWT := directChildren[i].Kind == workspace.KindEcosystemWorktree
-					jIsEcoWT := directChildren[j].Kind == workspace.KindEcosystemWorktree
+	if m.focusedProject != nil {
+		finalIncludedPaths[m.focusedProject.Path] = true
+		if !pathsToKeep[m.focusedProject.Path] {
+			m.contextOnlyPaths[m.focusedProject.Path] = true
+		}
+	}
 
-					// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
-					if iIsEcoWT != jIsEcoWT {
-						return iIsEcoWT
-					}
+	// 5. Structure Hierarchical Roots & Children
+	childrenByParent := make(map[string][]*manager.SessionizeProject)
+	var roots []*manager.SessionizeProject
 
-					// Otherwise sort alphabetically
-					return strings.ToLower(directChildren[i].Name) < strings.ToLower(directChildren[j].Name)
-				})
+	for path := range finalIncludedPaths {
+		p := projectByPath[path]
+		if p == nil {
+			continue
+		}
 
-				// Add direct children, filtering ecosystem worktrees based on fold state
-				for _, child := range directChildren {
-					// Skip ecosystem worktrees if worktrees are folded
-					if m.worktreesFolded && child.Kind == workspace.KindEcosystemWorktree {
-						continue
-					}
-
-					m.filtered = append(m.filtered, child)
-
-					// If worktrees are not folded, add this child's worktrees (only for non-ecosystem-worktree children)
-					if !m.worktreesFolded && child.Kind != workspace.KindEcosystemWorktree {
-						// Collect and sort this child's worktrees
-						childWorktrees := []*manager.SessionizeProject{}
-						for _, gc := range grandchildren {
-							if gc.ParentProjectPath == child.Path {
-								childWorktrees = append(childWorktrees, gc)
-							}
-						}
-						sort.Slice(childWorktrees, func(i, j int) bool {
-							return strings.ToLower(childWorktrees[i].Name) < strings.ToLower(childWorktrees[j].Name)
-						})
-						m.filtered = append(m.filtered, childWorktrees...)
-					}
-				}
+		parentPath := p.GetHierarchicalParent()
+		if parentPath == "" || projectByPath[parentPath] == nil || !finalIncludedPaths[parentPath] {
+			if p.ParentEcosystemPath != "" && projectByPath[p.ParentEcosystemPath] != nil && finalIncludedPaths[p.ParentEcosystemPath] {
+				parentPath = p.ParentEcosystemPath
 			} else {
-				// Regular project focus: Group repos with their worktrees hierarchically
-				m.filtered = []*manager.SessionizeProject{}
-
-				// First add the focused project
-				m.filtered = append(m.filtered, m.focusedProject)
-
-				// Build a map of parents to their worktrees
-				parentWorktrees := make(map[string][]*manager.SessionizeProject)
-				nonWorktrees := []*manager.SessionizeProject{}
-
-				for _, p := range projectsToFilter {
-					if p.Path == m.focusedProject.Path {
-						continue // Skip focused project, already added
-					}
-					if p.IsWorktree() {
-						parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
-					} else {
-						nonWorktrees = append(nonWorktrees, p)
-					}
-				}
-
-				// Add non-worktree repos, each followed by their worktrees (if not folded)
-				for _, parent := range nonWorktrees {
-					m.filtered = append(m.filtered, parent)
-					if !m.worktreesFolded {
-						if worktrees, exists := parentWorktrees[parent.Path]; exists {
-							// Sort worktrees alphabetically before adding
-							sort.Slice(worktrees, func(i, j int) bool {
-								return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
-							})
-							m.filtered = append(m.filtered, worktrees...)
-						}
-					}
-				}
-
-				// Add any remaining worktrees if not folded
-				if !m.worktreesFolded {
-					if focusedWorktrees, exists := parentWorktrees[m.focusedProject.Path]; exists {
-						// Sort worktrees alphabetically before inserting
-						sort.Slice(focusedWorktrees, func(i, j int) bool {
-							return strings.ToLower(focusedWorktrees[i].Name) < strings.ToLower(focusedWorktrees[j].Name)
-						})
-						// Insert these after the focused project (at position 1)
-						m.filtered = append(m.filtered[:1], append(focusedWorktrees, m.filtered[1:]...)...)
-					}
-				}
+				parentPath = ""
 			}
-		} else if m.filterGroup {
-			// Group filter mode: Build hierarchical tree based on GetHierarchicalParent()
-			m.filtered = []*manager.SessionizeProject{}
+		}
 
-			// Build lookup maps
-			projectByPath := make(map[string]*manager.SessionizeProject)
-			childrenByParent := make(map[string][]*manager.SessionizeProject)
-			var roots []*manager.SessionizeProject
+		if m.focusedProject != nil && p.Path == m.focusedProject.Path {
+			parentPath = ""
+		}
 
-			for _, p := range projectsToFilter {
-				projectByPath[p.Path] = p
-			}
-
-			// Categorize projects into roots and children
-			for _, p := range projectsToFilter {
-				parentPath := p.GetHierarchicalParent()
-				// Also check ParentEcosystemPath as fallback
-				if parentPath == "" || projectByPath[parentPath] == nil {
-					if p.ParentEcosystemPath != "" && projectByPath[p.ParentEcosystemPath] != nil {
-						parentPath = p.ParentEcosystemPath
-					}
-				}
-
-				if parentPath != "" && projectByPath[parentPath] != nil {
-					childrenByParent[parentPath] = append(childrenByParent[parentPath], p)
-				} else {
-					roots = append(roots, p)
-				}
-			}
-
-			// Sort roots alphabetically
-			sort.Slice(roots, func(i, j int) bool {
-				return strings.ToLower(roots[i].Name) < strings.ToLower(roots[j].Name)
-			})
-
-			// Recursive function to add project and its children
-			var addWithChildren func(p *manager.SessionizeProject)
-			addWithChildren = func(p *manager.SessionizeProject) {
-				m.filtered = append(m.filtered, p)
-				children := childrenByParent[p.Path]
-				// Sort children alphabetically
-				sort.Slice(children, func(i, j int) bool {
-					return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
-				})
-				for _, child := range children {
-					addWithChildren(child)
-				}
-			}
-
-			// Build the tree starting from roots
-			for _, root := range roots {
-				addWithChildren(root)
-			}
+		if parentPath != "" {
+			childrenByParent[parentPath] = append(childrenByParent[parentPath], p)
 		} else {
-			// Normal mode: Group worktrees under their parents and respect fold state
-			// Separate projects into parents and worktrees
-			var parentRepos []*manager.SessionizeProject
-			worktreesByParent := make(map[string][]*manager.SessionizeProject)
+			roots = append(roots, p)
+		}
+	}
 
-			for _, p := range projectsToFilter {
-				if p.IsWorktree() {
-					worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
-				} else {
-					parentRepos = append(parentRepos, p)
-				}
+	// 6. Sort and Flatten
+	sort.Slice(roots, func(i, j int) bool {
+		var hasActive func(path string) bool
+		hasActive = func(path string) bool {
+			p := projectByPath[path]
+			if p != nil && m.runningSessions[p.Identifier()] {
+				return true
 			}
-
-			// Sort parents by activity (active sessions first)
-			sort.SliceStable(parentRepos, func(i, j int) bool {
-				sessionI := parentRepos[i].Identifier()
-				sessionJ := parentRepos[j].Identifier()
-				activeI := m.runningSessions[sessionI]
-				activeJ := m.runningSessions[sessionJ]
-
-				if activeI && !activeJ {
+			for _, child := range childrenByParent[path] {
+				if hasActive(child.Path) {
 					return true
 				}
-				if !activeI && activeJ {
-					return false
-				}
-				return false // Maintain original order for same activity status
-			})
-
-			// Build filtered list: parent followed by its worktrees (if not folded)
-			m.filtered = []*manager.SessionizeProject{}
-			for _, parent := range parentRepos {
-				m.filtered = append(m.filtered, parent)
-
-				if !m.worktreesFolded {
-					if worktrees, exists := worktreesByParent[parent.Path]; exists {
-						// Sort worktrees: ecosystem worktrees first, then regular worktrees, both alphabetically
-						sort.Slice(worktrees, func(i, j int) bool {
-							iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
-							jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
-
-							// If one is ecosystem worktree and the other isn't, ecosystem worktree comes first
-							if iIsEcoWT != jIsEcoWT {
-								return iIsEcoWT
-							}
-
-							// Otherwise sort alphabetically
-							return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
-						})
-						m.filtered = append(m.filtered, worktrees...)
-					}
-				}
 			}
-		}
-	} else {
-		// Filtered View: Show all matching projects, grouped by activity
-
-		// sortByMatchQuality sorts projects by match quality while preserving parent-child grouping.
-		// This is used in global mode searches where we want to show parent repos alongside their worktrees
-		// for context. Note: This groups ALL worktrees (including EcosystemWorktrees) with their parents.
-		sortByMatchQuality := func(projects []*manager.SessionizeProject, filter string) []*manager.SessionizeProject {
-			// Build a map of parents to their worktrees
-			parentWorktrees := make(map[string][]*manager.SessionizeProject)
-			parents := []*manager.SessionizeProject{}
-
-			for _, p := range projects {
-				// IsWorktree() includes both project worktrees and ecosystem worktrees
-				if p.IsWorktree() {
-					parentWorktrees[p.ParentProjectPath] = append(parentWorktrees[p.ParentProjectPath], p)
-				} else {
-					parents = append(parents, p)
-				}
-			}
-
-			// Calculate match quality for sorting (name only, not path)
-			getMatchQuality := func(p *manager.SessionizeProject) int {
-				lowerName := strings.ToLower(p.Name)
-
-				if lowerName == filter {
-					return 3 // Exact match
-				} else if strings.HasPrefix(lowerName, filter) {
-					return 2 // Prefix match
-				} else if strings.Contains(lowerName, filter) {
-					return 1 // Contains in name
-				}
-				return 0 // No direct match (included because child matched)
-			}
-
-			// Sort parents by match quality
-			sort.SliceStable(parents, func(i, j int) bool {
-				return getMatchQuality(parents[i]) > getMatchQuality(parents[j])
-			})
-
-			// Build result with parents followed by their worktrees
-			var result []*manager.SessionizeProject
-			for _, parent := range parents {
-				result = append(result, parent)
-
-				// Add worktrees for this parent, sorted by match quality, with ecosystem worktrees prioritized
-				worktrees := parentWorktrees[parent.Path]
-				sort.SliceStable(worktrees, func(i, j int) bool {
-					iQuality := getMatchQuality(worktrees[i])
-					jQuality := getMatchQuality(worktrees[j])
-
-					// If match quality differs, sort by that
-					if iQuality != jQuality {
-						return iQuality > jQuality
-					}
-
-					// For same match quality, prioritize ecosystem worktrees
-					iIsEcoWT := worktrees[i].Kind == workspace.KindEcosystemWorktree
-					jIsEcoWT := worktrees[j].Kind == workspace.KindEcosystemWorktree
-					if iIsEcoWT != jIsEcoWT {
-						return iIsEcoWT
-					}
-
-					// Otherwise maintain stable order
-					return false
-				})
-				result = append(result, worktrees...)
-			}
-
-			return result
+			return false
 		}
 
-		// Collect matched projects
-		var matchedProjects []*manager.SessionizeProject
+		activeI := hasActive(roots[i].Path)
+		activeJ := hasActive(roots[j].Path)
 
-		if m.focusedProject != nil {
-			// Focus mode: simpler, direct search
-			// Match any project whose name or path contains the filter
-			matchedPaths := make(map[string]bool)
-			parentsToInclude := make(map[string]bool)
-
-			// First, find all matches
-			for _, p := range projectsToFilter {
-				if strings.Contains(strings.ToLower(p.Name), filter) ||
-					strings.Contains(strings.ToLower(p.Path), filter) {
-					matchedPaths[p.Path] = true
-
-					// Walk up hierarchy to include all ancestors for context
-					current := p
-					for current != nil {
-						parent := current.GetHierarchicalParent()
-						if parent == "" || parent == m.focusedProject.Path {
-							// Reached the focused project or root
-							break
-						}
-
-						// Find the parent project and mark it for inclusion
-						for _, ancestor := range projectsToFilter {
-							if ancestor.Path == parent {
-								parentsToInclude[parent] = true
-								current = ancestor
-								break
-							}
-						}
-
-						if current.Path == p.Path {
-							// Couldn't find parent, stop walking
-							break
-						}
-					}
-				}
-			}
-
-			// Add the focused project itself if not already there
-			parentsToInclude[m.focusedProject.Path] = true
-
-			// Build context-only paths (parents that aren't actual matches)
-			m.contextOnlyPaths = make(map[string]bool)
-			for path := range parentsToInclude {
-				if !matchedPaths[path] {
-					m.contextOnlyPaths[path] = true
-				}
-			}
-
-			// Collect all projects to display (matches + their ancestors)
-			for _, p := range projectsToFilter {
-				if matchedPaths[p.Path] || parentsToInclude[p.Path] {
-					matchedProjects = append(matchedProjects, p)
-				}
-			}
-		} else {
-			// Global mode: complex search with parent-child awareness
-			// Clear context-only paths (only used in focus mode)
-			m.contextOnlyPaths = make(map[string]bool)
-
-			matchedParents := make(map[string]bool)               // Track which parent projects matched
-			parentsWithMatchingWorktrees := make(map[string]bool) // Track parents whose worktrees matched
-
-			// First pass: find matching parent projects (search name only)
-			for _, p := range projectsToFilter {
-				if p.IsWorktree() {
-					continue // Skip worktrees in first pass
-				}
-
-				lowerName := strings.ToLower(p.Name)
-
-				// Check if this parent project matches the filter (name only, not full path)
-				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-					strings.Contains(lowerName, filter) {
-					matchedParents[p.Path] = true
-				}
-			}
-
-			// Second pass: find worktrees that match and mark their parents for inclusion
-			// (Always search worktrees, even if folded - they'll be shown when filtering)
-			for _, p := range projectsToFilter {
-				if !p.IsWorktree() {
-					continue
-				}
-
-				lowerName := strings.ToLower(p.Name)
-
-				// Check if this worktree matches the filter (name only, not full path)
-				if lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-					strings.Contains(lowerName, filter) {
-					// Mark parent for inclusion even if parent didn't match directly
-					parentsWithMatchingWorktrees[p.ParentProjectPath] = true
-				}
-			}
-
-			// Third pass: add matched parents and their worktrees to matchedProjects
-			for _, p := range projectsToFilter {
-				shouldInclude := false
-
-				if p.IsWorktree() {
-					// Include worktree if it matches or its parent matched
-					// (Show worktrees in search results even if they're folded in normal view)
-					lowerName := strings.ToLower(p.Name)
-					worktreeMatches := lowerName == filter || strings.HasPrefix(lowerName, filter) ||
-						strings.Contains(lowerName, filter)
-					parentMatched := matchedParents[p.ParentProjectPath]
-
-					shouldInclude = worktreeMatches || parentMatched
-				} else {
-					// Include parent if it matched OR if any of its worktrees matched
-					shouldInclude = matchedParents[p.Path] || parentsWithMatchingWorktrees[p.Path]
-				}
-
-				if shouldInclude {
-					matchedProjects = append(matchedProjects, p)
-				}
-			}
+		if activeI && !activeJ {
+			return true
+		}
+		if !activeI && activeJ {
+			return false
 		}
 
-		if m.focusedProject != nil {
-			// Focus mode: maintain hierarchical order with focused project first
-			m.filtered = []*manager.SessionizeProject{}
-
-			// First, add the focused project if it's in the matched set
-			var focusedIncluded bool
-			for _, p := range matchedProjects {
-				if p.Path == m.focusedProject.Path {
-					m.filtered = append(m.filtered, p)
-					focusedIncluded = true
-					break
-				}
-			}
-
-			// If focused project wasn't included, add it anyway for context
-			if !focusedIncluded {
-				m.filtered = append(m.filtered, m.focusedProject)
-				m.contextOnlyPaths[m.focusedProject.Path] = true
-			}
-
-			// Then add all other projects in their existing hierarchical order
-			// (projectsToFilter is already hierarchically ordered from BuildWorkspaceTree)
-			for _, p := range matchedProjects {
-				if p.Path != m.focusedProject.Path {
-					m.filtered = append(m.filtered, p)
-				}
-			}
-		} else {
-			// Global mode: Partition matched projects by group activity
-			var activeGroupMatches []*manager.SessionizeProject
-			var inactiveGroupMatches []*manager.SessionizeProject
-
-			for _, p := range matchedProjects {
-				// Use GetGroupingKey() which correctly returns ParentProjectPath for project worktrees
-				// but returns the node's own path for ecosystem children and other nodes
-				groupKey := p.GetGroupingKey()
-
-				// Check group activity
-				if activeGroups[groupKey] {
-					activeGroupMatches = append(activeGroupMatches, p)
-				} else {
-					inactiveGroupMatches = append(inactiveGroupMatches, p)
-				}
-			}
-
-			// Sort both groups by match quality (parents will naturally group with their worktrees)
-			activeGroupMatches = sortByMatchQuality(activeGroupMatches, filter)
-			inactiveGroupMatches = sortByMatchQuality(inactiveGroupMatches, filter)
-
-			// Combine: active groups first, then inactive groups
-			m.filtered = []*manager.SessionizeProject{}
-			m.filtered = append(m.filtered, activeGroupMatches...)
-			m.filtered = append(m.filtered, inactiveGroupMatches...)
+		if roots[i].Name == "cx-repos" {
+			return true
 		}
+		if roots[j].Name == "cx-repos" {
+			return false
+		}
+
+		return strings.ToLower(roots[i].Name) < strings.ToLower(roots[j].Name)
+	})
+
+	m.filtered = []*manager.SessionizeProject{}
+	var flatten func(p *manager.SessionizeProject)
+	flatten = func(p *manager.SessionizeProject) {
+		m.filtered = append(m.filtered, p)
+		children := childrenByParent[p.Path]
+
+		sort.Slice(children, func(i, j int) bool {
+			iIsEcoWT := children[i].Kind == workspace.KindEcosystemWorktree
+			jIsEcoWT := children[j].Kind == workspace.KindEcosystemWorktree
+			if iIsEcoWT != jIsEcoWT {
+				return iIsEcoWT
+			}
+			return strings.ToLower(children[i].Name) < strings.ToLower(children[j].Name)
+		})
+
+		for _, child := range children {
+			flatten(child)
+		}
+	}
+
+	for _, root := range roots {
+		flatten(root)
 	}
 }
 func (m sessionizeModel) View() string {
@@ -2189,16 +1760,14 @@ func (m sessionizeModel) View() string {
 	// Render group tabs (always show so users can switch groups and set keys)
 	groups := m.manager.GetGroups()
 	if len(groups) > 0 {
-		// Add muted/italic label
 		labelStyle := lipgloss.NewStyle().Faint(true).Italic(true)
-		b.WriteString(labelStyle.Render("Key group: "))
+		b.WriteString("  " + labelStyle.Render("Key group: "))
 
 		activeGroup := m.manager.GetActiveGroup()
 		var tabs []string
 		for _, g := range groups {
 			iconStr := ""
 			if g == "default" {
-				// Use configured default_icon or fall back to IconHome
 				if defIcon := m.manager.GetDefaultIcon(); defIcon != "" {
 					iconStr = resolveIcon(defIcon) + " "
 				} else {
@@ -2208,137 +1777,77 @@ func (m sessionizeModel) View() string {
 				if cfg, ok := m.manager.GetGroupConfig(g); ok && cfg.Icon != "" {
 					iconStr = resolveIcon(cfg.Icon) + " "
 				} else {
-					// Default icon for groups without configured icon
 					iconStr = core_theme.IconFolderStar + " "
 				}
 			}
 
 			tabText := iconStr + g
 
-			// Always reserve space for filter icon on all tabs
-			filterSpace := " " + core_theme.DefaultTheme.Muted.Render(core_theme.IconFilter)
-
 			if g == activeGroup {
-				// Active tab: arrow indicator + highlighted text
-				filterIndicator := filterSpace
-				if m.filterGroup {
-					// Use Violet accent color for active filter to stand out
-					violetStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
-					filterIndicator = " " + violetStyle.Render(core_theme.IconFilter)
-				}
 				arrow := core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold)
-				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText)+filterIndicator)
+				tabs = append(tabs, arrow+" "+core_theme.DefaultTheme.Highlight.Render(tabText))
 			} else {
-				// Inactive tab: space placeholder (same width as arrow) + muted text + filter space
-				tabs = append(tabs, "  "+core_theme.DefaultTheme.Muted.Render(tabText)+filterSpace)
+				tabs = append(tabs, "  "+core_theme.DefaultTheme.Muted.Render(tabText))
 			}
 		}
-		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render(" │")))
+		b.WriteString(strings.Join(tabs, core_theme.DefaultTheme.Muted.Render(" │ ")))
 		b.WriteString("\n")
 	}
-
-	// Header with filter input (always at top)
-	var header strings.Builder
-
-	if m.filterDirty {
-		header.WriteString(core_theme.DefaultTheme.Warning.Render("[DIRTY] "))
-	}
-	if m.ecosystemPickerMode {
-		header.WriteString(core_theme.DefaultTheme.Muted.Render(core_theme.IconEcosystem + " Select ecosystem to focus"))
-	} else if m.focusedProject != nil {
-		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("[Focus: %s]", m.focusedProject.Name))
-		header.WriteString(focusIndicator)
-		header.WriteString(" ")
-	}
-	// Show status message if active
-	if m.statusMessage != "" && time.Now().Before(m.statusTimeout) {
-		header.WriteString(core_theme.DefaultTheme.Success.Render("[" + m.statusMessage + "]"))
-		header.WriteString(" ")
-	}
-	// Only show filter input when actively searching
-	if m.filterInput.Value() != "" || m.filterInput.Focused() {
-		header.WriteString(m.filterInput.View())
-	}
-
-	b.WriteString(header.String())
-	b.WriteString("\n")
 
 	// Render projects using table view
 	b.WriteString(m.renderTable())
 
-	// Note: "No matching projects" message is already rendered by renderTable()
-
-	// Icon legend
-	legendStyle := core_theme.DefaultTheme.Muted
-	currentIcon := core_theme.DefaultTheme.Info.Render(core_theme.IconBullet)
-	activeIcon := core_theme.DefaultTheme.Highlight.Render(core_theme.IconBullet)
-	legend := fmt.Sprintf("Icons: %s current • %s active • %s ecosystem • %s repo • %s worktree • %s branch",
-		currentIcon, activeIcon, core_theme.IconEcosystem, core_theme.IconRepo, core_theme.IconWorktree, core_theme.IconGitBranch)
-	b.WriteString("\n" + legendStyle.Render(legend))
-
-	// Help text
-	helpStyle := core_theme.DefaultTheme.Muted
 	b.WriteString("\n")
 
-	// Build toggle indicators
-	gitToggle := "s:git status "
-	if m.showGitStatus {
-		gitToggle += core_theme.DefaultTheme.Success.Render("*")
-	} else {
-		gitToggle += core_theme.DefaultTheme.Muted.Render("x")
+	// Footer with search, status indicators, and help
+	helpStyle := core_theme.DefaultTheme.Muted
+	violetStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
+
+	// Search/filter input line
+	if m.filterInput.Value() != "" || m.filterInput.Focused() {
+		b.WriteString("  " + m.filterInput.View() + "\n")
 	}
 
-	branchToggle := " b:branch "
-	if m.showBranch {
-		branchToggle += core_theme.DefaultTheme.Success.Render("*")
-	} else {
-		branchToggle += core_theme.DefaultTheme.Muted.Render("x")
-	}
-
-	noteToggle := " n:notes "
-	if m.showNoteCounts {
-		noteToggle += core_theme.DefaultTheme.Success.Render("*")
-	} else {
-		noteToggle += core_theme.DefaultTheme.Muted.Render("x")
-	}
-
-	planToggle := " f:plans "
-	if m.showPlanStats {
-		planToggle += core_theme.DefaultTheme.Success.Render("*")
-	} else {
-		planToggle += core_theme.DefaultTheme.Muted.Render("x")
-	}
-
-	pathsToggle := " p:paths "
-	switch m.pathDisplayMode {
-	case 0:
-		pathsToggle += core_theme.DefaultTheme.Muted.Render("off")
-	case 1:
-		pathsToggle += core_theme.DefaultTheme.Success.Render("~")
-	case 2:
-		pathsToggle += core_theme.DefaultTheme.Success.Render("full")
-	}
-
-	// Note: cx (C), paths (p), release (r), tool (y), and remote (l) toggles are available but only shown in full help (?)
-	togglesDisplay := fmt.Sprintf("[%s%s%s%s]", gitToggle, branchToggle, noteToggle, planToggle)
-
+	// Mode and status indicators
 	if m.ecosystemPickerMode {
-		b.WriteString(helpStyle.Render("Enter to select • Esc to cancel"))
+		b.WriteString("  " + core_theme.DefaultTheme.Muted.Render(core_theme.IconEcosystem+" Select ecosystem to focus") + "\n")
 	} else if m.focusedProject != nil {
-		b.WriteString(helpStyle.Render("Press ? for help • Press 0 to clear ecosystem focus • ") + togglesDisplay)
-	} else {
-		b.WriteString(helpStyle.Render("Press ? for help • ") + togglesDisplay)
+		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s [%s]", core_theme.IconEcosystem, m.focusedProject.Name))
+		b.WriteString("  " + focusIndicator + "\n")
 	}
 
-	// Display search paths at the very bottom
-	if len(m.searchPaths) > 0 {
-		b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("Search paths: "))
-		// Truncate search paths if too long
-		pathsDisplay := strings.Join(m.searchPaths, " • ")
-		if len(pathsDisplay) > m.width-15 && m.width > 50 {
-			pathsDisplay = pathsDisplay[:m.width-18] + "..."
-		}
-		b.WriteString(core_theme.DefaultTheme.Muted.Render(pathsDisplay))
+	// Status message
+	if m.statusMessage != "" && time.Now().Before(m.statusTimeout) {
+		b.WriteString("  " + core_theme.DefaultTheme.Success.Render(m.statusMessage) + "\n")
+	}
+
+	// Dirty filter indicator
+	if m.filterDirty {
+		b.WriteString("  " + core_theme.DefaultTheme.Warning.Render("[DIRTY]") + "\n")
+	}
+
+	// Build status indicators line
+	var indicators []string
+	if m.filterGroup {
+		indicators = append(indicators, violetStyle.Render(core_theme.IconFilter+" Group Filter"))
+	}
+	// Show worktrees indicator only when not using group filter
+	// (group filter always shows worktrees for context)
+	if !m.worktreesFolded && !m.filterGroup {
+		indicators = append(indicators, violetStyle.Render(core_theme.IconWorktree+" Show Worktrees"))
+	}
+
+	if len(indicators) > 0 {
+		b.WriteString("  " + strings.Join(indicators, helpStyle.Render("  •  ")) + "\n")
+	}
+
+	// Help line
+	if m.ecosystemPickerMode {
+		b.WriteString("  " + helpStyle.Render("Enter to select • Esc to cancel"))
+	} else if m.focusedProject != nil {
+		b.WriteString("  " + helpStyle.Render("? • help • 0 • clear focus • q • quit"))
+	} else {
+		b.WriteString("  " + helpStyle.Render("? • help • q • quit"))
 	}
 
 	return pageStyle.Render(b.String())

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
@@ -308,8 +309,10 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Forward adjusted size to all initialized models (subtract 2 lines for tab bar)
-		childMsg := tea.WindowSizeMsg{Width: msg.Width, Height: msg.Height - 2}
+		// Forward adjusted size to all initialized models
+		// Subtract 4 for Width (2 left padding + 2 right padding)
+		// Subtract 4 for Height (1 top padding + 1 bottom padding + 2 lines for tab bar)
+		childMsg := tea.WindowSizeMsg{Width: msg.Width - 4, Height: msg.Height - 4}
 		if m.sessionizeModel != nil {
 			newModel, _ := m.sessionizeModel.Update(childMsg)
 			if sm, ok := newModel.(sessionizeModel); ok {
@@ -552,15 +555,15 @@ func (m *navModel) View() string {
 
 	// Render global tab bar - tabs are always available, models are lazily initialized
 	tabs := []struct {
-		num  string
-		name string
-		view navView
-		ok   bool
+		numIcon string
+		name    string
+		view    navView
+		ok      bool
 	}{
-		{"1", "Sessionize", viewSessionize, true},
-		{"2", "Key Manage", viewManage, true},
-		{"3", "History", viewHistory, true},
-		{"4", "Windows", viewWindows, m.client != nil}, // Windows requires tmux client
+		{core_theme.IconNumeric1CircleOutline, "Sessionize", viewSessionize, true},
+		{core_theme.IconNumeric2CircleOutline, "Key Manage", viewManage, true},
+		{core_theme.IconNumeric3CircleOutline, "History", viewHistory, true},
+		{core_theme.IconNumeric4CircleOutline, "Windows", viewWindows, m.client != nil}, // Windows requires tmux client
 	}
 
 	var tabParts []string
@@ -568,15 +571,24 @@ func (m *navModel) View() string {
 		if !tab.ok {
 			continue
 		}
-		label := fmt.Sprintf("[%s] %s", tab.num, tab.name)
+
 		if m.activeView == tab.view {
-			tabParts = append(tabParts, core_theme.DefaultTheme.Highlight.Render(label))
+			// Active tab: Violet number icon, bold white text
+			numStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet).Bold(true)
+			nameStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.LightText).Bold(true)
+			tabParts = append(tabParts, fmt.Sprintf("%s %s", numStyle.Render(tab.numIcon), nameStyle.Render(tab.name)))
 		} else {
-			tabParts = append(tabParts, core_theme.DefaultTheme.Muted.Render(label))
+			// Inactive tab: Keep number visible (not faint), text muted
+			numStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.MutedText)
+			nameStyle := core_theme.DefaultTheme.Muted
+			tabParts = append(tabParts, fmt.Sprintf("%s %s", numStyle.Render(tab.numIcon), nameStyle.Render(tab.name)))
 		}
 	}
-	b.WriteString(strings.Join(tabParts, "  "))
-	b.WriteString("\n")
+
+	// Join with generous spacing and a faint dot separator
+	separator := core_theme.DefaultTheme.Muted.Faint(true).Render("  •  ")
+	b.WriteString(strings.Join(tabParts, separator))
+	b.WriteString("\n\n")
 
 	// Render active view (prepend tab bar to child view)
 	var childView string
@@ -604,7 +616,7 @@ func (m *navModel) View() string {
 	}
 
 	b.WriteString(childView)
-	return b.String()
+	return lipgloss.NewStyle().Padding(1, 2).Render(b.String())
 }
 
 // runNavTUI runs the unified nav TUI starting in manage view
