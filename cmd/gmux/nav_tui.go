@@ -33,6 +33,12 @@ type switchViewMsg struct {
 	to navView
 }
 
+// initiateMappingMsg is sent from sessionize view to start mapping a project in the manage view
+type initiateMappingMsg struct {
+	project  *manager.SessionizeProject
+	returnTo navView
+}
+
 // NavTUIOptions contains options for initializing the nav TUI
 type NavTUIOptions struct {
 	CwdFocusPath string // Path to focus on in sessionize view
@@ -60,7 +66,7 @@ func (m *navModel) isTextInputFocused() bool {
 	switch m.activeView {
 	case viewSessionize:
 		if m.sessionizeModel != nil {
-			return m.sessionizeModel.filterInput.Focused() || m.sessionizeModel.editingKeys
+			return m.sessionizeModel.filterInput.Focused()
 		}
 	case viewManage:
 		if m.manageModel != nil {
@@ -91,8 +97,13 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 
 	// Check if already initialized
 	if m.initialized[view] {
-		// For manage/groups, refresh data when switching back
+		// Refresh data when switching back to an already-initialized view
 		switch view {
+		case viewSessionize:
+			if m.sessionizeModel != nil {
+				// Refresh keyMap so newly mapped keys show immediately
+				return fetchKeyMapCmd(m.manager)
+			}
 		case viewManage:
 			if m.manageModel != nil {
 				sessions, _ := m.manager.GetSessions()
@@ -346,10 +357,27 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case switchViewMsg:
+		// Clear pending mapping state if we are switching away from manage view
+		if m.manageModel != nil && m.manageModel.pendingMapProject != nil {
+			m.manageModel.pendingMapProject = nil
+		}
 		m.activeView = msg.to
 		// Use lazy initialization - switchToView handles refresh for already-initialized views
 		cmd := m.switchToView(msg.to)
 		return m, cmd
+
+	case initiateMappingMsg:
+		m.activeView = viewManage
+		cmd1 := m.switchToView(viewManage)
+		var cmd2 tea.Cmd
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			cmd2 = cmd
+		}
+		return m, tea.Batch(cmd1, cmd2)
 
 	// Route background data messages to their owners regardless of active view
 	case initialProjectsEnrichedMsg:

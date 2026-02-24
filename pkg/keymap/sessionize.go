@@ -147,12 +147,12 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 			key.WithHelp("space", "quick map/unmap"),
 		),
 		EditKey: key.NewBinding(
-			key.WithKeys("ctrl+k"),
-			key.WithHelp("ctrl+k", "edit key mapping"),
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit key mapping"),
 		),
 		ClearKey: key.NewBinding(
-			key.WithKeys("ctrl+x"),
-			key.WithHelp("ctrl+x", "clear key mapping"),
+			key.WithKeys("x", "ctrl+x"),
+			key.WithHelp("x", "clear key mapping"),
 		),
 		CloseSession: key.NewBinding(
 			key.WithKeys("X"),

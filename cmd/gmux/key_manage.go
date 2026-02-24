@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
@@ -67,6 +68,11 @@ func resolveIcon(iconRef string) string {
 // Message for CWD project enrichment
 type cwdProjectEnrichedMsg struct {
 	project *manager.SessionizeProject
+}
+
+// Message for delayed return to previous view after mapping
+type delayedReturnMsg struct {
+	to navView
 }
 
 // New message
@@ -165,6 +171,13 @@ type manageModel struct {
 	defaultLockedSessions map[string]models.TmuxSession
 	// Handoff to other TUIs
 	nextCommand string // Command to run after TUI exits (e.g., "groups")
+
+	// Pending mapping state (from sessionize view)
+	pendingMapProject *manager.SessionizeProject
+	returnView        navView
+
+	// Just-mapped highlighting state
+	justMappedKey string // Key that was just mapped (for highlighting)
 }
 
 // Key bindings are defined in pkg/keymap/manage.go and re-exported via tui_keymap.go
@@ -360,6 +373,16 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}()
 		}
 		return m, nil
+
+	case initiateMappingMsg:
+		m.pendingMapProject = msg.project
+		m.returnView = msg.returnTo
+		m.message = "" // Clear any previous message; the View renders a prominent prompt
+		return m, nil
+
+	case delayedReturnMsg:
+		m.justMappedKey = "" // Clear highlight before switching
+		return m, func() tea.Msg { return switchViewMsg{to: msg.to} }
 
 	case gitStatusMapMsg:
 		for path, status := range msg.statuses {
@@ -885,6 +908,16 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle ESC to cancel pending mapping mode
+		if msg.Type == tea.KeyEsc {
+			if m.pendingMapProject != nil {
+				m.pendingMapProject = nil
+				m.message = "Mapping cancelled"
+				return m, func() tea.Msg { return switchViewMsg{to: m.returnView} }
+			}
+			return m, nil
+		}
+
 		switch {
 		case key.Matches(msg, m.keys.MoveMode):
 			// Enter move mode
@@ -1090,57 +1123,12 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Edit):
-			// Map CWD to the selected empty key slot
-			if m.cursor >= len(m.sessions) {
-				return m, nil
-			}
-
-			session := &m.sessions[m.cursor]
-
-			// Check if the key slot is already mapped
-			if session.Path != "" {
-				m.message = fmt.Sprintf("Key '%s' is already mapped. Clear it first with 'd' or space.", session.Key)
-				return m, nil
-			}
-
-			// Check if CWD was successfully resolved
-			if m.cwdProject == nil {
-				m.message = "Current directory is not a valid workspace/project"
-				return m, nil
-			}
-
-			// Check if CWD is already mapped to another key
-			cwdNormalizedPath, err := pathutil.NormalizeForLookup(m.cwdProject.Path)
-			if err != nil {
-				m.message = "Failed to normalize CWD path"
-				return m, nil
-			}
-			for _, s := range m.sessions {
-				if s.Path != "" {
-					sNormalizedPath, err := pathutil.NormalizeForLookup(s.Path)
-					if err != nil {
-						continue
-					}
-					if sNormalizedPath == cwdNormalizedPath {
-						m.message = fmt.Sprintf("CWD is already mapped to key '%s'", s.Key)
-						return m, nil
-					}
-				}
-			}
-
-			// Map the CWD to this key
-			session.Path = m.cwdProject.Path
-			session.Repository = ""
-			session.Description = ""
-
-			// Add to enriched projects map for immediate display
-			m.enrichedProjects[filepath.Clean(m.cwdProject.Path)] = m.cwdProject
-
-			m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, m.cwdProject.Name)
-			m.saveChanges()
-			return m, nil
+			return m.mapSelectedSlot()
 
 		case key.Matches(msg, m.keys.Open):
+			if m.pendingMapProject != nil {
+				return m.mapSelectedSlot()
+			}
 			// Open/switch to the session
 			if m.cursor < len(m.sessions) {
 				session := m.sessions[m.cursor]
@@ -1229,6 +1217,8 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					session.Description = ""
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 					m.saveChanges()
+				} else if m.pendingMapProject != nil {
+					return m.mapSelectedSlot()
 				} else {
 					m.message = "Press 'e' or Enter to map this key"
 				}
@@ -1284,6 +1274,71 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// mapSelectedSlot maps the pending project or CWD to the currently selected slot
+func (m *manageModel) mapSelectedSlot() (tea.Model, tea.Cmd) {
+	if m.cursor >= len(m.sessions) {
+		return m, nil
+	}
+
+	session := &m.sessions[m.cursor]
+
+	if session.Path != "" {
+		m.message = fmt.Sprintf("Key '%s' is already mapped. Clear it first with 'd' or space.", session.Key)
+		return m, nil
+	}
+
+	var projectToMap *manager.SessionizeProject
+	if m.pendingMapProject != nil {
+		projectToMap = m.pendingMapProject
+	} else {
+		projectToMap = m.cwdProject
+	}
+
+	if projectToMap == nil {
+		m.message = "Current directory is not a valid workspace/project"
+		return m, nil
+	}
+
+	cwdNormalizedPath, err := pathutil.NormalizeForLookup(projectToMap.Path)
+	if err != nil {
+		m.message = "Failed to normalize project path"
+		return m, nil
+	}
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			sNormalizedPath, err := pathutil.NormalizeForLookup(s.Path)
+			if err != nil {
+				continue
+			}
+			if sNormalizedPath == cwdNormalizedPath {
+				m.message = fmt.Sprintf("Project is already mapped to key '%s'", s.Key)
+				return m, nil
+			}
+		}
+	}
+
+	session.Path = projectToMap.Path
+	session.Repository = ""
+	session.Description = ""
+
+	m.enrichedProjects[filepath.Clean(projectToMap.Path)] = projectToMap
+
+	m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, projectToMap.Name)
+	m.justMappedKey = session.Key
+	m.saveChanges()
+
+	if m.pendingMapProject != nil {
+		m.pendingMapProject = nil
+		returnTo := m.returnView
+		// Delay before switching back so user sees the highlighted mapping
+		return m, tea.Tick(800*time.Millisecond, func(t time.Time) tea.Msg {
+			return delayedReturnMsg{to: returnTo}
+		})
+	}
+
+	return m, nil
+}
+
 func (m *manageModel) View() string {
 	if m.quitting && m.message != "" {
 		return m.message + "\n"
@@ -1319,6 +1374,9 @@ func (m *manageModel) View() string {
 	}
 
 	title := fmt.Sprintf("%s Session Hotkeys (%s)", core_theme.IconKeyboard, hotkey)
+	if m.pendingMapProject != nil {
+		title += " - Map: " + m.pendingMapProject.Name
+	}
 	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
 
 	// Render group tabs if multiple groups exist
@@ -1535,9 +1593,15 @@ func (m *manageModel) View() string {
 			}
 		}
 
+		// Highlight just-mapped key with success style
+		keyDisplay := s.Key
+		if s.Key == m.justMappedKey {
+			keyDisplay = core_theme.DefaultTheme.Success.Render(core_theme.IconSuccess + " " + s.Key)
+		}
+
 		row := []string{
 			fmt.Sprintf("%d", i+1),
-			s.Key,
+			keyDisplay,
 			repository,
 			branchWorktreeDisplay,
 			gitStatus,
@@ -1831,7 +1895,14 @@ func (m *manageModel) View() string {
 	// Always reserve space for message to prevent layout shift
 	// Skip if in confirm mode (message shown in confirmation box)
 	if m.confirmMode == "" {
-		if m.message != "" {
+		if m.pendingMapProject != nil {
+			// Show prominent mapping prompt in magenta
+			b.WriteString("\n")
+			b.WriteString(core_theme.DefaultTheme.Magenta.Render("  ▶ Select slot for '" + m.pendingMapProject.Name + "', then press 'e' or Enter to map"))
+			b.WriteString("\n")
+			b.WriteString(core_theme.DefaultTheme.Muted.Render("    ESC to cancel"))
+			b.WriteString("\n")
+		} else if m.message != "" {
 			b.WriteString(dimStyle.Render(m.message) + "\n")
 		} else {
 			b.WriteString("\n")
@@ -1844,6 +1915,8 @@ func (m *manageModel) View() string {
 	var modeIndicator string
 	if m.jumpMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [GOTO: _]")
+	} else if m.pendingMapProject != nil {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MAPPING]")
 	} else if m.moveMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MOVE MODE]")
 	} else if m.setKeyMode {

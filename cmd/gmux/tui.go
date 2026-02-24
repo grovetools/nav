@@ -45,9 +45,6 @@ type sessionizeModel struct {
 	width                    int
 	height                   int
 	keys                     sessionizeKeyMap  // keybindings for this TUI
-	// Key editing mode
-	editingKeys   bool
-	keyCursor     int
 	availableKeys []string
 	sessions      []models.TmuxSession
 	help          help.Model
@@ -282,8 +279,6 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		height:                   0,
 		keys:                     sessionizeKeys,
 		cursor:                   0,
-		editingKeys:              false,
-		keyCursor:                0,
 		availableKeys:            availableKeys,
 		sessions:                 sessions,
 		help:                     helpModel,
@@ -993,61 +988,6 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle key editing mode
-		if m.editingKeys {
-			switch msg.Type {
-			case tea.KeyUp:
-				if m.keyCursor > 0 {
-					m.keyCursor--
-				}
-			case tea.KeyDown:
-				if m.keyCursor < len(m.availableKeys)-1 {
-					m.keyCursor++
-				}
-			case tea.KeyEnter:
-				// Assign the selected key to the project
-				if m.cursor < len(m.filtered) && m.keyCursor < len(m.availableKeys) {
-					selectedProject := m.filtered[m.cursor]
-					selectedKey := m.availableKeys[m.keyCursor]
-
-					// Update the session
-					m.updateKeyMapping(selectedProject.Path, selectedKey)
-
-					// Refresh sessions to reflect changes
-					if sessions, err := m.manager.GetSessions(); err == nil {
-						m.sessions = sessions
-					}
-				}
-				m.editingKeys = false
-				return m, nil
-			case tea.KeyEsc:
-				m.editingKeys = false
-				return m, nil
-			default:
-				// Check if the pressed key is a valid session key
-				pressedKey := strings.ToLower(msg.String())
-				for _, availableKey := range m.availableKeys {
-					if strings.ToLower(availableKey) == pressedKey {
-						// Found the key - assign it directly
-						if m.cursor < len(m.filtered) {
-							selectedProject := m.filtered[m.cursor]
-
-							// Update the session
-							m.updateKeyMapping(selectedProject.Path, availableKey)
-
-							// Refresh sessions to reflect changes
-							if sessions, err := m.manager.GetSessions(); err == nil {
-								m.sessions = sessions
-							}
-						}
-						m.editingKeys = false
-						return m, nil
-					}
-				}
-			}
-			return m, nil
-		}
-
 		// Check if filter input is focused and handle special keys
 		if m.filterInput.Focused() {
 			switch msg.Type {
@@ -1366,10 +1306,15 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.EditKey):
-			// Enter key editing mode
+			// Enter key editing mode by delegating to the manage view
 			if m.cursor < len(m.filtered) {
-				m.editingKeys = true
-				m.keyCursor = 0
+				project := m.filtered[m.cursor]
+				return m, func() tea.Msg {
+					return initiateMappingMsg{
+						project:  project,
+						returnTo: viewSessionize,
+					}
+				}
 			}
 			return m, nil
 
@@ -1420,7 +1365,32 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clear key mapping for the selected project
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
-				m.clearKeyMapping(project.Path)
+				cleanPath := filepath.Clean(project.Path)
+				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+				if err != nil {
+					return m, nil
+				}
+
+				// Find the mapped key
+				mappedKey := ""
+				for path, k := range m.keyMap {
+					normPath, err := pathutil.NormalizeForLookup(path)
+					if err == nil && normPath == normalizedCleanPath {
+						mappedKey = k
+						break
+					}
+				}
+
+				if mappedKey != "" {
+					m.clearKeyMapping(project.Path)
+					m.statusMessage = fmt.Sprintf("Unmapped key '%s'", mappedKey)
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+					return m, clearStatusCmd(2 * time.Second)
+				} else {
+					m.statusMessage = "No key mapped to this project"
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+					return m, clearStatusCmd(2 * time.Second)
+				}
 			}
 			return m, nil
 
@@ -1957,11 +1927,6 @@ func (m sessionizeModel) View() string {
 		return pageStyle.Render(m.help.View())
 	}
 
-	// Show key editing mode if active
-	if m.editingKeys {
-		return pageStyle.Render(m.viewKeyEditor())
-	}
-
 	var b strings.Builder
 
 	// Render group tabs (always show so users can switch groups and set keys)
@@ -2053,156 +2018,6 @@ func (m sessionizeModel) View() string {
 	}
 
 	return pageStyle.Render(b.String())
-}
-
-func (m sessionizeModel) viewKeyEditor() string {
-	var b strings.Builder
-
-	// Header
-	selectedProject := ""
-	selectedPath := ""
-	if m.cursor < len(m.filtered) {
-		project := m.filtered[m.cursor]
-		selectedPath = project.Path
-		selectedProject = project.Name
-	}
-
-	b.WriteString(core_theme.DefaultTheme.Header.Render(fmt.Sprintf("Select key for: %s (Group: %s)", selectedProject, m.manager.GetActiveGroup())))
-	b.WriteString("\n")
-	b.WriteString(core_theme.DefaultTheme.Muted.Render(selectedPath))
-	b.WriteString("\n\n")
-
-	// Build a sorted list of all sessions for display
-	type keyDisplay struct {
-		key        string
-		repository string
-		path       string
-		isCurrent  bool
-	}
-
-	var displays []keyDisplay
-	currentKey := ""
-
-	// Find current key for the selected project
-	cleanSelectedPath := filepath.Clean(selectedPath)
-	normalizedSelectedPath, err := pathutil.NormalizeForLookup(cleanSelectedPath)
-	if err == nil {
-		for _, s := range m.sessions {
-			if s.Path != "" {
-				expandedPath := expandPath(s.Path)
-				absPath, _ := filepath.Abs(expandedPath)
-				normalizedAbsPath, err := pathutil.NormalizeForLookup(filepath.Clean(absPath))
-				if err == nil && normalizedAbsPath == normalizedSelectedPath {
-					currentKey = s.Key
-					break
-				}
-			}
-		}
-	}
-
-	// Build display list
-	for _, key := range m.availableKeys {
-		display := keyDisplay{
-			key:       key,
-			isCurrent: key == currentKey,
-		}
-
-		// Find if this key is mapped
-		for _, s := range m.sessions {
-			if s.Key == key {
-				if s.Path != "" {
-					display.repository = filepath.Base(s.Path)
-					display.path = s.Path
-				}
-				break
-			}
-		}
-
-		displays = append(displays, display)
-	}
-
-	// Calculate visible range
-	visibleHeight := m.height - 8 // Account for header and help
-	if visibleHeight < 5 {
-		visibleHeight = 5
-	}
-
-	start := 0
-	end := len(displays)
-
-	if end > visibleHeight {
-		// Center the cursor in the visible area
-		if m.keyCursor < visibleHeight/2 {
-			start = 0
-		} else if m.keyCursor >= len(displays)-visibleHeight/2 {
-			start = len(displays) - visibleHeight
-		} else {
-			start = m.keyCursor - visibleHeight/2
-		}
-
-		end = start + visibleHeight
-		if end > len(displays) {
-			end = len(displays)
-		}
-		if start < 0 {
-			start = 0
-		}
-	}
-
-	// Render the table
-	for i := start; i < end; i++ {
-		d := displays[i]
-
-		// Selection indicator
-		if i == m.keyCursor {
-			b.WriteString(core_theme.DefaultTheme.Highlight.Render(core_theme.IconSelect + " "))
-		} else {
-			b.WriteString("  ")
-		}
-
-		// Key
-		var keyStyle lipgloss.Style
-		if d.isCurrent {
-			keyStyle = core_theme.DefaultTheme.Warning
-		} else if d.repository != "" {
-			keyStyle = core_theme.DefaultTheme.Muted
-		} else {
-			keyStyle = core_theme.DefaultTheme.Success
-		}
-		b.WriteString(keyStyle.Render(fmt.Sprintf("%s ", d.key)))
-
-		// Repository and path
-		if d.repository != "" {
-			b.WriteString(core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%-20s", d.repository)))
-			b.WriteString(" ")
-			b.WriteString(core_theme.DefaultTheme.Muted.Render(d.path))
-		} else {
-			b.WriteString(core_theme.DefaultTheme.Muted.Render("(available)"))
-		}
-
-		// Mark current
-		if d.isCurrent {
-			b.WriteString(core_theme.DefaultTheme.Warning.Render(" " + core_theme.IconArrowLeft + " current"))
-		}
-
-		b.WriteString("\n")
-	}
-
-	// Scroll indicator
-	if start > 0 || end < len(displays) {
-		b.WriteString(core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("\n(%d-%d of %d)", start+1, end, len(displays))))
-	}
-
-	// Help text for key editor
-	helpStyle := core_theme.DefaultTheme.Muted
-	keyStyle := core_theme.DefaultTheme.Highlight
-
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("press ") + keyStyle.Render("key directly") + helpStyle.Render(" or "))
-	b.WriteString(keyStyle.Render("↑/↓") + helpStyle.Render(" + ") + keyStyle.Render("enter") + helpStyle.Render(" to assign • "))
-	b.WriteString(keyStyle.Render("esc") + helpStyle.Render(": cancel"))
-
-	return b.String()
 }
 
 // enrichVisibleProjects creates commands to fetch git status for visible projects.
