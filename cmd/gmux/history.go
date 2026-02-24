@@ -216,6 +216,7 @@ type historyModel struct {
 	filterMode        bool
 	filterText        string
 	statusMessage     string
+	jumpMode          bool // Mini-leader mode: 'g' pressed, waiting for digit or 'g' for go-to-top
 }
 
 // Key bindings are defined in pkg/keymap/history.go and re-exported via tui_keymap.go
@@ -346,19 +347,34 @@ func (m *historyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Handle number key navigation (1-9)
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			r := msg.Runes[0]
-			if r >= '1' && r <= '9' {
-				num := int(r - '0')
-				targetIndex := num - 1
-				if targetIndex < len(m.filteredItems) {
-					m.selected = m.filteredItems[targetIndex].project
-					m.quitting = true
-					return m, tea.Quit
+		// Handle jumpMode (mini-leader key 'g')
+		if m.jumpMode {
+			m.jumpMode = false // Reset mode immediately
+			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+				r := msg.Runes[0]
+				if r >= '1' && r <= '9' {
+					// Jump to row and select
+					targetIndex := int(r - '1')
+					if targetIndex < len(m.filteredItems) {
+						m.selected = m.filteredItems[targetIndex].project
+						m.quitting = true
+						return m, tea.Quit
+					}
+					return m, nil
+				} else if r == 'g' {
+					// 'gg' - go to top
+					m.cursor = 0
+					return m, nil
 				}
-				return m, nil
 			}
+			// Any other key - cancel jumpMode
+			return m, nil
+		}
+
+		// Enter jumpMode when 'g' is pressed (and not in filter mode)
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'g' {
+			m.jumpMode = true
+			return m, nil
 		}
 
 		switch {
@@ -512,6 +528,9 @@ func (m *historyModel) View() string {
 		b.WriteString(core_theme.DefaultTheme.Muted.Render(m.statusMessage) + "\n")
 	}
 	b.WriteString(m.help.View())
+	if m.jumpMode {
+		b.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
+	}
 
 	return pageStyle.Render(b.String())
 }

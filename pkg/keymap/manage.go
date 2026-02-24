@@ -64,7 +64,7 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.Up, k.Down,
 			k.PageUp, k.PageDown,
 			k.Top, k.Bottom,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 1-9", "jump to row")),
 			k.Open,
 		),
 		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.CopyPath),

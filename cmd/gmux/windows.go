@@ -74,7 +74,7 @@ type windowsModel struct {
 	keys               windowsKeyMap
 	filterInput        textinput.Model
 	renameInput        textinput.Model
-	mode               string // "normal", "filter", "rename"
+	mode               string // "normal", "filter", "rename", "move"
 	selectedWindow     *tmuxclient.Window
 	quitting           bool
 	width, height      int
@@ -83,6 +83,7 @@ type windowsModel struct {
 	processCache       map[int]string // Cache PID -> process name mapping
 	showChildProcesses bool           // Whether to detect child processes
 	originalWindows    []tmuxclient.Window // Original order when entering move mode
+	jumpMode           bool // Mini-leader mode: 'g' pressed, waiting for digit or 'g' for go-to-top
 }
 
 // Key bindings are defined in pkg/keymap/windows.go and re-exported via tui_keymap.go
@@ -256,6 +257,9 @@ func (m windowsModel) View() string {
 			b.WriteString("Rename: " + m.renameInput.View())
 		default:
 			b.WriteString(m.help.View())
+			if m.jumpMode {
+				b.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
+			}
 		}
 
 		return b.String()
@@ -331,6 +335,9 @@ func (m windowsModel) View() string {
 		listBuilder.WriteString(core_theme.DefaultTheme.Muted.Render("Use j/k to reorder • Enter/Esc/m to apply"))
 	default:
 		listBuilder.WriteString(m.help.View())
+		if m.jumpMode {
+			listBuilder.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
+		}
 	}
 
 	// Build preview panel
@@ -374,6 +381,35 @@ func (m windowsModel) View() string {
 }
 
 func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle jumpMode (mini-leader key 'g')
+	if m.jumpMode {
+		m.jumpMode = false // Reset mode immediately
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			r := msg.Runes[0]
+			if r >= '0' && r <= '9' {
+				// Jump to window by index
+				index, _ := strconv.Atoi(string(r))
+				for i := range m.windows {
+					if m.windows[i].Index == index {
+						m.selectedWindow = &m.windows[i]
+						m.quitting = true
+						return m, tea.Quit
+					}
+				}
+				return m, nil
+			} else if r == 'g' {
+				// 'gg' - go to top
+				m.cursor = 0
+				if len(m.filteredWindows) > 0 {
+					return m, fetchPreviewCmd(m.client, m.sessionName, m.filteredWindows[m.cursor].Index)
+				}
+				return m, nil
+			}
+		}
+		// Any other key - cancel jumpMode
+		return m, nil
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Up):
 		if m.cursor > 0 {
@@ -431,19 +467,10 @@ func (m windowsModel) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	// Number keys for direct switching
-	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-		r := msg.Runes[0]
-		if r >= '0' && r <= '9' {
-			index, _ := strconv.Atoi(string(r))
-			for _, win := range m.windows {
-				if win.Index == index {
-					m.selectedWindow = &win
-					m.quitting = true
-					return m, tea.Quit
-				}
-			}
-		}
+	// Enter jumpMode when 'g' is pressed
+	if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'g' {
+		m.jumpMode = true
+		return m, nil
 	}
 
 	return m, nil

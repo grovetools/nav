@@ -28,7 +28,7 @@ func (k WindowsKeyMap) FullHelp() [][]key.Binding {
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Navigation")),
 			k.Up, k.Down,
-			key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 0-9", "jump to window")),
 		},
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Actions")),
@@ -47,7 +47,7 @@ func (k WindowsKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
 		keymap.NavigationSection(
 			k.Up, k.Down,
-			key.NewBinding(key.WithKeys("0-9"), key.WithHelp("0-9", "jump to window")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 0-9", "jump to window")),
 		),
 		keymap.ActionsSection(k.Switch, k.Filter, k.Rename, k.Close),
 		keymap.NewSection("Reorder",

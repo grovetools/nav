@@ -124,8 +124,8 @@ type manageModel struct {
 	enrichedProjects  map[string]*manager.SessionizeProject // Caches enriched data by path
 	enrichmentLoading map[string]bool                       // tracks which enrichments are currently loading
 	// Navigation
-	digitBuffer string
-	setKeyMode  bool
+	jumpMode   bool // Mini-leader mode: 'g' was pressed, waiting for digit or 'g' for go-to-top
+	setKeyMode bool
 	// Move mode state
 	moveMode   bool
 	lockedKeys map[string]bool // Track which keys are locked
@@ -681,69 +681,49 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // Consume keypress
 		}
 
-		// Handle numbered navigation - opens session immediately
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-			if r := msg.Runes[0]; r >= '0' && r <= '9' {
-				m.digitBuffer += string(r)
-				if len(m.digitBuffer) > 3 { // Cap buffer length
-					m.digitBuffer = m.digitBuffer[len(m.digitBuffer)-3:]
-				}
-
-				num, err := strconv.Atoi(m.digitBuffer)
-				if err == nil && num > 0 {
-					targetIndex := num - 1
+		// Handle jumpMode (mini-leader key 'g')
+		if m.jumpMode {
+			m.jumpMode = false // Reset mode immediately
+			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+				r := msg.Runes[0]
+				if r >= '1' && r <= '9' {
+					// Jump to row and open session
+					targetIndex := int(r - '1')
 					if targetIndex < len(m.sessions) {
-						// Open the session immediately
 						session := m.sessions[targetIndex]
 						if session.Path != "" {
 							if os.Getenv("TMUX") != "" {
-								// Get project info to generate proper session name
 								projInfo, err := workspace.GetProjectByPath(session.Path)
 								if err != nil {
 									m.message = fmt.Sprintf("Failed to get project info: %v", err)
-									m.digitBuffer = ""
 									return m, nil
 								}
 								sessionName := projInfo.Identifier()
-
-								// Create tmux client
 								client, err := tmuxclient.NewClient()
 								if err != nil {
 									m.message = fmt.Sprintf("Failed to create tmux client: %v", err)
-									m.digitBuffer = ""
 									return m, nil
 								}
-
 								ctx := context.Background()
-
-								// Check if session exists
 								exists, err := client.SessionExists(ctx, sessionName)
 								if err != nil {
 									m.message = fmt.Sprintf("Failed to check session: %v", err)
-									m.digitBuffer = ""
 									return m, nil
 								}
-
 								if !exists {
-									// Session doesn't exist, create it
 									opts := tmuxclient.LaunchOptions{
 										SessionName:      sessionName,
 										WorkingDirectory: session.Path,
 									}
 									if err := client.Launch(ctx, opts); err != nil {
 										m.message = fmt.Sprintf("Failed to create session: %v", err)
-										m.digitBuffer = ""
 										return m, nil
 									}
 								}
-
-								// Switch to the session
 								if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 									m.message = fmt.Sprintf("Failed to switch to session: %v", err)
 								} else {
-									// Record project access for history
 									_ = m.manager.RecordProjectAccess(session.Path)
-									// Exit the manager after switching
 									m.message = fmt.Sprintf("Switching to %s...", sessionName)
 									m.quitting = true
 									m.commandOnExit = client.ClosePopupCmd()
@@ -756,14 +736,22 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.message = "No session mapped to this key"
 						}
 					}
+					return m, nil
+				} else if r == 'g' {
+					// 'gg' - go to top
+					m.cursor = 0
+					return m, nil
 				}
-				m.digitBuffer = ""
-				return m, nil // Consume digit
 			}
+			// Any other key - cancel jumpMode
+			return m, nil
 		}
 
-		// Any non-digit key press resets the buffer
-		m.digitBuffer = ""
+		// Enter jumpMode when 'g' is pressed
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'g' {
+			m.jumpMode = true
+			return m, nil
+		}
 
 		// Handle move mode
 		if m.moveMode {
@@ -1831,7 +1819,9 @@ func (m *manageModel) View() string {
 
 	// Show different help text based on mode
 	var modeIndicator string
-	if m.moveMode {
+	if m.jumpMode {
+		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [GOTO: _]")
+	} else if m.moveMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [MOVE MODE]")
 	} else if m.setKeyMode {
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [SET KEY MODE]")

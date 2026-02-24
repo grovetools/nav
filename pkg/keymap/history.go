@@ -33,7 +33,7 @@ func (k HistoryKeyMap) Sections() []keymap.Section {
 	return []keymap.Section{
 		keymap.NavigationSection(
 			k.Up, k.Down,
-			key.NewBinding(key.WithKeys("1-9"), key.WithHelp("1-9", "jump to row")),
+			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 1-9", "jump to row")),
 		),
 		keymap.ActionsSection(k.Filter, k.Open, k.CopyPath),
 		keymap.SystemSection(k.Help, k.Quit),
