@@ -26,39 +26,8 @@ var windowsCmd = &cobra.Command{
 	Short: "Interactively manage windows in the current tmux session",
 	Long:  `Launches a TUI to list, filter, and manage windows in the current tmux session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := tmuxclient.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
-		}
-
-		sessionName, err := client.GetCurrentSession(context.Background())
-		if err != nil {
-			return fmt.Errorf("not in a tmux session or failed to get session name: %w", err)
-		}
-
-		// Load config to check if child process detection is enabled (default: false)
-		showChildProcesses := false
-		if tmuxCfg, err := loadTmuxConfig(); err == nil && tmuxCfg != nil {
-			showChildProcesses = tmuxCfg.ShowChildProcesses
-		}
-
-		m := newWindowsModel(client, sessionName, showChildProcesses)
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			return fmt.Errorf("error running program: %w", err)
-		}
-
-		if wm, ok := finalModel.(windowsModel); ok && wm.selectedWindow != nil {
-			target := fmt.Sprintf("%s:%d", wm.sessionName, wm.selectedWindow.Index)
-			if err := client.SwitchClient(context.Background(), target); err != nil {
-				// This might fail if not in a popup, which is fine
-			}
-			// Close popup if we were in one
-			_ = client.ClosePopupCmd().Run()
-		}
-
-		return nil
+		// Use unified nav TUI with lazy initialization
+		return runNavTUIWithView(viewWindows, NavTUIOptions{})
 	},
 }
 

@@ -14,7 +14,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	grovelogging "github.com/grovetools/core/logging"
-	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/components/table"
@@ -40,90 +39,8 @@ var historyCmd = &cobra.Command{
 	Short:   "View and switch to recently accessed project sessions",
 	Long:    `Shows an interactive TUI listing recently accessed project sessions, sorted from most to least recent.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		mgr, err := tmux.NewManager(configDir)
-		if err != nil {
-			return fmt.Errorf("failed to initialize manager: %w", err)
-		}
-
-		// Fetch all known projects
-		allProjects, err := mgr.GetAvailableProjects()
-		if err != nil {
-			return fmt.Errorf("failed to get available projects: %w", err)
-		}
-		projectMap := make(map[string]*manager.SessionizeProject)
-		for i := range allProjects {
-			projectMap[allProjects[i].Path] = &allProjects[i]
-		}
-
-		// Set parent ecosystem for cloned repos
-		setParentForClonedProjects(allProjects)
-
-		// Load and sort access history
-		history, err := mgr.GetAccessHistory()
-		if err != nil {
-			return fmt.Errorf("failed to load access history: %w", err)
-		}
-
-		var historyAccesses []*workspace.ProjectAccess
-		for _, access := range history.Projects {
-			historyAccesses = append(historyAccesses, access)
-		}
-		sort.Slice(historyAccesses, func(i, j int) bool {
-			return historyAccesses[i].LastAccessed.After(historyAccesses[j].LastAccessed)
-		})
-
-		// Build final list of items to display
-		var items []historyItem
-		for _, access := range historyAccesses {
-			if project, ok := projectMap[access.Path]; ok {
-				items = append(items, historyItem{
-					project: project,
-					access:  access,
-				})
-			}
-		}
-
-		if len(items) == 0 {
-			ulogHistory.Info("No session history").
-				Pretty(core_theme.IconInfo + " No session history found.").
-				PrettyOnly().
-				Emit()
-			return nil
-		}
-
-		// Limit to 15 most recent
-		if len(items) > 15 {
-			items = items[:15]
-		}
-
-		// Load key mappings
-		sessions, err := mgr.GetSessions()
-		if err != nil {
-			sessions = []models.TmuxSession{}
-		}
-		keyMap := make(map[string]string)
-		for _, s := range sessions {
-			if s.Path != "" {
-				keyMap[filepath.Clean(s.Path)] = s.Key
-			}
-		}
-
-		m := newHistoryModel(items, mgr, keyMap)
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			return fmt.Errorf("error running program: %w", err)
-		}
-
-		// After TUI exits, check if a project was selected and sessionize it
-		if hm, ok := finalModel.(*historyModel); ok && hm.selected != nil {
-			// Record access again to bump it to the top of the history
-			_ = mgr.RecordProjectAccess(hm.selected.Path)
-			// Sessionize will create or switch to the tmux session
-			return mgr.Sessionize(hm.selected.Path)
-		}
-
-		return nil
+		// Use unified nav TUI with lazy initialization
+		return runNavTUIWithView(viewHistory, NavTUIOptions{})
 	},
 }
 

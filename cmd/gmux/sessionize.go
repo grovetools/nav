@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/repo"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
@@ -76,85 +75,28 @@ var sessionizeCmd = &cobra.Command{
 			// If config is not found, we'll proceed to first run setup.
 		}
 
-		// Try to load cached projects first for instant startup
-		var projects []manager.SessionizeProject
-		usedCache := false
-		if cache, err := manager.LoadProjectCache(configDir); err == nil && cache != nil && len(cache.Projects) > 0 {
-			// Convert CachedProject back to SessionizeProject
-			projects = make([]manager.SessionizeProject, len(cache.Projects))
-			for i, cached := range cache.Projects {
-				projects[i] = manager.SessionizeProject{
-					WorkspaceNode: cached.WorkspaceNode,
-					GitStatus:     cached.GitStatus,
-					NoteCounts:    cached.NoteCounts,
-					PlanStats:     cached.PlanStats,
-					ReleaseInfo:   cached.ReleaseInfo,
-					ActiveBinary:  cached.ActiveBinary,
-					CxStats:       cached.CxStats,
-					GitRemoteURL:  cached.GitRemoteURL,
-				}
-			}
-			usedCache = true
-
-			// Group cloned repos even when using cache
-			projects = groupClonedProjectsAsEcosystem(projects)
-		}
-
-		// If no cache or cache load failed, fetch projects normally
-		if len(projects) == 0 {
-			// Enrichment options are now handled by the TUI itself
-			fetchedProjects, err := mgr.GetAvailableProjects()
-			if err != nil {
-				// Check if the error is due to missing config file or no enabled search paths
-				if os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found") {
-					// Interactive first-run setup
-					return handleFirstRunSetup(configDir, mgr)
-				}
-				return fmt.Errorf("failed to get available projects (config dir: %s, HOME: %s): %w", configDir, os.Getenv("HOME"), err)
-			}
-
-			// Convert to SessionizeProject
-			projects = make([]manager.SessionizeProject, len(fetchedProjects))
-			for i := range fetchedProjects {
-				projects[i] = fetchedProjects[i]
-			}
-
-			// Sort by access history
-			if history, err := mgr.GetAccessHistory(); err == nil {
-				projects = manager.SortProjectsByAccess(history, projects)
-			}
-
-			// Group cloned repos under a virtual "Cloned Repos" ecosystem
-			projects = groupClonedProjectsAsEcosystem(projects)
-		}
-
-		if len(projects) == 0 {
-			ulogSessionize.Info("No projects found").
-				Pretty("No projects found in search paths!\n\nYour grove.yml file needs to have 'groves' configured for project discovery.\nRun the setup wizard to configure your project directories interactively.\n\nRun setup now? [Y/n]: ").
-				PrettyOnly().
-				Emit()
-
-			reader := bufio.NewReader(os.Stdin)
-			response, _ := reader.ReadString('\n')
-			response = strings.TrimSpace(strings.ToLower(response))
-
-			if response == "" || response == "y" || response == "yes" {
+		// Fast check for first run setup - only fetch if no cache exists
+		cache, _ := manager.LoadProjectCache(configDir)
+		if cache == nil || len(cache.Projects) == 0 {
+			projects, err := mgr.GetAvailableProjects()
+			if err != nil && (os.IsNotExist(err) || strings.Contains(err.Error(), "No enabled search paths found")) {
 				return handleFirstRunSetup(configDir, mgr)
 			}
-			return nil
-		}
+			if len(projects) == 0 {
+				ulogSessionize.Info("No projects found").
+					Pretty("No projects found in search paths!\n\nYour grove.yml file needs to have 'groves' configured for project discovery.\nRun the setup wizard to configure your project directories interactively.\n\nRun setup now? [Y/n]: ").
+					PrettyOnly().
+					Emit()
 
-		// Get search paths for display
-		searchPaths, err := mgr.GetEnabledSearchPaths()
-		if err != nil {
-			// Don't fail if we can't get search paths, just continue without them
-			searchPaths = []string{}
-		}
+				reader := bufio.NewReader(os.Stdin)
+				response, _ := reader.ReadString('\n')
+				response = strings.TrimSpace(strings.ToLower(response))
 
-		// Convert to pointers for the model
-		projectPtrs := make([]*manager.SessionizeProject, len(projects))
-		for i := range projects {
-			projectPtrs[i] = &projects[i]
+				if response == "" || response == "y" || response == "yes" {
+					return handleFirstRunSetup(configDir, mgr)
+				}
+				return nil
+			}
 		}
 
 		// Determine initial focus based on CWD
@@ -171,33 +113,8 @@ var sessionizeCmd = &cobra.Command{
 			}
 		}
 
-		// Create the interactive model
-		m := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache, cwdFocusPath)
-
-		// If a focused project was loaded from state or group filter is active, update the filtered list
-		if m.focusedProject != nil || m.filterGroup {
-			m.updateFiltered()
-		}
-
-		// Run the interactive program
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			return fmt.Errorf("error running program: %w", err)
-		}
-
-		// Check if a project was selected
-		if sm, ok := finalModel.(sessionizeModel); ok && sm.selected != nil && sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
-			// Record the access before switching
-			_ = mgr.RecordProjectAccess(sm.selected.Path)
-			// If it's a worktree, also record access for the parent
-			if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
-			}
-			return sessionizeProject(sm.selected)
-		}
-
-		return nil
+		// Use unified nav TUI with lazy initialization
+		return runNavTUIWithView(viewSessionize, NavTUIOptions{CwdFocusPath: cwdFocusPath})
 	},
 }
 

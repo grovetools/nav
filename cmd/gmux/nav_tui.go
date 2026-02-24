@@ -30,6 +30,11 @@ type switchViewMsg struct {
 	to navView
 }
 
+// NavTUIOptions contains options for initializing the nav TUI
+type NavTUIOptions struct {
+	CwdFocusPath string // Path to focus on in sessionize view
+}
+
 // navModel is the root model that manages view switching between all nav TUIs
 type navModel struct {
 	activeView      navView
@@ -43,6 +48,8 @@ type navModel struct {
 	width, height   int
 	configDir       string
 	cwd             string
+	opts            NavTUIOptions
+	initialized     map[navView]bool // Tracks which views have been initialized
 }
 
 // isTextInputFocused returns true if any text input is focused in the active view
@@ -72,27 +79,228 @@ func (m *navModel) isTextInputFocused() bool {
 	return false
 }
 
-func (m *navModel) Init() tea.Cmd {
-	// Batch init commands from all models that are initialized
-	var cmds []tea.Cmd
+// switchToView initializes a view lazily if needed and returns its Init() command
+func (m *navModel) switchToView(view navView) tea.Cmd {
+	// Initialize the map if needed
+	if m.initialized == nil {
+		m.initialized = make(map[navView]bool)
+	}
 
-	if m.sessionizeModel != nil {
-		cmds = append(cmds, m.sessionizeModel.Init())
+	// Check if already initialized
+	if m.initialized[view] {
+		// For manage/groups, refresh data when switching back
+		switch view {
+		case viewManage:
+			if m.manageModel != nil {
+				sessions, _ := m.manager.GetSessions()
+				m.manageModel.sessions = sessions
+				m.manageModel.rebuildSessionsOrder()
+				m.manageModel.message = fmt.Sprintf("Switched to group: %s", m.manager.GetActiveGroup())
+			}
+		case viewGroups:
+			if m.groupsModel != nil {
+				m.groupsModel.groups = m.manager.GetAllGroups()
+				m.groupsModel.cursor = 0
+				m.groupsModel.message = ""
+			}
+		}
+		return nil
 	}
-	if m.manageModel != nil {
-		cmds = append(cmds, m.manageModel.Init())
-	}
-	if m.historyModel != nil {
-		cmds = append(cmds, m.historyModel.Init())
-	}
-	if m.windowsModel != nil {
-		cmds = append(cmds, m.windowsModel.Init())
-	}
-	if m.groupsModel != nil {
+
+	// Mark as initialized
+	m.initialized[view] = true
+
+	var cmd tea.Cmd
+
+	switch view {
+	case viewSessionize:
+		// Initialize sessionize model lazily
+		if m.sessionizeModel == nil {
+			usedCache := false
+			var projects []manager.SessionizeProject
+
+			// Try to load from cache first
+			if cache, err := manager.LoadProjectCache(m.configDir); err == nil && cache != nil && len(cache.Projects) > 0 {
+				projects = make([]manager.SessionizeProject, len(cache.Projects))
+				for i, cached := range cache.Projects {
+					projects[i] = manager.SessionizeProject{
+						WorkspaceNode: cached.WorkspaceNode,
+						GitStatus:     cached.GitStatus,
+						NoteCounts:    cached.NoteCounts,
+						PlanStats:     cached.PlanStats,
+						ReleaseInfo:   cached.ReleaseInfo,
+						ActiveBinary:  cached.ActiveBinary,
+						CxStats:       cached.CxStats,
+						GitRemoteURL:  cached.GitRemoteURL,
+					}
+				}
+				usedCache = true
+			}
+
+			// If no cache, fetch projects
+			if len(projects) == 0 {
+				fetchedProjects, err := m.manager.GetAvailableProjects()
+				if err == nil && len(fetchedProjects) > 0 {
+					projects = fetchedProjects
+				}
+			}
+
+			if len(projects) > 0 {
+				projectPtrs := make([]*manager.SessionizeProject, len(projects))
+				for i := range projects {
+					projectPtrs[i] = &projects[i]
+				}
+				searchPaths, _ := m.manager.GetEnabledSearchPaths()
+				sm := newSessionizeModel(projectPtrs, searchPaths, m.manager, m.configDir, usedCache, m.opts.CwdFocusPath)
+				m.sessionizeModel = &sm
+			}
+		}
+		if m.sessionizeModel != nil {
+			cmd = m.sessionizeModel.Init()
+			// Forward size to the newly created model
+			if m.width > 0 && m.height > 0 {
+				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
+				newModel, _ := m.sessionizeModel.Update(childMsg)
+				if sm, ok := newModel.(sessionizeModel); ok {
+					m.sessionizeModel = &sm
+				}
+			}
+		}
+
+	case viewManage:
+		// Initialize manage model lazily
+		if m.manageModel == nil {
+			sessions, _ := m.manager.GetSessions()
+			enrichedProjects := make(map[string]*manager.SessionizeProject)
+			usedCache := false
+
+			// Try to load enriched projects cache
+			if cache, err := manager.LoadKeyManageCache(m.configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
+				for path, cached := range cache.EnrichedProjects {
+					enrichedProjects[path] = &manager.SessionizeProject{
+						WorkspaceNode: cached.WorkspaceNode,
+						GitStatus:     cached.GitStatus,
+						NoteCounts:    cached.NoteCounts,
+						PlanStats:     cached.PlanStats,
+					}
+				}
+				usedCache = len(enrichedProjects) > 0
+			}
+
+			mm := newManageModel(sessions, m.manager, m.cwd, enrichedProjects, usedCache)
+			m.manageModel = &mm
+		}
+		if m.manageModel != nil {
+			cmd = m.manageModel.Init()
+			// Forward size to the newly created model
+			if m.width > 0 && m.height > 0 {
+				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
+				newModel, _ := m.manageModel.Update(childMsg)
+				if mm, ok := newModel.(*manageModel); ok {
+					m.manageModel = mm
+				}
+			}
+		}
+
+	case viewHistory:
+		// Initialize history model lazily
+		if m.historyModel == nil {
+			history, err := m.manager.GetAccessHistory()
+			if err == nil && history != nil && len(history.Projects) > 0 {
+				sessions, _ := m.manager.GetSessions()
+				keyMap := make(map[string]string)
+				for _, s := range sessions {
+					if s.Path != "" {
+						keyMap[s.Path] = s.Key
+					}
+				}
+
+				// Get projects for enrichment
+				projectMap := make(map[string]*manager.SessionizeProject)
+				if projects, err := m.manager.GetAvailableProjects(); err == nil {
+					for i := range projects {
+						projectMap[projects[i].Path] = &projects[i]
+					}
+				}
+
+				// Build history items
+				var items []historyItem
+				for _, access := range history.Projects {
+					proj := projectMap[access.Path]
+					if proj == nil {
+						// Create minimal project with workspace node for unknown paths
+						proj = &manager.SessionizeProject{
+							WorkspaceNode: &workspace.WorkspaceNode{Path: access.Path},
+						}
+					}
+					items = append(items, historyItem{project: proj, access: access})
+				}
+				if len(items) > 15 {
+					items = items[:15]
+				}
+				hm := newHistoryModel(items, m.manager, keyMap)
+				m.historyModel = hm
+			}
+		}
+		if m.historyModel != nil {
+			cmd = m.historyModel.Init()
+			// Forward size to the newly created model
+			if m.width > 0 && m.height > 0 {
+				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
+				newModel, _ := m.historyModel.Update(childMsg)
+				if hm, ok := newModel.(*historyModel); ok {
+					m.historyModel = hm
+				}
+			}
+		}
+
+	case viewWindows:
+		// Initialize windows model lazily
+		if m.windowsModel == nil && m.client != nil {
+			ctx := context.Background()
+			if currentSession, err := m.client.GetCurrentSession(ctx); err == nil && currentSession != "" {
+				showChildProcesses := false
+				if tmuxCfg, err := loadTmuxConfig(); err == nil && tmuxCfg != nil {
+					showChildProcesses = tmuxCfg.ShowChildProcesses
+				}
+				wm := newWindowsModel(m.client, currentSession, showChildProcesses)
+				m.windowsModel = &wm
+			}
+		}
+		if m.windowsModel != nil {
+			cmd = m.windowsModel.Init()
+			// Forward size to the newly created model
+			if m.width > 0 && m.height > 0 {
+				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
+				newModel, _ := m.windowsModel.Update(childMsg)
+				if wm, ok := newModel.(windowsModel); ok {
+					m.windowsModel = &wm
+				}
+			}
+		}
+
+	case viewGroups:
+		// Initialize groups model lazily
+		if m.groupsModel == nil {
+			gm := newGroupsModel(m.manager)
+			m.groupsModel = &gm
+		}
 		// groupsModel doesn't have an Init that returns commands
+		if m.groupsModel != nil && m.width > 0 && m.height > 0 {
+			childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
+			newModel, _ := m.groupsModel.Update(childMsg)
+			if gm, ok := newModel.(*groupsModel); ok {
+				m.groupsModel = gm
+			}
+		}
 	}
 
-	return tea.Batch(cmds...)
+	return cmd
+}
+
+func (m *navModel) Init() tea.Cmd {
+	// Initialize only the active view lazily
+	return m.switchToView(m.activeView)
 }
 
 func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -100,7 +308,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		// Forward adjusted size to all models (subtract 2 lines for tab bar)
+		// Forward adjusted size to all initialized models (subtract 2 lines for tab bar)
 		childMsg := tea.WindowSizeMsg{Width: msg.Width, Height: msg.Height - 2}
 		if m.sessionizeModel != nil {
 			newModel, _ := m.sessionizeModel.Update(childMsg)
@@ -136,20 +344,119 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case switchViewMsg:
 		m.activeView = msg.to
-		// Refresh data when switching views
-		switch msg.to {
-		case viewGroups:
-			if m.groupsModel != nil {
-				m.groupsModel.groups = m.manager.GetAllGroups()
-				m.groupsModel.cursor = 0
-				m.groupsModel.message = ""
+		// Use lazy initialization - switchToView handles refresh for already-initialized views
+		cmd := m.switchToView(msg.to)
+		return m, cmd
+
+	// Route background data messages to their owners regardless of active view
+	case initialProjectsEnrichedMsg:
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			return m, cmd
+		}
+		return m, nil
+
+	case rulesStateMsg:
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			return m, cmd
+		}
+		return m, nil
+
+	case gitStatusMapMsg:
+		// Route to both sessionize and manage models
+		var cmds []tea.Cmd
+		if m.sessionizeModel != nil {
+			newModel, cmd := m.sessionizeModel.Update(msg)
+			if sm, ok := newModel.(sessionizeModel); ok {
+				m.sessionizeModel = &sm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.historyModel != nil {
+			newModel, cmd := m.historyModel.Update(msg)
+			if hm, ok := newModel.(*historyModel); ok {
+				m.historyModel = hm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+
+	case noteCountsMapMsg, planStatsMapMsg:
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			return m, cmd
+		}
+		return m, nil
+
+	case cwdProjectEnrichedMsg:
+		if m.manageModel != nil {
+			newModel, cmd := m.manageModel.Update(msg)
+			if mm, ok := newModel.(*manageModel); ok {
+				m.manageModel = mm
+			}
+			return m, cmd
+		}
+		return m, nil
+
+	case windowsLoadedMsg, previewLoadedMsg:
+		if m.windowsModel != nil {
+			newModel, cmd := m.windowsModel.Update(msg)
+			if wm, ok := newModel.(windowsModel); ok {
+				m.windowsModel = &wm
+			}
+			return m, cmd
+		}
+		return m, nil
+
+	case spinnerTickMsg:
+		// Route spinner ticks to the active view
+		switch m.activeView {
+		case viewSessionize:
+			if m.sessionizeModel != nil {
+				newModel, cmd := m.sessionizeModel.Update(msg)
+				if sm, ok := newModel.(sessionizeModel); ok {
+					m.sessionizeModel = &sm
+				}
+				return m, cmd
 			}
 		case viewManage:
 			if m.manageModel != nil {
-				sessions, _ := m.manager.GetSessions()
-				m.manageModel.sessions = sessions
-				m.manageModel.rebuildSessionsOrder()
-				m.manageModel.message = fmt.Sprintf("Switched to group: %s", m.manager.GetActiveGroup())
+				newModel, cmd := m.manageModel.Update(msg)
+				if mm, ok := newModel.(*manageModel); ok {
+					m.manageModel = mm
+				}
+				return m, cmd
+			}
+		case viewHistory:
+			if m.historyModel != nil {
+				newModel, cmd := m.historyModel.Update(msg)
+				if hm, ok := newModel.(*historyModel); ok {
+					m.historyModel = hm
+				}
+				return m, cmd
 			}
 		}
 		return m, nil
@@ -160,19 +467,19 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			r := msg.Runes[0]
 			switch r {
 			case '1':
-				if m.activeView != viewSessionize && m.sessionizeModel != nil {
+				if m.activeView != viewSessionize {
 					return m, func() tea.Msg { return switchViewMsg{to: viewSessionize} }
 				}
 			case '2':
-				if m.activeView != viewManage && m.manageModel != nil {
+				if m.activeView != viewManage {
 					return m, func() tea.Msg { return switchViewMsg{to: viewManage} }
 				}
 			case '3':
-				if m.activeView != viewHistory && m.historyModel != nil {
+				if m.activeView != viewHistory {
 					return m, func() tea.Msg { return switchViewMsg{to: viewHistory} }
 				}
 			case '4':
-				if m.activeView != viewWindows && m.windowsModel != nil {
+				if m.activeView != viewWindows && m.client != nil {
 					return m, func() tea.Msg { return switchViewMsg{to: viewWindows} }
 				}
 			}
@@ -243,17 +550,17 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *navModel) View() string {
 	var b strings.Builder
 
-	// Render global tab bar
+	// Render global tab bar - tabs are always available, models are lazily initialized
 	tabs := []struct {
 		num  string
 		name string
 		view navView
 		ok   bool
 	}{
-		{"1", "Sessionize", viewSessionize, m.sessionizeModel != nil},
-		{"2", "Key Manage", viewManage, m.manageModel != nil},
-		{"3", "History", viewHistory, m.historyModel != nil},
-		{"4", "Windows", viewWindows, m.windowsModel != nil},
+		{"1", "Sessionize", viewSessionize, true},
+		{"2", "Key Manage", viewManage, true},
+		{"3", "History", viewHistory, true},
+		{"4", "Windows", viewWindows, m.client != nil}, // Windows requires tmux client
 	}
 
 	var tabParts []string
@@ -302,11 +609,12 @@ func (m *navModel) View() string {
 
 // runNavTUI runs the unified nav TUI starting in manage view
 func runNavTUI() error {
-	return runNavTUIWithView(viewManage)
+	return runNavTUIWithView(viewManage, NavTUIOptions{})
 }
 
 // runNavTUIWithView runs the unified nav TUI starting in the specified view
-func runNavTUIWithView(startView navView) error {
+// Models are lazily initialized when their tab is first accessed
+func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 	mgr, err := tmux.NewManager(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to initialize manager: %w", err)
@@ -336,100 +644,15 @@ func runNavTUIWithView(startView navView) error {
 		mgr.SetActiveGroup(targetGroup)
 	}
 
-	sessions, err := mgr.GetSessions()
-	if err != nil {
-		return fmt.Errorf("failed to get sessions: %w", err)
-	}
-
-	// Load enriched projects cache for manage view
-	enrichedProjects := make(map[string]*manager.SessionizeProject)
-	usedCache := false
-	if cache, err := manager.LoadKeyManageCache(configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
-		for path, cached := range cache.EnrichedProjects {
-			if _, err := os.Stat(path); err == nil {
-				enrichedProjects[path] = &manager.SessionizeProject{
-					WorkspaceNode: cached.WorkspaceNode,
-					GitStatus:     cached.GitStatus,
-					NoteCounts:    cached.NoteCounts,
-					PlanStats:     cached.PlanStats,
-				}
-			}
-		}
-		usedCache = len(enrichedProjects) > 0
-	}
-
-	// Create the unified nav model
+	// Create the unified nav model - models are lazily initialized
 	m := &navModel{
-		activeView: startView,
-		manager:    mgr,
-		client:     client,
-		configDir:  configDir,
-		cwd:        cwd,
-	}
-
-	// Initialize manage model (always available)
-	if len(sessions) > 0 {
-		mm := newManageModel(sessions, mgr, cwd, enrichedProjects, usedCache)
-		m.manageModel = &mm
-	}
-
-	// Initialize groups model (always available)
-	gm := newGroupsModel(mgr)
-	m.groupsModel = &gm
-
-	// Initialize windows model (only if in tmux)
-	if client != nil {
-		ctx := context.Background()
-		if currentSession, err := client.GetCurrentSession(ctx); err == nil && currentSession != "" {
-			wm := newWindowsModel(client, currentSession, false)
-			m.windowsModel = &wm
-		}
-	}
-
-	// Initialize sessionize model
-	if projects, err := mgr.GetAvailableProjects(); err == nil && len(projects) > 0 {
-		projectPtrs := make([]*manager.SessionizeProject, len(projects))
-		for i := range projects {
-			projectPtrs[i] = &projects[i]
-		}
-		searchPaths, _ := mgr.GetEnabledSearchPaths()
-		sm := newSessionizeModel(projectPtrs, searchPaths, mgr, configDir, usedCache, "")
-		m.sessionizeModel = &sm
-	}
-
-	// Initialize history model
-	if history, err := mgr.GetAccessHistory(); err == nil && history != nil && len(history.Projects) > 0 {
-		// Build key map from sessions
-		keyMap := make(map[string]string)
-		for _, s := range sessions {
-			if s.Path != "" {
-				keyMap[s.Path] = s.Key
-			}
-		}
-		// Get projects for enrichment
-		projectMap := make(map[string]*manager.SessionizeProject)
-		if projects, err := mgr.GetAvailableProjects(); err == nil {
-			for i := range projects {
-				projectMap[projects[i].Path] = &projects[i]
-			}
-		}
-		// Build history items
-		var items []historyItem
-		for _, access := range history.Projects {
-			proj := projectMap[access.Path]
-			if proj == nil {
-				// Create minimal project with workspace node for unknown paths
-				proj = &manager.SessionizeProject{
-					WorkspaceNode: &workspace.WorkspaceNode{Path: access.Path},
-				}
-			}
-			items = append(items, historyItem{project: proj, access: access})
-		}
-		if len(items) > 15 {
-			items = items[:15]
-		}
-		hm := newHistoryModel(items, mgr, keyMap)
-		m.historyModel = hm
+		activeView:  startView,
+		manager:     mgr,
+		client:      client,
+		configDir:   configDir,
+		cwd:         cwd,
+		opts:        opts,
+		initialized: make(map[navView]bool),
 	}
 
 	// Run the TUI
@@ -497,311 +720,4 @@ func runNavTUIWithView(startView navView) error {
 	return nil
 }
 
-// runSessionizeTUI runs the unified nav TUI starting with sessionize view
-func runSessionizeTUI(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, cwdFocusPath string, usedCache bool) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = ""
-	}
-
-	// Try to create tmux client (may fail if not in tmux)
-	var client *tmuxclient.Client
-	if os.Getenv("TMUX") != "" {
-		client, _ = tmuxclient.NewClient()
-	}
-
-	// Create the unified nav model with sessionize
-	m := &navModel{
-		activeView: viewSessionize,
-		manager:    mgr,
-		client:     client,
-		configDir:  configDir,
-		cwd:        cwd,
-	}
-
-	// Initialize sessionize model
-	sm := newSessionizeModel(projects, searchPaths, mgr, configDir, usedCache, cwdFocusPath)
-	m.sessionizeModel = &sm
-
-	// Initialize manage model with sessions from the current group
-	sessions, _ := mgr.GetSessions()
-	if len(sessions) > 0 {
-		enrichedProjects := make(map[string]*manager.SessionizeProject)
-		mm := newManageModel(sessions, mgr, cwd, enrichedProjects, false)
-		m.manageModel = &mm
-	}
-
-	// Initialize groups model
-	gm := newGroupsModel(mgr)
-	m.groupsModel = &gm
-
-	// Run the TUI
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running program: %w", err)
-	}
-
-	// Handle post-TUI logic (same as runNavTUIWithView)
-	if nm, ok := finalModel.(*navModel); ok {
-		// Handle manage model exit
-		if nm.manageModel != nil {
-			mm := nm.manageModel
-			if mm.changesMade {
-				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-					return fmt.Errorf("failed to save sessions: %w", err)
-				}
-				if err := mgr.RegenerateBindings(); err != nil {
-					return fmt.Errorf("failed to regenerate bindings: %w", err)
-				}
-				_ = reloadTmuxConfig()
-			}
-
-			if mm.commandOnExit != nil {
-				mm.commandOnExit.Stdin = os.Stdin
-				mm.commandOnExit.Stdout = os.Stdout
-				mm.commandOnExit.Stderr = os.Stderr
-				_ = mm.commandOnExit.Run()
-			}
-		}
-
-		// Handle sessionize model exit
-		if nm.sessionizeModel != nil && nm.sessionizeModel.selected != nil {
-			sm := nm.sessionizeModel
-			if sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.Path)
-				if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
-					_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
-				}
-				return sessionizeProject(sm.selected)
-			}
-		}
-
-		// Handle history model exit
-		if nm.historyModel != nil && nm.historyModel.selected != nil {
-			hm := nm.historyModel
-			_ = mgr.RecordProjectAccess(hm.selected.Path)
-			return mgr.Sessionize(hm.selected.Path)
-		}
-
-		// Handle windows model exit
-		if nm.windowsModel != nil && nm.windowsModel.selectedWindow != nil {
-			wm := nm.windowsModel
-			if client != nil {
-				target := fmt.Sprintf("%s:%d", wm.sessionName, wm.selectedWindow.Index)
-				if err := client.SwitchClient(context.Background(), target); err != nil {
-					// This might fail if not in a popup, which is fine
-				}
-				_ = client.ClosePopupCmd().Run()
-			}
-		}
-	}
-
-	return nil
-}
-
-// runHistoryTUI runs the unified nav TUI starting with history view
-func runHistoryTUI(items []historyItem, mgr *tmux.Manager, keyMap map[string]string) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = ""
-	}
-
-	// Try to create tmux client (may fail if not in tmux)
-	var client *tmuxclient.Client
-	if os.Getenv("TMUX") != "" {
-		client, _ = tmuxclient.NewClient()
-	}
-
-	// Create the unified nav model with history
-	m := &navModel{
-		activeView: viewHistory,
-		manager:    mgr,
-		client:     client,
-		configDir:  configDir,
-		cwd:        cwd,
-	}
-
-	// Initialize history model
-	hm := newHistoryModel(items, mgr, keyMap)
-	m.historyModel = hm
-
-	// Initialize manage model
-	sessions, _ := mgr.GetSessions()
-	if len(sessions) > 0 {
-		enrichedProjects := make(map[string]*manager.SessionizeProject)
-		mm := newManageModel(sessions, mgr, cwd, enrichedProjects, false)
-		m.manageModel = &mm
-	}
-
-	// Initialize groups model
-	gm := newGroupsModel(mgr)
-	m.groupsModel = &gm
-
-	// Run the TUI
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running program: %w", err)
-	}
-
-	// Handle post-TUI logic
-	if nm, ok := finalModel.(*navModel); ok {
-		// Handle manage model exit
-		if nm.manageModel != nil {
-			mm := nm.manageModel
-			if mm.changesMade {
-				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-					return fmt.Errorf("failed to save sessions: %w", err)
-				}
-				if err := mgr.RegenerateBindings(); err != nil {
-					return fmt.Errorf("failed to regenerate bindings: %w", err)
-				}
-				_ = reloadTmuxConfig()
-			}
-
-			if mm.commandOnExit != nil {
-				mm.commandOnExit.Stdin = os.Stdin
-				mm.commandOnExit.Stdout = os.Stdout
-				mm.commandOnExit.Stderr = os.Stderr
-				_ = mm.commandOnExit.Run()
-			}
-		}
-
-		// Handle sessionize model exit
-		if nm.sessionizeModel != nil && nm.sessionizeModel.selected != nil {
-			sm := nm.sessionizeModel
-			if sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.Path)
-				if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
-					_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
-				}
-				return sessionizeProject(sm.selected)
-			}
-		}
-
-		// Handle history model exit
-		if nm.historyModel != nil && nm.historyModel.selected != nil {
-			hm := nm.historyModel
-			_ = mgr.RecordProjectAccess(hm.selected.Path)
-			return mgr.Sessionize(hm.selected.Path)
-		}
-
-		// Handle windows model exit
-		if nm.windowsModel != nil && nm.windowsModel.selectedWindow != nil {
-			wm := nm.windowsModel
-			if client != nil {
-				target := fmt.Sprintf("%s:%d", wm.sessionName, wm.selectedWindow.Index)
-				if err := client.SwitchClient(context.Background(), target); err != nil {
-					// This might fail if not in a popup, which is fine
-				}
-				_ = client.ClosePopupCmd().Run()
-			}
-		}
-	}
-
-	return nil
-}
-
-// runWindowsTUI runs the unified nav TUI starting with windows view
-func runWindowsTUI(client *tmuxclient.Client, sessionName string, showChildProcesses bool) error {
-	cwd, err := os.Getwd()
-	if err != nil {
-		cwd = ""
-	}
-
-	mgr, err := tmux.NewManager(configDir)
-	if err != nil {
-		return fmt.Errorf("failed to initialize manager: %w", err)
-	}
-
-	// Create the unified nav model with windows
-	m := &navModel{
-		activeView: viewWindows,
-		manager:    mgr,
-		client:     client,
-		configDir:  configDir,
-		cwd:        cwd,
-	}
-
-	// Initialize windows model
-	wm := newWindowsModel(client, sessionName, showChildProcesses)
-	m.windowsModel = &wm
-
-	// Initialize manage model
-	sessions, _ := mgr.GetSessions()
-	if len(sessions) > 0 {
-		enrichedProjects := make(map[string]*manager.SessionizeProject)
-		mm := newManageModel(sessions, mgr, cwd, enrichedProjects, false)
-		m.manageModel = &mm
-	}
-
-	// Initialize groups model
-	gm := newGroupsModel(mgr)
-	m.groupsModel = &gm
-
-	// Run the TUI
-	p := tea.NewProgram(m, tea.WithAltScreen())
-	finalModel, err := p.Run()
-	if err != nil {
-		return fmt.Errorf("error running program: %w", err)
-	}
-
-	// Handle post-TUI logic
-	if nm, ok := finalModel.(*navModel); ok {
-		// Handle manage model exit
-		if nm.manageModel != nil {
-			mm := nm.manageModel
-			if mm.changesMade {
-				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
-					return fmt.Errorf("failed to save sessions: %w", err)
-				}
-				if err := mgr.RegenerateBindings(); err != nil {
-					return fmt.Errorf("failed to regenerate bindings: %w", err)
-				}
-				_ = reloadTmuxConfig()
-			}
-
-			if mm.commandOnExit != nil {
-				mm.commandOnExit.Stdin = os.Stdin
-				mm.commandOnExit.Stdout = os.Stdout
-				mm.commandOnExit.Stderr = os.Stderr
-				_ = mm.commandOnExit.Run()
-			}
-		}
-
-		// Handle sessionize model exit
-		if nm.sessionizeModel != nil && nm.sessionizeModel.selected != nil {
-			sm := nm.sessionizeModel
-			if sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.Path)
-				if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
-					_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
-				}
-				return sessionizeProject(sm.selected)
-			}
-		}
-
-		// Handle history model exit
-		if nm.historyModel != nil && nm.historyModel.selected != nil {
-			hm := nm.historyModel
-			_ = mgr.RecordProjectAccess(hm.selected.Path)
-			return mgr.Sessionize(hm.selected.Path)
-		}
-
-		// Handle windows model exit
-		if nm.windowsModel != nil && nm.windowsModel.selectedWindow != nil {
-			wm := nm.windowsModel
-			if client != nil {
-				target := fmt.Sprintf("%s:%d", wm.sessionName, wm.selectedWindow.Index)
-				if err := client.SwitchClient(context.Background(), target); err != nil {
-					// This might fail if not in a popup, which is fine
-				}
-				_ = client.ClosePopupCmd().Run()
-			}
-		}
-	}
-
-	return nil
-}
 
