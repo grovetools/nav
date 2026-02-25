@@ -476,10 +476,13 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "y", msg.String() == "Y":
 				switch m.confirmMode {
 				case "load":
+					m.manager.TakeSnapshot()
 					m.executeLoadIntoDefault(m.confirmSource)
 				case "clear":
+					m.manager.TakeSnapshot()
 					m.executeClearGroup()
 				case "delete_group":
+					m.manager.TakeSnapshot()
 					groupToDelete := m.manager.GetActiveGroup()
 					if err := m.manager.DeleteGroup(groupToDelete); err != nil {
 						m.message = fmt.Sprintf("Error deleting group: %v", err)
@@ -514,6 +517,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.newGroupStep = 1
 					m.message = ""
 				} else {
+					m.manager.TakeSnapshot()
 					if err := m.manager.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
 						m.message = fmt.Sprintf("Error creating group: %v", err)
 					} else {
@@ -587,6 +591,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.message = fmt.Sprintf("Load '%s' into default? This will replace non-locked mappings.", selected)
 				} else {
 					// Execute immediately without confirmation
+					m.manager.TakeSnapshot()
 					m.executeLoadIntoDefault(selected)
 				}
 				return m, nil
@@ -609,6 +614,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch msg.Type {
 				case tea.KeyEnter:
 					if m.saveToGroupInput != "" {
+						m.manager.TakeSnapshot()
 						m.saveDefaultToGroup(m.saveToGroupInput)
 					} else {
 						m.message = "Group name cannot be empty"
@@ -652,6 +658,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.saveToGroupInput = ""
 					m.message = "Enter new group name:"
 				} else {
+					m.manager.TakeSnapshot()
 					m.saveDefaultToGroup(selected)
 					m.saveToGroupMode = false
 				}
@@ -686,6 +693,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case msg.Type == tea.KeyEnter, msg.Type == tea.KeySpace:
 				targetGroup := m.moveToGroupOptions[m.moveToGroupCursor]
+				m.manager.TakeSnapshot()
 				m.executeMoveToGroup(targetGroup)
 				m.moveToGroupMode = false
 				return m, clearHighlightCmd()
@@ -816,6 +824,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				if m.cursor < len(m.sessions) {
+					m.manager.TakeSnapshot()
 					currentKey := m.sessions[m.cursor].Key
 					currentSession := m.sessions[m.cursor]
 					if m.lockedKeys[currentKey] {
@@ -844,6 +853,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 
+					m.manager.TakeSnapshot()
 					// Find the previous unlocked position
 					targetPos := m.cursor - 1
 					for targetPos >= 0 && m.lockedKeys[m.sessions[targetPos].Key] {
@@ -885,6 +895,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, nil
 					}
 
+					m.manager.TakeSnapshot()
 					// Find the next unlocked position
 					targetPos := m.cursor + 1
 					for targetPos < len(m.sessions) && m.lockedKeys[m.sessions[targetPos].Key] {
@@ -1073,6 +1084,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = fmt.Sprintf("Load '%s' into default? This will replace non-locked mappings.", sourceGroup)
 			} else {
 				// Execute immediately without confirmation
+				m.manager.TakeSnapshot()
 				m.executeLoadIntoDefault(sourceGroup)
 			}
 			return m, nil
@@ -1096,6 +1108,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = fmt.Sprintf("Clear all non-locked mappings from '%s'?", m.manager.GetActiveGroup())
 			} else {
 				// Execute immediately without confirmation
+				m.manager.TakeSnapshot()
 				m.executeClearGroup()
 			}
 			return m, nil
@@ -1311,6 +1324,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clear the mapping for selected session(s)
 			clearedCount := 0
 			if len(m.selectedKeys) > 0 {
+				m.manager.TakeSnapshot()
 				for i := range m.sessions {
 					if m.selectedKeys[m.sessions[i].Key] && !m.lockedKeys[m.sessions[i].Key] && m.sessions[i].Path != "" {
 						m.sessions[i].Path = ""
@@ -1325,6 +1339,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.cursor < len(m.sessions) {
 				session := &m.sessions[m.cursor]
 				if session.Path != "" && !m.lockedKeys[session.Key] {
+					m.manager.TakeSnapshot()
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
@@ -1387,6 +1402,22 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Bottom):
 			m.cursor = len(m.sessions) - 1
 			m.justMappedKeys = make(map[string]bool)
+
+		case key.Matches(msg, m.keys.Undo):
+			if err := m.manager.Undo(); err != nil {
+				m.message = fmt.Sprintf("Undo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.message = "Undo applied"
+			}
+
+		case key.Matches(msg, m.keys.Redo):
+			if err := m.manager.Redo(); err != nil {
+				m.message = fmt.Sprintf("Redo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.message = "Redo applied"
+			}
 		}
 	}
 
@@ -1436,6 +1467,7 @@ func (m *manageModel) mapSelectedSlot() (tea.Model, tea.Cmd) {
 		}
 	}
 
+	m.manager.TakeSnapshot()
 	session.Path = projectToMap.Path
 	session.Repository = ""
 	session.Description = ""
@@ -2134,6 +2166,24 @@ func (m *manageModel) getLockedKeysSlice() []string {
 		lockedKeys = append(lockedKeys, key)
 	}
 	return lockedKeys
+}
+
+// refreshStateAfterUndoRedo refreshes the model state after an undo/redo operation
+func (m *manageModel) refreshStateAfterUndoRedo() {
+	m.sessions, _ = m.manager.GetSessions()
+	lockedKeysSlice := m.manager.GetLockedKeys()
+	m.lockedKeys = make(map[string]bool)
+	for _, k := range lockedKeysSlice {
+		m.lockedKeys[k] = true
+	}
+	m.rebuildSessionsOrder()
+	if m.cursor >= len(m.sessions) {
+		m.cursor = len(m.sessions) - 1
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+	}
+	_ = reloadTmuxConfig()
 }
 
 // saveChanges persists the current session state immediately.

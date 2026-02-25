@@ -124,6 +124,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			case msg.String() == "y", msg.String() == "Y":
 				// Execute delete
+				m.manager.TakeSnapshot()
 				groupToDelete := m.groups[m.cursor]
 				if err := m.manager.DeleteGroup(groupToDelete); err != nil {
 					m.message = fmt.Sprintf("Error: %v", err)
@@ -179,6 +180,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				case "new_prefix":
 					// Create the group
+					m.manager.TakeSnapshot()
 					if err := m.manager.CreateGroup(m.pendingName, value); err != nil {
 						m.message = fmt.Sprintf("Error: %v", err)
 					} else {
@@ -199,6 +201,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.message = "Cannot rename to 'default'"
 						return m, nil
 					}
+					m.manager.TakeSnapshot()
 					oldName := m.groups[m.cursor]
 					if err := m.manager.RenameGroup(oldName, value); err != nil {
 						m.message = fmt.Sprintf("Error: %v", err)
@@ -211,6 +214,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 
 				case "edit_prefix":
+					m.manager.TakeSnapshot()
 					groupName := m.groups[m.cursor]
 					if err := m.manager.SetGroupPrefix(groupName, value); err != nil {
 						m.message = fmt.Sprintf("Error: %v", err)
@@ -245,6 +249,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 					// Use position-based ordering: current goes to prev's position, prev goes to current's
 					// Position in list (excluding default at 0) determines order
+					m.manager.TakeSnapshot()
 					_ = m.manager.SetGroupOrder(currentGroup, m.cursor-2) // Move up
 					_ = m.manager.SetGroupOrder(prevGroup, m.cursor-1)    // Move down
 
@@ -261,6 +266,7 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					nextGroup := m.groups[m.cursor+1]
 
 					// Use position-based ordering
+					m.manager.TakeSnapshot()
 					_ = m.manager.SetGroupOrder(currentGroup, m.cursor) // Move down
 					_ = m.manager.SetGroupOrder(nextGroup, m.cursor-1)  // Move up
 
@@ -382,10 +388,37 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.manager.SetLastAccessedGroup(groupName)
 			m.nextCommand = "km"
 			return m, nil // Don't quit - parent will handle view switch
+
+		case key.Matches(msg, m.keys.Undo):
+			if err := m.manager.Undo(); err != nil {
+				m.message = fmt.Sprintf("Undo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.message = "Undo applied"
+			}
+
+		case key.Matches(msg, m.keys.Redo):
+			if err := m.manager.Redo(); err != nil {
+				m.message = fmt.Sprintf("Redo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.message = "Redo applied"
+			}
 		}
 	}
 
 	return m, nil
+}
+
+func (m *groupsModel) refreshStateAfterUndoRedo() {
+	m.groups = m.manager.GetAllGroups()
+	if m.cursor >= len(m.groups) {
+		m.cursor = len(m.groups) - 1
+		if m.cursor < 0 {
+			m.cursor = 0
+		}
+	}
+	_ = reloadTmuxConfig()
 }
 
 func (m *groupsModel) View() string {

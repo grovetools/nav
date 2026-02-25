@@ -31,6 +31,8 @@ type ManageKeyMap struct {
 	Groups         key.Binding // Launch group manager TUI
 	GoToSessionize key.Binding
 	FocusCurrent   key.Binding
+	Undo           key.Binding
+	Redo           key.Binding
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
@@ -76,6 +78,10 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.MoveMode, k.Lock,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
 			k.ConfirmMove,
+		),
+		keymap.NewSection("History",
+			k.Undo,
+			k.Redo,
 		),
 		keymap.ViewSection(k.TogglePaths),
 		keymap.SystemSection(k.Help, k.Quit),
@@ -171,6 +177,14 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		FocusCurrent: key.NewBinding(
 			key.WithKeys("."),
 			key.WithHelp(".", "focus ecosystem"),
+		),
+		Undo: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "undo"),
+		),
+		Redo: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("C-r", "redo"),
 		),
 	}
 

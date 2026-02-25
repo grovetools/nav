@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,6 +34,16 @@ type Manager struct {
 	tmuxClient    *tmux.Client
 	activeGroup   string
 	sessionsFile  TmuxSessionsFile
+	undoStack     [][]byte
+	redoStack     [][]byte
+}
+
+// managerState captures the full state for undo/redo operations
+type managerState struct {
+	TmuxConfig   TmuxConfig
+	SessionsFile TmuxSessionsFile
+	ActiveGroup  string
+	LockedKeys   []string
 }
 
 // expandPath expands ~ to home directory
@@ -164,6 +175,8 @@ func NewManager(configDir string) (*Manager, error) {
 		tmuxClient:    tmuxClient,
 		activeGroup:   "default",
 		sessionsFile:  sessionsFile,
+		undoStack:     make([][]byte, 0),
+		redoStack:     make([][]byte, 0),
 	}, nil
 }
 
@@ -221,6 +234,83 @@ func hasNavConfig(cfg *core_config.Config) bool {
 	}
 	_, ok := cfg.Extensions["nav"]
 	return ok
+}
+
+// TakeSnapshot captures the current state for undo/redo operations.
+// Call this before making any destructive changes to mappings or groups.
+func (m *Manager) TakeSnapshot() {
+	state := managerState{
+		TmuxConfig:   *m.tmuxConfig,
+		SessionsFile: m.sessionsFile,
+		ActiveGroup:  m.activeGroup,
+		LockedKeys:   m.lockedKeys,
+	}
+	data, err := json.Marshal(state)
+	if err == nil {
+		m.undoStack = append(m.undoStack, data)
+		m.redoStack = m.redoStack[:0] // Clear redo stack on new action
+	}
+}
+
+// Undo reverts the last data change.
+func (m *Manager) Undo() error {
+	if len(m.undoStack) == 0 {
+		return fmt.Errorf("nothing to undo")
+	}
+	// Save current to redo stack
+	currState := managerState{
+		TmuxConfig:   *m.tmuxConfig,
+		SessionsFile: m.sessionsFile,
+		ActiveGroup:  m.activeGroup,
+		LockedKeys:   m.lockedKeys,
+	}
+	currData, _ := json.Marshal(currState)
+	m.redoStack = append(m.redoStack, currData)
+
+	// Pop undo
+	data := m.undoStack[len(m.undoStack)-1]
+	m.undoStack = m.undoStack[:len(m.undoStack)-1]
+	return m.restoreState(data)
+}
+
+// Redo re-applies a previously undone change.
+func (m *Manager) Redo() error {
+	if len(m.redoStack) == 0 {
+		return fmt.Errorf("nothing to redo")
+	}
+	// Save current to undo stack
+	currState := managerState{
+		TmuxConfig:   *m.tmuxConfig,
+		SessionsFile: m.sessionsFile,
+		ActiveGroup:  m.activeGroup,
+		LockedKeys:   m.lockedKeys,
+	}
+	currData, _ := json.Marshal(currState)
+	m.undoStack = append(m.undoStack, currData)
+
+	// Pop redo
+	data := m.redoStack[len(m.redoStack)-1]
+	m.redoStack = m.redoStack[:len(m.redoStack)-1]
+	return m.restoreState(data)
+}
+
+// restoreState restores the manager state from a JSON snapshot.
+func (m *Manager) restoreState(data []byte) error {
+	var state managerState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+	*m.tmuxConfig = state.TmuxConfig
+	m.sessionsFile = state.SessionsFile
+	m.lockedKeys = state.LockedKeys
+	m.SetActiveGroup(state.ActiveGroup) // Will also sync m.sessions
+	if err := m.saveStaticConfigFull(); err != nil {
+		return err
+	}
+	if err := m.saveSessions(); err != nil {
+		return err
+	}
+	return m.RegenerateBindingsGo()
 }
 
 // loadSessionsFromFile loads sessions from an external TOML or YAML file.

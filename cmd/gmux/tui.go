@@ -28,6 +28,17 @@ import (
 
 var pageStyle = lipgloss.NewStyle()
 
+// jumpState captures the view state for the jump list (C-o/C-i navigation)
+type jumpState struct {
+	focusedPath     string
+	cursor          int
+	filterText      string
+	filterGroup     bool
+	filterDirty     bool
+	worktreesFolded bool
+	activeGroup     string
+}
+
 // sessionizeModel is the model for the interactive project picker
 type sessionizeModel struct {
 	projects                 []*manager.SessionizeProject
@@ -105,6 +116,10 @@ type sessionizeModel struct {
 	mapToGroupPaths   []string
 
 	selectedPaths     map[string]bool // Paths currently selected for bulk operations
+
+	// Jump list for C-o/C-i navigation
+	jumpList []jumpState
+	jumpIdx  int
 }
 
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
@@ -309,6 +324,8 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		hasChildren:              make(map[string]bool),
 		sequence:                 keymap.NewSequenceState(),
 		selectedPaths:            make(map[string]bool),
+		jumpList:                 make([]jumpState, 0),
+		jumpIdx:                  0,
 	}
 
 	// Synchronously apply initial filters to prevent UI flash
@@ -919,6 +936,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = "Enter prefix key (optional, e.g. '<grove> g'):"
 					m.statusTimeout = time.Now().Add(30 * time.Second)
 				} else {
+					m.manager.TakeSnapshot()
 					// Create the group
 					if err := m.manager.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
 						m.statusMessage = fmt.Sprintf("Error: %v", err)
@@ -1049,6 +1067,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.manager, m.configDir))
 
 		case key.Matches(msg, sessionizeKeys.ClearFocus):
+			m.saveJumpState()
 			// Clear group filter if active
 			if m.filterGroup {
 				m.filterGroup = false
@@ -1078,6 +1097,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
 		case key.Matches(msg, sessionizeKeys.FilterDirty):
+			m.saveJumpState()
 			// Toggle dirty filter
 			m.filterDirty = !m.filterDirty
 			// Clear text filter to make them mutually exclusive
@@ -1091,6 +1111,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, sessionizeKeys.FilterGroup):
+			m.saveJumpState()
 			m.filterGroup = !m.filterGroup
 			m.filterInput.SetValue("") // Clear text filter
 			if m.filterGroup {
@@ -1107,10 +1128,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, sessionizeKeys.NextGroup):
+			m.saveJumpState()
 			m.cycleGroup(1)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, sessionizeKeys.PrevGroup):
+			m.saveJumpState()
 			m.cycleGroup(-1)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
@@ -1240,10 +1263,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.Top):
+			m.saveJumpState()
 			m.cursor = 0
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.Bottom):
+			m.saveJumpState()
 			m.cursor = len(m.filtered) - 1
 			if m.cursor < 0 {
 				m.cursor = 0
@@ -1327,6 +1352,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Search):
+			m.saveJumpState()
 			// Focus filter input for search
 			// Clear dirty filter to make them mutually exclusive
 			if m.filterDirty {
@@ -1343,6 +1369,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.FocusEcosystem):
+			m.saveJumpState()
 			m.filterGroup = false // Clear group filter when entering ecosystem picker
 			m.ecosystemPickerMode = true
 			m.updateFiltered()
@@ -1351,6 +1378,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
 		case key.Matches(msg, m.keys.FocusEcosystemCwd):
+			m.saveJumpState()
 			// Focus on the ecosystem (or ecosystem worktree) containing the current working directory
 			return m, m.focusEcosystemForPath("")
 
@@ -1642,6 +1670,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// Map each path to an available key and collect assigned keys
+				m.manager.TakeSnapshot()
 				mappedKeys := make([]string, 0, len(pathsToMap))
 				for i, p := range pathsToMap {
 					m.updateKeyMapping(p, availableKeys[i])
@@ -1696,6 +1725,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if mappedKey != "" {
+					m.manager.TakeSnapshot()
 					m.clearKeyMapping(p)
 					clearedCount++
 				}
@@ -1769,6 +1799,54 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.moveCursorToFirstSelectable()
 				return m, nil
 			}
+
+		case key.Matches(msg, m.keys.JumpBack):
+			// Before jumping back, save the current state if we are at the tip of the history
+			if m.jumpIdx == len(m.jumpList) {
+				curr := m.currentJumpState()
+				if len(m.jumpList) == 0 || m.jumpList[len(m.jumpList)-1] != curr {
+					m.jumpList = append(m.jumpList, curr)
+					if len(m.jumpList) > 50 {
+						m.jumpList = m.jumpList[1:]
+					}
+				}
+				m.jumpIdx = len(m.jumpList) - 1
+			}
+
+			if m.jumpIdx > 0 {
+				m.jumpIdx--
+				m.restoreJumpState(m.jumpList[m.jumpIdx])
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.JumpForward):
+			if m.jumpIdx < len(m.jumpList)-1 {
+				m.jumpIdx++
+				m.restoreJumpState(m.jumpList[m.jumpIdx])
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.Undo):
+			if err := m.manager.Undo(); err != nil {
+				m.statusMessage = fmt.Sprintf("Undo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.statusMessage = "Undo applied"
+			}
+			m.statusTimeout = time.Now().Add(2 * time.Second)
+			return m, clearStatusCmd(2 * time.Second)
+
+		case key.Matches(msg, m.keys.Redo):
+			if err := m.manager.Redo(); err != nil {
+				m.statusMessage = fmt.Sprintf("Redo failed: %v", err)
+			} else {
+				m.refreshStateAfterUndoRedo()
+				m.statusMessage = "Redo applied"
+			}
+			m.statusTimeout = time.Now().Add(2 * time.Second)
+			return m, clearStatusCmd(2 * time.Second)
 
 		case key.Matches(msg, m.keys.Quit):
 			// Save cache before quitting to persist enrichment data
@@ -1914,6 +1992,8 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 		return
 	}
 
+	m.manager.TakeSnapshot()
+
 	// Save current group
 	currentGroup := m.manager.GetActiveGroup()
 
@@ -1987,6 +2067,110 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 
 	m.statusMessage = fmt.Sprintf("Mapped %d items to '%s'", assignedCount, targetGroup)
 	m.statusTimeout = time.Now().Add(2 * time.Second)
+}
+
+// currentJumpState captures the current view state for the jump list
+func (m *sessionizeModel) currentJumpState() jumpState {
+	focusedPath := ""
+	if m.focusedProject != nil {
+		focusedPath = m.focusedProject.Path
+	}
+	return jumpState{
+		focusedPath:     focusedPath,
+		cursor:          m.cursor,
+		filterText:      m.filterInput.Value(),
+		filterGroup:     m.filterGroup,
+		filterDirty:     m.filterDirty,
+		worktreesFolded: m.worktreesFolded,
+		activeGroup:     m.manager.GetActiveGroup(),
+	}
+}
+
+// saveJumpState saves the current state to the jump list before a navigation change
+func (m *sessionizeModel) saveJumpState() {
+	curr := m.currentJumpState()
+
+	// Truncate forward history if we moved back and are now branching
+	if m.jumpIdx < len(m.jumpList) {
+		m.jumpList = m.jumpList[:m.jumpIdx]
+	}
+
+	// Don't save consecutive identical states
+	if len(m.jumpList) > 0 && m.jumpList[len(m.jumpList)-1] == curr {
+		return
+	}
+
+	m.jumpList = append(m.jumpList, curr)
+	if len(m.jumpList) > 50 { // Keep history bounded
+		m.jumpList = m.jumpList[1:]
+	}
+	m.jumpIdx = len(m.jumpList)
+}
+
+// restoreJumpState restores a previously saved view state
+func (m *sessionizeModel) restoreJumpState(state jumpState) {
+	if state.focusedPath == "" {
+		m.focusedProject = nil
+	} else {
+		for _, p := range m.projects {
+			if p.Path == state.focusedPath {
+				m.focusedProject = p
+				break
+			}
+		}
+	}
+
+	m.filterInput.SetValue(state.filterText)
+	m.filterGroup = state.filterGroup
+	m.filterDirty = state.filterDirty
+	m.worktreesFolded = state.worktreesFolded
+
+	if state.activeGroup != m.manager.GetActiveGroup() {
+		m.manager.SetActiveGroup(state.activeGroup)
+		_ = m.manager.SetLastAccessedGroup(state.activeGroup)
+		m.sessions, _ = m.manager.GetSessions()
+		m.keyMap = make(map[string]string)
+		for _, s := range m.sessions {
+			if s.Path != "" {
+				expandedPath := expandPath(s.Path)
+				absPath, err := filepath.Abs(expandedPath)
+				if err == nil {
+					m.keyMap[filepath.Clean(absPath)] = s.Key
+				}
+			}
+		}
+	}
+
+	m.ecosystemPickerMode = false
+
+	m.updateFiltered()
+	m.cursor = state.cursor
+	if m.cursor >= len(m.filtered) {
+		m.cursor = len(m.filtered) - 1
+	}
+	if m.cursor < 0 {
+		m.cursor = 0
+	}
+}
+
+// refreshStateAfterUndoRedo refreshes the model state after an undo/redo operation
+func (m *sessionizeModel) refreshStateAfterUndoRedo() {
+	m.sessions, _ = m.manager.GetSessions()
+	m.keyMap = make(map[string]string)
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, err := filepath.Abs(expandedPath)
+			if err == nil {
+				m.keyMap[filepath.Clean(absPath)] = s.Key
+			}
+		}
+	}
+	if m.filterGroup {
+		m.updateFiltered()
+		m.moveCursorToFirstSelectable()
+	}
+	_ = reloadTmuxConfig()
 }
 
 func (m *sessionizeModel) updateFiltered() {

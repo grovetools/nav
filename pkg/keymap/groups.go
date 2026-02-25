@@ -19,6 +19,8 @@ type GroupsKeyMap struct {
 	MoveDown   key.Binding
 	Toggle     key.Binding
 	Select     key.Binding
+	Undo       key.Binding
+	Redo       key.Binding
 }
 
 func (k GroupsKeyMap) ShortHelp() []key.Binding {
@@ -52,6 +54,10 @@ func (k GroupsKeyMap) Sections() []keymap.Section {
 		keymap.NewSection("Reorder",
 			k.MoveMode,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
+		),
+		keymap.NewSection("History",
+			k.Undo,
+			k.Redo,
 		),
 		keymap.SystemSection(k.Help, k.Quit),
 	}
@@ -98,6 +104,14 @@ func NewGroupsKeyMap(cfg *config.Config) GroupsKeyMap {
 		Select: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "switch to group"),
+		),
+		Undo: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "undo"),
+		),
+		Redo: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("C-r", "redo"),
 		),
 	}
 

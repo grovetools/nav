@@ -47,6 +47,22 @@ func (m *Manager) UpdateSessionsAndLocks(sessions []models.TmuxSession, lockedKe
 	return m.mgr.UpdateSessionsAndLocks(sessions, lockedKeys)
 }
 
+// TakeSnapshot captures the current state for undo/redo operations.
+// Call this before making any destructive changes to mappings or groups.
+func (m *Manager) TakeSnapshot() {
+	m.mgr.TakeSnapshot()
+}
+
+// Undo reverts the last data change.
+func (m *Manager) Undo() error {
+	return m.mgr.Undo()
+}
+
+// Redo re-applies a previously undone change.
+func (m *Manager) Redo() error {
+	return m.mgr.Redo()
+}
+
 // GetLockedKeys returns the list of locked keys
 func (m *Manager) GetLockedKeys() []string {
 	return m.mgr.GetLockedKeys()

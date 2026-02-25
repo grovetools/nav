@@ -40,6 +40,10 @@ type SessionizeKeyMap struct {
 	ToggleBinary     key.Binding
 	ToggleLink       key.Binding
 	ToggleCx         key.Binding
+	JumpBack         key.Binding
+	JumpForward      key.Binding
+	Undo             key.Binding
+	Redo             key.Binding
 }
 
 func (k SessionizeKeyMap) ShortHelp() []key.Binding {
@@ -57,6 +61,8 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys("G"), key.WithHelp("G", "Go to bottom")),
 			key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "Start filtering")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "Create/switch session")),
+			k.JumpBack,
+			k.JumpForward,
 		},
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
@@ -79,6 +85,9 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.NextGroup,
 			k.PrevGroup,
 			k.FilterGroup,
+			key.NewBinding(key.WithKeys(""), key.WithHelp("", "History")),
+			k.Undo,
+			k.Redo,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Context Management")),
 			k.ToggleHotContext,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
@@ -104,6 +113,8 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.Up, k.Down, k.PageUp, k.PageDown, k.Top, k.Bottom,
 			k.Search,
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select session")),
+			k.JumpBack,
+			k.JumpForward,
 		),
 		keymap.SelectionSection(k.Select, k.SelectAll, k.SelectNone),
 		keymap.NewSection("Session",
@@ -132,6 +143,10 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.ManageGroups,
 			k.NewGroup,
 			k.MapToGroup,
+		),
+		keymap.NewSection("History",
+			k.Undo,
+			k.Redo,
 		),
 		keymap.NewSection("Columns",
 			k.ToggleCx,
@@ -249,8 +264,8 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 			key.WithHelp("D", "filter dirty"),
 		),
 		RefreshProjects: key.NewBinding(
-			key.WithKeys("ctrl+r"),
-			key.WithHelp("ctrl+r", "refresh project list"),
+			key.WithKeys("R"),
+			key.WithHelp("R", "refresh project list"),
 		),
 		ToggleHotContext: key.NewBinding(
 			key.WithKeys("C"),
@@ -275,6 +290,22 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		ToggleCx: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "toggle cx column"),
+		),
+		JumpBack: key.NewBinding(
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("C-o", "jump back"),
+		),
+		JumpForward: key.NewBinding(
+			key.WithKeys("ctrl+i", "ctrl+]"),
+			key.WithHelp("C-i/C-]", "jump forward"),
+		),
+		Undo: key.NewBinding(
+			key.WithKeys("u"),
+			key.WithHelp("u", "undo data change"),
+		),
+		Redo: key.NewBinding(
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("C-r", "redo data change"),
 		),
 	}
 
