@@ -920,6 +920,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if err := m.manager.RegenerateBindings(); err != nil {
 						m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
 					} else {
+						_ = reloadTmuxConfig()
 						m.message = "Order saved!"
 					}
 				}
@@ -1259,6 +1260,25 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.saveChanges()
 				}
 			}
+
+		case key.Matches(msg, m.keys.GoToSessionize):
+			if m.cursor < len(m.sessions) {
+				session := m.sessions[m.cursor]
+				if session.Path != "" {
+					return m, func() tea.Msg { return jumpToSessionizeMsg{path: session.Path, applyGroupFilter: true} }
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.FocusCurrent):
+			// Focus on the selected session's ecosystem in sessionize
+			if m.cursor < len(m.sessions) {
+				session := m.sessions[m.cursor]
+				if session.Path != "" {
+					return m, func() tea.Msg { return jumpToSessionizeMsg{path: session.Path, applyGroupFilter: false} }
+				}
+			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
@@ -2043,6 +2063,7 @@ func (m *manageModel) saveChanges() {
 	}
 	// Regenerate tmux bindings so changes take effect immediately
 	_ = m.manager.RegenerateBindings()
+	_ = reloadTmuxConfig()
 	m.changesMade = false
 }
 
@@ -2214,6 +2235,8 @@ func (m *manageModel) saveDefaultToGroup(targetGroup string) {
 	// Regenerate bindings
 	if err := m.manager.RegenerateBindings(); err != nil {
 		m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
+	} else {
+		_ = reloadTmuxConfig()
 	}
 
 	// Stay on target group
@@ -2306,6 +2329,8 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 	// Regenerate bindings
 	if err := m.manager.RegenerateBindings(); err != nil {
 		m.message = fmt.Sprintf("Error regenerating bindings: %v", err)
+	} else {
+		_ = reloadTmuxConfig()
 	}
 
 	m.changesMade = true

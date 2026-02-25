@@ -341,6 +341,19 @@ func (m *historyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
+
+		case key.Matches(msg, m.keys.GoToSessionize):
+			if m.cursor < len(m.filteredItems) {
+				return m, func() tea.Msg { return jumpToSessionizeMsg{path: m.filteredItems[m.cursor].project.Path, applyGroupFilter: false} }
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.FocusCurrent):
+			// Focus on the selected history item's ecosystem in sessionize
+			if m.cursor < len(m.filteredItems) {
+				return m, func() tea.Msg { return jumpToSessionizeMsg{path: m.filteredItems[m.cursor].project.Path, applyGroupFilter: false} }
+			}
+			return m, nil
 		}
 	}
 

@@ -1326,76 +1326,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.FocusCurrent):
 			// Focus on the ecosystem (or ecosystem worktree) containing the current working directory
-			cwd, err := os.Getwd()
-			if err != nil {
-				return m, nil
-			}
-			// Normalize CWD for case-insensitive comparison on macOS
-			cwdNormalized, err := pathutil.NormalizeForLookup(cwd)
-			if err != nil {
-				cwdNormalized = filepath.Clean(cwd)
-			}
-
-			// Find the ecosystem that contains CWD.
-			// Priority: ecosystem worktree > main ecosystem (most specific wins).
-			var targetEcosystem *manager.SessionizeProject
-			var targetEcosystemIsWorktree bool
-
-			for _, p := range m.projects {
-				if !p.IsEcosystem() {
-					continue
-				}
-				// Normalize ecosystem path for comparison
-				pPathNormalized, err := pathutil.NormalizeForLookup(p.Path)
-				if err != nil {
-					pPathNormalized = filepath.Clean(p.Path)
-				}
-				// Check if CWD is inside this ecosystem (case-insensitive on macOS)
-				if strings.HasPrefix(cwdNormalized, pPathNormalized+string(filepath.Separator)) || cwdNormalized == pPathNormalized {
-					// Prefer worktrees over main ecosystems (more specific context)
-					if p.IsWorktree() {
-						// Worktree always wins, so we take it and stop
-						targetEcosystem = p
-						targetEcosystemIsWorktree = true
-						break
-					} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
-						// Take main ecosystem only if we don't already have a worktree
-						targetEcosystem = p
-						targetEcosystemIsWorktree = false
-					}
-				}
-			}
-			if targetEcosystem == nil {
-				m.statusMessage = "Current directory not inside a known ecosystem"
-				m.statusTimeout = time.Now().Add(2 * time.Second)
-				return m, clearStatusCmd(2 * time.Second)
-			}
-			// Clear filters and focus on the ecosystem
-			m.filterGroup = false
-			m.filterDirty = false
-			m.filterInput.SetValue("")
-			m.ecosystemPickerMode = false
-			m.focusedProject = targetEcosystem
-			m.updateFiltered()
-
-			// Find the exact workspace in the ecosystem and move cursor to it
-			m.cursor = 0
-			for i, p := range m.filtered {
-				pNormalized, err := pathutil.NormalizeForLookup(p.Path)
-				if err != nil {
-					pNormalized = filepath.Clean(p.Path)
-				}
-				if pNormalized == cwdNormalized {
-					m.cursor = i
-					break
-				}
-			}
-			if m.cursor == 0 {
-				m.moveCursorToFirstSelectable()
-			}
-
-			_ = m.buildState().Save(m.configDir)
-			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+			return m, m.focusCwdEcosystem()
 
 		case key.Matches(msg, m.keys.OpenEcosystem):
 			// Open (focus into) the ecosystem at cursor if it's an ecosystem/ecosystem-worktree
@@ -2407,6 +2338,10 @@ func (m sessionizeModel) View() string {
 	if !m.worktreesFolded && !m.filterGroup {
 		indicators = append(indicators, violetStyle.Render(core_theme.IconWorktree+" Show Worktrees"))
 	}
+	// Show folded indicator when any paths are folded
+	if len(m.foldedPaths) > 0 {
+		indicators = append(indicators, violetStyle.Render("⋯ Folded"))
+	}
 
 	if len(indicators) > 0 {
 		b.WriteString("  " + strings.Join(indicators, helpStyle.Render("  •  ")) + "\n")
@@ -2513,4 +2448,146 @@ func (m *sessionizeModel) getVisiblePaths() []string {
 		paths = append(paths, m.filtered[i].Path)
 	}
 	return paths
+}
+
+// jumpToPath sets up the UI to focus on the ecosystem containing the target path
+func (m *sessionizeModel) jumpToPath(targetPath string, applyGroupFilter bool) {
+	m.filterInput.SetValue("")
+	m.filterDirty = false
+	m.ecosystemPickerMode = false
+
+	targetNormalized, _ := pathutil.NormalizeForLookup(targetPath)
+
+	var targetProj *manager.SessionizeProject
+	for _, p := range m.projects {
+		norm, _ := pathutil.NormalizeForLookup(p.Path)
+		if norm == targetNormalized {
+			targetProj = p
+			break
+		}
+	}
+
+	// If target is a worktree, ensure worktrees are shown
+	if targetProj != nil && targetProj.IsWorktree() {
+		m.worktreesFolded = false
+	}
+
+	if applyGroupFilter {
+		// Apply group filter instead of ecosystem focus
+		m.filterGroup = true
+		m.focusedProject = nil
+	} else if targetProj != nil {
+		// Apply ecosystem focus for this project
+		var targetEcosystem *manager.SessionizeProject
+		var targetEcosystemIsWorktree bool
+
+		for _, p := range m.projects {
+			if !p.IsEcosystem() {
+				continue
+			}
+			pNorm, _ := pathutil.NormalizeForLookup(p.Path)
+			targetProjNorm, _ := pathutil.NormalizeForLookup(targetProj.Path)
+			// Check if targetProj is inside this ecosystem
+			if strings.HasPrefix(targetProjNorm, pNorm+string(filepath.Separator)) || targetProjNorm == pNorm {
+				if p.IsWorktree() {
+					targetEcosystem = p
+					targetEcosystemIsWorktree = true
+					break
+				} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
+					targetEcosystem = p
+					targetEcosystemIsWorktree = false
+				}
+			}
+		}
+
+		if targetEcosystem != nil {
+			m.focusedProject = targetEcosystem
+			m.filterGroup = false
+		} else {
+			m.focusedProject = nil
+		}
+	}
+
+	// Clear all folds to ensure target is visible
+	m.foldedPaths = make(map[string]bool)
+
+	m.updateFiltered()
+
+	// Find in filtered and set cursor
+	for i, p := range m.filtered {
+		pNorm, _ := pathutil.NormalizeForLookup(p.Path)
+		if pNorm == targetNormalized {
+			m.cursor = i
+			break
+		}
+	}
+}
+
+// focusCwdEcosystem applies focus to the CWD's ecosystem and returns any needed commands
+func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+
+	cwdNormalized, err := pathutil.NormalizeForLookup(cwd)
+	if err != nil {
+		cwdNormalized = filepath.Clean(cwd)
+	}
+
+	var targetEcosystem *manager.SessionizeProject
+	var targetEcosystemIsWorktree bool
+
+	for _, p := range m.projects {
+		if !p.IsEcosystem() {
+			continue
+		}
+		pNormalized, err := pathutil.NormalizeForLookup(p.Path)
+		if err != nil {
+			pNormalized = filepath.Clean(p.Path)
+		}
+		// Check if CWD is inside this ecosystem
+		if strings.HasPrefix(cwdNormalized, pNormalized+string(filepath.Separator)) || cwdNormalized == pNormalized {
+			if p.IsWorktree() {
+				targetEcosystem = p
+				targetEcosystemIsWorktree = true
+				break
+			} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
+				targetEcosystem = p
+				targetEcosystemIsWorktree = false
+			}
+		}
+	}
+
+	if targetEcosystem == nil {
+		m.statusMessage = "Current directory not inside a known ecosystem"
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		return clearStatusCmd(2 * time.Second)
+	}
+
+	m.filterGroup = false
+	m.filterDirty = false
+	m.filterInput.SetValue("")
+	m.ecosystemPickerMode = false
+	m.focusedProject = targetEcosystem
+	m.updateFiltered()
+
+	// Find the exact workspace in the ecosystem and move cursor to it
+	m.cursor = 0
+	for i, p := range m.filtered {
+		pNormalized, err := pathutil.NormalizeForLookup(p.Path)
+		if err != nil {
+			pNormalized = filepath.Clean(p.Path)
+		}
+		if pNormalized == cwdNormalized {
+			m.cursor = i
+			break
+		}
+	}
+	if m.cursor == 0 {
+		m.moveCursorToFirstSelectable()
+	}
+
+	_ = m.buildState().Save(m.configDir)
+	return updateDaemonFocusCmd(m.getVisiblePaths())
 }

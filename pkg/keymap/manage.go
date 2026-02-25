@@ -27,9 +27,11 @@ type ManageKeyMap struct {
 	UnloadDefault key.Binding
 	SaveToGroup   key.Binding
 	MoveToGroup   key.Binding // Move current session to another group
-	NewGroup      key.Binding
-	DeleteGroup   key.Binding
-	Groups        key.Binding // Launch group manager TUI
+	NewGroup       key.Binding
+	DeleteGroup    key.Binding
+	Groups         key.Binding // Launch group manager TUI
+	GoToSessionize key.Binding
+	FocusCurrent   key.Binding
 }
 
 func (k ManageKeyMap) ShortHelp() []key.Binding {
@@ -66,6 +68,8 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.Top, k.Bottom,
 			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 1-9", "jump to row")),
 			k.Open,
+			k.GoToSessionize,
+			k.FocusCurrent,
 		),
 		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.CopyPath),
 		keymap.NewSection("Reorder",
@@ -163,6 +167,14 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		Groups: key.NewBinding(
 			key.WithKeys("E"),
 			key.WithHelp("E", "manage groups"),
+		),
+		GoToSessionize: key.NewBinding(
+			key.WithKeys(","),
+			key.WithHelp(",", "go to sessionize"),
+		),
+		FocusCurrent: key.NewBinding(
+			key.WithKeys("."),
+			key.WithHelp(".", "focus CWD in sz"),
 		),
 	}
 

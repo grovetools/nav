@@ -506,6 +506,15 @@ type jumpToMappingMsg struct {
 	path string
 }
 
+// jumpToSessionizeMsg signals that we should switch to sessionize view and focus on a path
+type jumpToSessionizeMsg struct {
+	path            string
+	applyGroupFilter bool
+}
+
+// focusCwdEcosystemMsg signals that we should switch to sessionize view and focus on the CWD's ecosystem
+type focusCwdEcosystemMsg struct{}
+
 // clearStatusCmd returns a command that clears the status message after a delay
 func clearStatusCmd(duration time.Duration) tea.Cmd {
 	return tea.Tick(duration, func(t time.Time) tea.Msg {

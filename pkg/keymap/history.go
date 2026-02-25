@@ -10,8 +10,10 @@ import (
 // HistoryKeyMap defines the key bindings for the session history TUI.
 type HistoryKeyMap struct {
 	keymap.Base
-	Open   key.Binding
-	Filter key.Binding
+	Open           key.Binding
+	Filter         key.Binding
+	GoToSessionize key.Binding
+	FocusCurrent   key.Binding
 }
 
 func (k HistoryKeyMap) ShortHelp() []key.Binding {
@@ -34,6 +36,8 @@ func (k HistoryKeyMap) Sections() []keymap.Section {
 		keymap.NavigationSection(
 			k.Up, k.Down,
 			key.NewBinding(key.WithKeys("g"), key.WithHelp("g + 1-9", "jump to row")),
+			k.GoToSessionize,
+			k.FocusCurrent,
 		),
 		keymap.ActionsSection(k.Filter, k.Open, k.CopyPath),
 		keymap.SystemSection(k.Help, k.Quit),
@@ -53,6 +57,14 @@ func NewHistoryKeyMap(cfg *config.Config) HistoryKeyMap {
 		Filter: key.NewBinding(
 			key.WithKeys("/"),
 			key.WithHelp("/", "filter"),
+		),
+		GoToSessionize: key.NewBinding(
+			key.WithKeys(","),
+			key.WithHelp(",", "go to sessionize"),
+		),
+		FocusCurrent: key.NewBinding(
+			key.WithKeys("."),
+			key.WithHelp(".", "focus CWD in sz"),
 		),
 	}
 

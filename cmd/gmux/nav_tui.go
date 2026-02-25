@@ -393,6 +393,25 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd1, cmd2)
 
+	case jumpToSessionizeMsg:
+		// Switch to sessionize view and jump to the specified path
+		m.activeView = viewSessionize
+		cmd1 := m.switchToView(viewSessionize)
+		if m.sessionizeModel != nil {
+			m.sessionizeModel.jumpToPath(msg.path, msg.applyGroupFilter)
+		}
+		return m, cmd1
+
+	case focusCwdEcosystemMsg:
+		// Switch to sessionize view and focus on the CWD's ecosystem
+		m.activeView = viewSessionize
+		cmd1 := m.switchToView(viewSessionize)
+		if m.sessionizeModel != nil {
+			cmd2 := m.sessionizeModel.focusCwdEcosystem()
+			return m, tea.Batch(cmd1, cmd2)
+		}
+		return m, cmd1
+
 	// Route background data messages to their owners regardless of active view
 	case initialProjectsEnrichedMsg:
 		if m.manageModel != nil {

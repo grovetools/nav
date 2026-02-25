@@ -556,7 +556,7 @@ func (m *Manager) GetGroupSessionCount(name string) int {
 
 // FindGroupForPath finds which group contains a session with the given path.
 // It matches if the target path equals a mapped path OR is inside a mapped path.
-// Returns the group with the most specific (longest) matching path.
+// Prioritizes "default" group if it has a match, otherwise returns the most specific match.
 func (m *Manager) FindGroupForPath(targetPath string) string {
 	targetClean, err := filepath.Abs(expandPath(targetPath))
 	if err != nil {
@@ -568,6 +568,7 @@ func (m *Manager) FindGroupForPath(targetPath string) string {
 
 	bestMatch := ""
 	bestMatchLen := 0
+	defaultMatchLen := 0
 
 	for _, g := range m.GetAllGroups() {
 		m.SetActiveGroup(g)
@@ -581,15 +582,27 @@ func (m *Manager) FindGroupForPath(targetPath string) string {
 					targetLower := strings.ToLower(targetClean)
 					pLower := strings.ToLower(p)
 					if targetLower == pLower || strings.HasPrefix(targetLower, pLower+string(filepath.Separator)) {
+						// Track default group matches separately for prioritization
+						if g == "default" && len(p) > defaultMatchLen {
+							defaultMatchLen = len(p)
+						}
 						// Keep track of the most specific (longest) match
 						if len(p) > bestMatchLen {
 							bestMatch = g
 							bestMatchLen = len(p)
+						} else if len(p) == bestMatchLen && g == "default" {
+							// Prefer default group when match lengths are equal
+							bestMatch = g
 						}
 					}
 				}
 			}
 		}
+	}
+
+	// Prioritize default group if it has any match
+	if defaultMatchLen > 0 {
+		return "default"
 	}
 	return bestMatch
 }
