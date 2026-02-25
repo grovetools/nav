@@ -235,8 +235,15 @@ func (m *historyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		if m.help.ShowAll {
-			m.help.Toggle()
-			return m, nil
+			switch {
+			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Help), msg.Type == tea.KeyEsc:
+				m.help.Toggle()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.help, cmd = m.help.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// Handle filter mode

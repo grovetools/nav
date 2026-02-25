@@ -101,10 +101,17 @@ func (m *groupsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// If help is visible, any key closes it
+		// If help is visible, pass navigation keys through for scrolling
 		if m.help.ShowAll {
-			m.help.Toggle()
-			return m, nil
+			switch {
+			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Help), msg.Type == tea.KeyEsc:
+				m.help.Toggle()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.help, cmd = m.help.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// Handle confirmation mode

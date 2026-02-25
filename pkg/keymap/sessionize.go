@@ -15,6 +15,7 @@ type SessionizeKeyMap struct {
 	ClearKey     key.Binding
 	CloseSession key.Binding
 	FocusEcosystem   key.Binding
+	OpenEcosystem    key.Binding
 	FocusCurrent     key.Binding
 	ClearFocus       key.Binding
 	ToggleWorktrees  key.Binding
@@ -112,6 +113,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 		),
 		keymap.NewSection("Focus",
 			k.FocusEcosystem,
+			k.OpenEcosystem,
 			k.FocusCurrent,
 			k.ClearFocus,
 			k.ToggleWorktrees,
@@ -169,6 +171,10 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		FocusEcosystem: key.NewBinding(
 			key.WithKeys("@"),
 			key.WithHelp("@", "focus ecosystem"),
+		),
+		OpenEcosystem: key.NewBinding(
+			key.WithKeys("o"),
+			key.WithHelp("o", "open ecosystem"),
 		),
 		FocusCurrent: key.NewBinding(
 			key.WithKeys("."),

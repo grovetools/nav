@@ -75,6 +75,16 @@ type delayedReturnMsg struct {
 	to navView
 }
 
+// Message to clear the highlight after mapping in key manage view
+type clearHighlightMsg struct{}
+
+// Command to clear the highlight after a delay
+func clearHighlightCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return clearHighlightMsg{}
+	})
+}
+
 // New message
 type rulesStateMsg struct {
 	rulesState map[string]grovecontext.RuleStatus
@@ -384,6 +394,10 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.justMappedKey = "" // Clear highlight before switching
 		return m, func() tea.Msg { return switchViewMsg{to: msg.to} }
 
+	case clearHighlightMsg:
+		m.justMappedKey = ""
+		return m, nil
+
 	case gitStatusMapMsg:
 		for path, status := range msg.statuses {
 			if proj, ok := m.enrichedProjects[path]; ok {
@@ -434,10 +448,17 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.SetSize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		// If help is visible, it consumes all key presses
+		// If help is visible, pass navigation keys through for scrolling
 		if m.help.ShowAll {
-			m.help.Toggle() // Any key closes help
-			return m, nil
+			switch {
+			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Help), msg.Type == tea.KeyEsc:
+				m.help.Toggle()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.help, cmd = m.help.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// Handle confirmation mode
@@ -664,7 +685,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				targetGroup := m.moveToGroupOptions[m.moveToGroupCursor]
 				m.executeMoveToGroup(targetGroup)
 				m.moveToGroupMode = false
-				return m, nil
+				return m, clearHighlightCmd()
 			}
 			return m, nil
 		}
@@ -1242,11 +1263,13 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
 				m.cursor--
+				m.justMappedKey = ""
 			}
 
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
+				m.justMappedKey = ""
 			}
 
 		case key.Matches(msg, m.keys.PageUp):
@@ -1255,6 +1278,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
+			m.justMappedKey = ""
 
 		case key.Matches(msg, m.keys.PageDown):
 			// Move down by half page (5 rows)
@@ -1262,12 +1286,15 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor >= len(m.sessions) {
 				m.cursor = len(m.sessions) - 1
 			}
+			m.justMappedKey = ""
 
 		case key.Matches(msg, m.keys.Top):
 			m.cursor = 0
+			m.justMappedKey = ""
 
 		case key.Matches(msg, m.keys.Bottom):
 			m.cursor = len(m.sessions) - 1
+			m.justMappedKey = ""
 		}
 	}
 
@@ -1329,11 +1356,8 @@ func (m *manageModel) mapSelectedSlot() (tea.Model, tea.Cmd) {
 
 	if m.pendingMapProject != nil {
 		m.pendingMapProject = nil
-		returnTo := m.returnView
-		// Delay before switching back so user sees the highlighted mapping
-		return m, tea.Tick(800*time.Millisecond, func(t time.Time) tea.Msg {
-			return delayedReturnMsg{to: returnTo}
-		})
+		// Stay in the key manage view to allow adjustments, just clear highlight after delay
+		return m, clearHighlightCmd()
 	}
 
 	return m, nil
@@ -1997,6 +2021,7 @@ func (m *manageModel) cycleGroup(dir int) {
 	m.cursor = 0
 	m.rebuildSessionsOrder()
 	m.changesMade = false
+	m.justMappedKey = "" // Clear highlight when switching groups
 	m.message = fmt.Sprintf("Switched to group: %s", newGroup)
 }
 
@@ -2216,18 +2241,29 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 
 	sourceGroup := m.manager.GetActiveGroup()
 
-	// Switch to target group and find an empty slot
+	// Switch to target group
 	m.manager.SetActiveGroup(targetGroup)
 	targetSessions, _ := m.manager.GetSessions()
 
-	// Find first empty slot (not locked)
+	// Try to preserve the same key in target group first
 	targetKey := ""
 	for _, ts := range targetSessions {
-		if ts.Path == "" && !m.lockedKeys[ts.Key] {
+		if ts.Key == sessionKey && ts.Path == "" && !m.lockedKeys[ts.Key] {
 			targetKey = ts.Key
 			break
 		}
 	}
+
+	// If same key not available, find next available empty slot
+	if targetKey == "" {
+		for _, ts := range targetSessions {
+			if ts.Path == "" && !m.lockedKeys[ts.Key] {
+				targetKey = ts.Key
+				break
+			}
+		}
+	}
+
 	if targetKey == "" {
 		m.message = fmt.Sprintf("No empty slots in '%s'", targetGroup)
 		m.manager.SetActiveGroup(sourceGroup)
@@ -2238,6 +2274,7 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 	for i := range targetSessions {
 		if targetSessions[i].Key == targetKey {
 			targetSessions[i].Path = sessionPath
+			targetSessions[i].Repository = filepath.Base(sessionPath)
 			break
 		}
 	}
@@ -2272,7 +2309,22 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 	}
 
 	m.changesMade = true
+
+	// Switch UI to the target group and highlight the newly placed item
+	m.manager.SetActiveGroup(targetGroup)
+	_ = m.manager.SetLastAccessedGroup(targetGroup)
+	m.sessions, _ = m.manager.GetSessions()
 	m.rebuildSessionsOrder()
+
+	// Position the cursor onto the newly moved element
+	for i, s := range m.sessions {
+		if s.Key == targetKey {
+			m.cursor = i
+			break
+		}
+	}
+
+	m.justMappedKey = targetKey
 	m.message = fmt.Sprintf("Moved to '%s' (key %s)", targetGroup, targetKey)
 }
 

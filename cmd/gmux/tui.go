@@ -850,10 +850,17 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// If help is visible, it consumes all key presses
+		// If help is visible, pass navigation keys through for scrolling
 		if m.help.ShowAll {
-			m.help.Toggle() // Any key closes help
-			return m, nil
+			switch {
+			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Help), msg.Type == tea.KeyEsc:
+				m.help.Toggle()
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.help, cmd = m.help.Update(msg)
+				return m, cmd
+			}
 		}
 
 		// Handle map to group mode
@@ -1323,6 +1330,12 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return m, nil
 			}
+			// Normalize CWD for case-insensitive comparison on macOS
+			cwdNormalized, err := pathutil.NormalizeForLookup(cwd)
+			if err != nil {
+				cwdNormalized = filepath.Clean(cwd)
+			}
+
 			// Find the ecosystem that contains CWD.
 			// Priority: ecosystem worktree > main ecosystem (most specific wins).
 			var targetEcosystem *manager.SessionizeProject
@@ -1332,8 +1345,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !p.IsEcosystem() {
 					continue
 				}
-				// Check if CWD is inside this ecosystem
-				if strings.HasPrefix(cwd, p.Path+string(filepath.Separator)) || cwd == p.Path {
+				// Normalize ecosystem path for comparison
+				pPathNormalized, err := pathutil.NormalizeForLookup(p.Path)
+				if err != nil {
+					pPathNormalized = filepath.Clean(p.Path)
+				}
+				// Check if CWD is inside this ecosystem (case-insensitive on macOS)
+				if strings.HasPrefix(cwdNormalized, pPathNormalized+string(filepath.Separator)) || cwdNormalized == pPathNormalized {
 					// Prefer worktrees over main ecosystems (more specific context)
 					if p.IsWorktree() {
 						// Worktree always wins, so we take it and stop
@@ -1356,12 +1374,47 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.filterGroup = false
 			m.filterDirty = false
 			m.filterInput.SetValue("")
+			m.ecosystemPickerMode = false
 			m.focusedProject = targetEcosystem
 			m.updateFiltered()
+
+			// Find the exact workspace in the ecosystem and move cursor to it
 			m.cursor = 0
-			m.moveCursorToFirstSelectable()
+			for i, p := range m.filtered {
+				pNormalized, err := pathutil.NormalizeForLookup(p.Path)
+				if err != nil {
+					pNormalized = filepath.Clean(p.Path)
+				}
+				if pNormalized == cwdNormalized {
+					m.cursor = i
+					break
+				}
+			}
+			if m.cursor == 0 {
+				m.moveCursorToFirstSelectable()
+			}
+
 			_ = m.buildState().Save(m.configDir)
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+
+		case key.Matches(msg, m.keys.OpenEcosystem):
+			// Open (focus into) the ecosystem at cursor if it's an ecosystem/ecosystem-worktree
+			if m.cursor < len(m.filtered) {
+				project := m.filtered[m.cursor]
+				if project.Kind == workspace.KindEcosystemRoot || project.Kind == workspace.KindEcosystemWorktree {
+					m.filterGroup = false
+					m.filterDirty = false
+					m.filterInput.SetValue("")
+					m.ecosystemPickerMode = false
+					m.focusedProject = project
+					m.updateFiltered()
+					m.cursor = 0
+					m.moveCursorToFirstSelectable()
+					_ = m.buildState().Save(m.configDir)
+					return m, updateDaemonFocusCmd(m.getVisiblePaths())
+				}
+			}
+			return m, nil
 
 		case key.Matches(msg, m.keys.ToggleGitStatus):
 			m.showGitStatus = !m.showGitStatus
@@ -1480,7 +1533,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.GoToMapping):
-			// Jump to the key manager view with this project's mapping selected
+			// Switch to the group containing this project's mapping and apply group filter
 			if m.cursor >= len(m.filtered) {
 				return m, nil
 			}
@@ -1488,7 +1541,50 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if project == nil {
 				return m, nil
 			}
-			return m, func() tea.Msg { return jumpToMappingMsg{path: project.Path} }
+
+			targetGroup := m.manager.FindGroupForPath(project.Path)
+			if targetGroup == "" {
+				m.statusMessage = "Project is not mapped to any key"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+
+			m.manager.SetActiveGroup(targetGroup)
+			_ = m.manager.SetLastAccessedGroup(targetGroup)
+
+			// Reload sessions for the new group
+			m.sessions, _ = m.manager.GetSessions()
+			m.keyMap = make(map[string]string)
+			for _, s := range m.sessions {
+				if s.Path != "" {
+					expandedPath := expandPath(s.Path)
+					absPath, err := filepath.Abs(expandedPath)
+					if err == nil {
+						m.keyMap[filepath.Clean(absPath)] = s.Key
+					}
+				}
+			}
+
+			// Apply group filter to show only mapped projects
+			m.filterGroup = true
+			m.filterInput.SetValue("")
+			m.filterDirty = false
+			m.focusedProject = nil
+			m.ecosystemPickerMode = false
+
+			m.updateFiltered()
+
+			// Position cursor on the project
+			m.cursor = 0
+			cleanTargetPath := filepath.Clean(project.Path)
+			for i, p := range m.filtered {
+				if filepath.Clean(p.Path) == cleanTargetPath {
+					m.cursor = i
+					break
+				}
+			}
+
+			return m, nil
 
 		case key.Matches(msg, m.keys.ToggleWorktrees):
 			m.worktreesFolded = !m.worktreesFolded
@@ -1785,6 +1881,20 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 
 // executeMapToGroup maps the selected project to the first available key in the target group
 func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
+	// Find current key if it has one (to try preserving it in target group)
+	currentKey := ""
+	cleanPath := filepath.Clean(m.mapToGroupPath)
+	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
+	if err == nil {
+		for path, key := range m.keyMap {
+			normPath, err := pathutil.NormalizeForLookup(path)
+			if err == nil && normPath == normalizedCleanPath {
+				currentKey = key
+				break
+			}
+		}
+	}
+
 	// Save current group
 	currentGroup := m.manager.GetActiveGroup()
 
@@ -1792,12 +1902,24 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	m.manager.SetActiveGroup(targetGroup)
 	targetSessions, _ := m.manager.GetSessions()
 
-	// Find first available key in target group
+	// Try to use the same key first if it's available
 	targetKey := ""
-	for _, ts := range targetSessions {
-		if ts.Path == "" {
-			targetKey = ts.Key
-			break
+	if currentKey != "" {
+		for _, ts := range targetSessions {
+			if ts.Key == currentKey && ts.Path == "" {
+				targetKey = ts.Key
+				break
+			}
+		}
+	}
+
+	// Fallback to first available key
+	if targetKey == "" {
+		for _, ts := range targetSessions {
+			if ts.Path == "" {
+				targetKey = ts.Key
+				break
+			}
 		}
 	}
 
@@ -1808,7 +1930,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 		return
 	}
 
-	// Map the project to the first available key
+	// Map the project to the selected key
 	for i := range targetSessions {
 		if targetSessions[i].Key == targetKey {
 			targetSessions[i].Path = m.mapToGroupPath
