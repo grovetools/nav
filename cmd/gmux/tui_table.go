@@ -354,7 +354,12 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 		foldIndicator = core_theme.DefaultTheme.Muted.Render(" ⋯")
 	}
 
-	workspaceName = prefix + iconStyled + nameStyled + foldIndicator
+	selectionIndicator := ""
+	if m.selectedPaths[project.Path] {
+		selectionIndicator = core_theme.DefaultTheme.Success.Render("✓ ")
+	}
+
+	workspaceName = prefix + selectionIndicator + iconStyled + nameStyled + foldIndicator
 
 	// --- KEY ---
 	keyMapping := ""

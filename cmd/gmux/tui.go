@@ -102,7 +102,9 @@ type sessionizeModel struct {
 	mapToGroupMode    bool
 	mapToGroupOptions []string
 	mapToGroupCursor  int
-	mapToGroupPath    string
+	mapToGroupPaths   []string
+
+	selectedPaths     map[string]bool // Paths currently selected for bulk operations
 }
 
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
@@ -306,6 +308,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		foldedPaths:              foldedPaths,
 		hasChildren:              make(map[string]bool),
 		sequence:                 keymap.NewSequenceState(),
+		selectedPaths:            make(map[string]bool),
 	}
 
 	// Synchronously apply initial filters to prevent UI flash
@@ -1118,6 +1121,29 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
 			return m, nil
+
+		case key.Matches(msg, m.keys.Select):
+			if m.cursor < len(m.filtered) && !m.contextOnlyPaths[m.filtered[m.cursor].Path] {
+				p := m.filtered[m.cursor].Path
+				if m.selectedPaths[p] {
+					delete(m.selectedPaths, p)
+				} else {
+					m.selectedPaths[p] = true
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.SelectAll):
+			for _, proj := range m.filtered {
+				if !m.contextOnlyPaths[proj.Path] {
+					m.selectedPaths[proj.Path] = true
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.SelectNone):
+			m.selectedPaths = make(map[string]bool)
+			return m, nil
 		}
 
 		// Check if filter input is focused and handle special keys
@@ -1446,14 +1472,22 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.MapToGroup):
-			// Map current project to a group (show group picker)
-			if m.cursor >= len(m.filtered) {
-				return m, nil
+			// Map selected project(s) to a group (show group picker)
+			pathsToMap := []string{}
+			if len(m.selectedPaths) > 0 {
+				for p := range m.selectedPaths {
+					pathsToMap = append(pathsToMap, p)
+				}
+			} else if m.cursor < len(m.filtered) && !m.contextOnlyPaths[m.filtered[m.cursor].Path] {
+				pathsToMap = append(pathsToMap, m.filtered[m.cursor].Path)
 			}
-			project := m.filtered[m.cursor]
-			if project == nil {
-				return m, nil
+
+			if len(pathsToMap) == 0 {
+				m.statusMessage = "No selectable projects to map"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
 			}
+
 			// Build list of target groups
 			m.mapToGroupOptions = []string{}
 			currentGroup := m.manager.GetActiveGroup()
@@ -1469,8 +1503,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.mapToGroupMode = true
 			m.mapToGroupCursor = 0
-			m.mapToGroupPath = project.Path
-			m.statusMessage = fmt.Sprintf("Map '%s' to group:", project.Name)
+			m.mapToGroupPaths = pathsToMap
+
+			desc := fmt.Sprintf("%d items", len(pathsToMap))
+			if len(pathsToMap) == 1 {
+				desc = filepath.Base(pathsToMap[0])
+			}
+			m.statusMessage = fmt.Sprintf("Map %s to group:", desc)
 			m.statusTimeout = time.Now().Add(30 * time.Second)
 			return m, nil
 
@@ -1557,7 +1596,66 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.EditKey):
-			// Enter key editing mode by delegating to the manage view
+			// Map selected project(s) to available keys in current group
+			if len(m.selectedPaths) > 0 {
+				// Bulk mapping: map all selected to next available keys
+				pathsToMap := []string{}
+				for p := range m.selectedPaths {
+					// Skip if already mapped
+					cleanPath := filepath.Clean(p)
+					normalizedCleanPath, _ := pathutil.NormalizeForLookup(cleanPath)
+					alreadyMapped := false
+					for path := range m.keyMap {
+						normPath, _ := pathutil.NormalizeForLookup(path)
+						if normPath == normalizedCleanPath {
+							alreadyMapped = true
+							break
+						}
+					}
+					if !alreadyMapped {
+						pathsToMap = append(pathsToMap, p)
+					}
+				}
+
+				if len(pathsToMap) == 0 {
+					m.statusMessage = "All selected projects are already mapped"
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+					return m, clearStatusCmd(2 * time.Second)
+				}
+
+				// Find available keys
+				usedKeys := make(map[string]bool)
+				for _, k := range m.keyMap {
+					usedKeys[k] = true
+				}
+				var availableKeys []string
+				for _, k := range m.availableKeys {
+					if !usedKeys[k] {
+						availableKeys = append(availableKeys, k)
+					}
+				}
+
+				if len(availableKeys) < len(pathsToMap) {
+					m.statusMessage = fmt.Sprintf("Not enough available keys (need %d, have %d)", len(pathsToMap), len(availableKeys))
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+					return m, clearStatusCmd(2 * time.Second)
+				}
+
+				// Map each path to an available key and collect assigned keys
+				mappedKeys := make([]string, 0, len(pathsToMap))
+				for i, p := range pathsToMap {
+					m.updateKeyMapping(p, availableKeys[i])
+					mappedKeys = append(mappedKeys, availableKeys[i])
+				}
+
+				m.selectedPaths = make(map[string]bool)
+				// Switch to key manage view with highlights
+				return m, func() tea.Msg {
+					return bulkMappingDoneMsg{mappedKeys: mappedKeys}
+				}
+			}
+
+			// Single item: delegate to manage view for key selection
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
 				return m, func() tea.Msg {
@@ -1569,60 +1667,25 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, m.keys.ToggleKey):
-			if m.cursor < len(m.filtered) {
-				project := m.filtered[m.cursor]
-				cleanPath := filepath.Clean(project.Path)
-				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
-				if err != nil {
-					return m, nil
-				}
-
-				mappedKey := ""
-				for path, k := range m.keyMap {
-					normPath, err := pathutil.NormalizeForLookup(path)
-					if err == nil && normPath == normalizedCleanPath {
-						mappedKey = k
-						break
-					}
-				}
-
-				if mappedKey != "" {
-					m.clearKeyMapping(project.Path)
-					m.statusMessage = fmt.Sprintf("Unmapped key '%s'", mappedKey)
-				} else {
-					// Find first available key
-					usedKeys := make(map[string]bool)
-					for _, k := range m.keyMap {
-						usedKeys[k] = true
-					}
-					for _, k := range m.availableKeys {
-						if !usedKeys[k] {
-							m.updateKeyMapping(project.Path, k)
-							m.statusMessage = fmt.Sprintf("Mapped '%s' to key '%s'", project.Name, k)
-							break
-						}
-					}
-					if m.statusMessage == "" {
-						m.statusMessage = "No available keys!"
-					}
-				}
-				m.statusTimeout = time.Now().Add(2 * time.Second)
-				return m, clearStatusCmd(2 * time.Second)
-			}
-			return m, nil
-
 		case key.Matches(msg, m.keys.ClearKey):
-			// Clear key mapping for the selected project
-			if m.cursor < len(m.filtered) {
-				project := m.filtered[m.cursor]
-				cleanPath := filepath.Clean(project.Path)
+			// Clear key mapping for selected project(s)
+			pathsToClear := []string{}
+			if len(m.selectedPaths) > 0 {
+				for p := range m.selectedPaths {
+					pathsToClear = append(pathsToClear, p)
+				}
+			} else if m.cursor < len(m.filtered) && !m.contextOnlyPaths[m.filtered[m.cursor].Path] {
+				pathsToClear = append(pathsToClear, m.filtered[m.cursor].Path)
+			}
+
+			clearedCount := 0
+			for _, p := range pathsToClear {
+				cleanPath := filepath.Clean(p)
 				normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
 				if err != nil {
-					return m, nil
+					continue
 				}
 
-				// Find the mapped key
 				mappedKey := ""
 				for path, k := range m.keyMap {
 					normPath, err := pathutil.NormalizeForLookup(path)
@@ -1633,17 +1696,19 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if mappedKey != "" {
-					m.clearKeyMapping(project.Path)
-					m.statusMessage = fmt.Sprintf("Unmapped key '%s'", mappedKey)
-					m.statusTimeout = time.Now().Add(2 * time.Second)
-					return m, clearStatusCmd(2 * time.Second)
-				} else {
-					m.statusMessage = "No key mapped to this project"
-					m.statusTimeout = time.Now().Add(2 * time.Second)
-					return m, clearStatusCmd(2 * time.Second)
+					m.clearKeyMapping(p)
+					clearedCount++
 				}
 			}
-			return m, nil
+
+			if clearedCount > 0 {
+				m.statusMessage = fmt.Sprintf("Unmapped %d keys", clearedCount)
+				m.selectedPaths = make(map[string]bool)
+			} else {
+				m.statusMessage = "No keys mapped for selected project(s)"
+			}
+			m.statusTimeout = time.Now().Add(2 * time.Second)
+			return m, clearStatusCmd(2 * time.Second)
 
 		case key.Matches(msg, m.keys.CopyPath):
 			// Yank (copy) the selected project path
@@ -1843,20 +1908,10 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 	}
 }
 
-// executeMapToGroup maps the selected project to the first available key in the target group
+// executeMapToGroup maps the selected project(s) to the first available keys in the target group
 func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
-	// Find current key if it has one (to try preserving it in target group)
-	currentKey := ""
-	cleanPath := filepath.Clean(m.mapToGroupPath)
-	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
-	if err == nil {
-		for path, key := range m.keyMap {
-			normPath, err := pathutil.NormalizeForLookup(path)
-			if err == nil && normPath == normalizedCleanPath {
-				currentKey = key
-				break
-			}
-		}
+	if len(m.mapToGroupPaths) == 0 {
+		return
 	}
 
 	// Save current group
@@ -1866,40 +1921,32 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	m.manager.SetActiveGroup(targetGroup)
 	targetSessions, _ := m.manager.GetSessions()
 
-	// Try to use the same key first if it's available
-	targetKey := ""
-	if currentKey != "" {
-		for _, ts := range targetSessions {
-			if ts.Key == currentKey && ts.Path == "" {
-				targetKey = ts.Key
-				break
-			}
+	// Find available keys in target group
+	var availableKeys []string
+	for _, ts := range targetSessions {
+		if ts.Path == "" {
+			availableKeys = append(availableKeys, ts.Key)
 		}
 	}
 
-	// Fallback to first available key
-	if targetKey == "" {
-		for _, ts := range targetSessions {
-			if ts.Path == "" {
-				targetKey = ts.Key
-				break
-			}
-		}
-	}
-
-	if targetKey == "" {
-		m.statusMessage = fmt.Sprintf("No empty slots in '%s'", targetGroup)
+	if len(availableKeys) < len(m.mapToGroupPaths) {
+		m.statusMessage = fmt.Sprintf("Not enough empty slots in '%s' (need %d, have %d)", targetGroup, len(m.mapToGroupPaths), len(availableKeys))
 		m.statusTimeout = time.Now().Add(2 * time.Second)
 		m.manager.SetActiveGroup(currentGroup) // Restore group
 		return
 	}
 
-	// Map the project to the selected key
-	for i := range targetSessions {
-		if targetSessions[i].Key == targetKey {
-			targetSessions[i].Path = m.mapToGroupPath
-			targetSessions[i].Repository = filepath.Base(m.mapToGroupPath)
-			break
+	// Map the projects to available keys
+	assignedCount := 0
+	for i, path := range m.mapToGroupPaths {
+		targetKey := availableKeys[i]
+		for j := range targetSessions {
+			if targetSessions[j].Key == targetKey {
+				targetSessions[j].Path = path
+				targetSessions[j].Repository = filepath.Base(path)
+				assignedCount++
+				break
+			}
 		}
 	}
 
@@ -1914,6 +1961,8 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	// Regenerate bindings
 	_ = m.manager.RegenerateBindings()
 	_ = reloadTmuxConfig()
+
+	m.selectedPaths = make(map[string]bool)
 
 	// Switch to the target group
 	_ = m.manager.SetLastAccessedGroup(targetGroup)
@@ -1936,7 +1985,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 		m.moveCursorToFirstSelectable()
 	}
 
-	m.statusMessage = fmt.Sprintf("Mapped to '%s' (key %s)", targetGroup, targetKey)
+	m.statusMessage = fmt.Sprintf("Mapped %d items to '%s'", assignedCount, targetGroup)
 	m.statusTimeout = time.Now().Add(2 * time.Second)
 }
 

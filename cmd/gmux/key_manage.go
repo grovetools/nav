@@ -164,7 +164,8 @@ type manageModel struct {
 	moveToGroupMode    bool     // Whether we're in move-to-group mode
 	moveToGroupOptions []string // List of target groups
 	moveToGroupCursor  int      // Current selection
-	moveToGroupSession string   // Path of session being moved
+	moveToGroupKeys    []string // Keys of sessions being moved
+	selectedKeys       map[string]bool // Keys currently selected for bulk operations
 	// Confirmation state
 	confirmMode   string // "load", "clear", or "" for none
 	confirmSource string // Source group name for load confirmation
@@ -187,7 +188,7 @@ type manageModel struct {
 	returnView        navView
 
 	// Just-mapped highlighting state
-	justMappedKey string // Key that was just mapped (for highlighting)
+	justMappedKeys map[string]bool // Keys that were just mapped (for highlighting)
 }
 
 // Key bindings are defined in pkg/keymap/manage.go and re-exported via tui_keymap.go
@@ -237,6 +238,8 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		enrichmentLoading:     make(map[string]bool),
 		pathDisplayMode:       0, // Default to no paths
 		defaultLockedSessions: defaultLockedSessions,
+		selectedKeys:          make(map[string]bool),
+		justMappedKeys:        make(map[string]bool),
 	}
 }
 
@@ -391,11 +394,11 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case delayedReturnMsg:
-		m.justMappedKey = "" // Clear highlight before switching
+		m.justMappedKeys = make(map[string]bool) // Clear highlight before switching
 		return m, func() tea.Msg { return switchViewMsg{to: msg.to} }
 
 	case clearHighlightMsg:
-		m.justMappedKey = ""
+		m.justMappedKeys = make(map[string]bool)
 		return m, nil
 
 	case gitStatusMapMsg:
@@ -941,6 +944,29 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch {
+		case key.Matches(msg, m.keys.Select):
+			if m.cursor < len(m.sessions) {
+				k := m.sessions[m.cursor].Key
+				if m.selectedKeys[k] {
+					delete(m.selectedKeys, k)
+				} else {
+					m.selectedKeys[k] = true
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.SelectAll):
+			for _, s := range m.sessions {
+				if s.Path != "" { // Only select mapped keys
+					m.selectedKeys[s.Key] = true
+				}
+			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.SelectNone):
+			m.selectedKeys = make(map[string]bool)
+			return m, nil
+
 		case key.Matches(msg, m.keys.MoveMode):
 			// Enter move mode
 			m.moveMode = true
@@ -953,19 +979,52 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.message = "Locked keys can only be modified in default group"
 				return m, nil
 			}
-			if m.cursor < len(m.sessions) {
-				currentKey := m.sessions[m.cursor].Key
-				currentSession := m.sessions[m.cursor]
-				if m.lockedKeys[currentKey] {
-					delete(m.lockedKeys, currentKey)
-					delete(m.defaultLockedSessions, currentKey)
-					m.message = fmt.Sprintf("Unlocked key '%s'", currentKey)
-				} else {
-					m.lockedKeys[currentKey] = true
-					m.defaultLockedSessions[currentKey] = currentSession
-					m.message = fmt.Sprintf("Locked key '%s'", currentKey)
+			keysToLock := []string{}
+			if len(m.selectedKeys) > 0 {
+				for k := range m.selectedKeys {
+					keysToLock = append(keysToLock, k)
 				}
-				// Rebuild order to move locked keys to bottom
+			} else if m.cursor < len(m.sessions) {
+				keysToLock = append(keysToLock, m.sessions[m.cursor].Key)
+			}
+
+			if len(keysToLock) > 0 {
+				// Determine target state (if any is unlocked, lock all; else unlock all)
+				targetStateLocked := false
+				for _, k := range keysToLock {
+					if !m.lockedKeys[k] {
+						targetStateLocked = true
+						break
+					}
+				}
+
+				count := 0
+				for _, k := range keysToLock {
+					// Find session for this key
+					var sess models.TmuxSession
+					for _, s := range m.sessions {
+						if s.Key == k {
+							sess = s
+							break
+						}
+					}
+
+					if targetStateLocked {
+						m.lockedKeys[k] = true
+						m.defaultLockedSessions[k] = sess
+					} else {
+						delete(m.lockedKeys, k)
+						delete(m.defaultLockedSessions, k)
+					}
+					count++
+				}
+
+				if targetStateLocked {
+					m.message = fmt.Sprintf("Locked %d keys", count)
+				} else {
+					m.message = fmt.Sprintf("Unlocked %d keys", count)
+				}
+				m.selectedKeys = make(map[string]bool)
 				m.rebuildSessionsOrder()
 				m.saveChanges()
 			}
@@ -1096,17 +1155,28 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.MoveToGroup):
-			// Get the current session
-			if m.cursor >= len(m.sessions) {
-				return m, nil
+			keysToMove := []string{}
+			if len(m.selectedKeys) > 0 {
+				for k := range m.selectedKeys {
+					if !m.lockedKeys[k] { // exclude locked keys
+						// Check if key has a mapping
+						for _, s := range m.sessions {
+							if s.Key == k && s.Path != "" {
+								keysToMove = append(keysToMove, k)
+								break
+							}
+						}
+					}
+				}
+			} else if m.cursor < len(m.sessions) {
+				currentSession := m.sessions[m.cursor]
+				if currentSession.Path != "" && !m.lockedKeys[currentSession.Key] {
+					keysToMove = append(keysToMove, currentSession.Key)
+				}
 			}
-			currentSession := m.sessions[m.cursor]
-			if currentSession.Path == "" {
-				m.message = "No workspace to move"
-				return m, nil
-			}
-			if m.lockedKeys[currentSession.Key] {
-				m.message = "Cannot move locked session"
+
+			if len(keysToMove) == 0 {
+				m.message = "No eligible mappings to move (cannot move empty or locked keys)"
 				return m, nil
 			}
 
@@ -1125,8 +1195,17 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.moveToGroupMode = true
 			m.moveToGroupCursor = 0
-			m.moveToGroupSession = currentSession.Path
-			m.message = fmt.Sprintf("Move '%s' to group (↑/↓, Enter, Esc)", filepath.Base(currentSession.Path))
+			m.moveToGroupKeys = keysToMove
+			desc := fmt.Sprintf("%d items", len(keysToMove))
+			if len(keysToMove) == 1 {
+				for _, s := range m.sessions {
+					if s.Key == keysToMove[0] {
+						desc = filepath.Base(s.Path)
+						break
+					}
+				}
+			}
+			m.message = fmt.Sprintf("Move %s to group (↑/↓, Enter, Esc)", desc)
 			return m, nil
 
 		case key.Matches(msg, m.keys.Quit):
@@ -1228,34 +1307,27 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case key.Matches(msg, m.keys.Toggle):
-			// Quick toggle - unmap if mapped
-			if m.cursor < len(m.sessions) {
-				session := &m.sessions[m.cursor]
-				if session.Path != "" {
-					// Clear the session
-					session.Path = ""
-					session.Repository = ""
-					session.Description = ""
-					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
-					m.saveChanges()
-				} else if m.pendingMapProject != nil {
-					return m.mapSelectedSlot()
-				} else {
-					m.message = "Press 'e' or Enter to map this key"
-				}
-			}
-
 		case key.Matches(msg, m.keys.Delete):
-			// Clear the mapping for selected session
-			if m.cursor < len(m.sessions) {
+			// Clear the mapping for selected session(s)
+			clearedCount := 0
+			if len(m.selectedKeys) > 0 {
+				for i := range m.sessions {
+					if m.selectedKeys[m.sessions[i].Key] && !m.lockedKeys[m.sessions[i].Key] && m.sessions[i].Path != "" {
+						m.sessions[i].Path = ""
+						m.sessions[i].Repository = ""
+						m.sessions[i].Description = ""
+						clearedCount++
+					}
+				}
+				m.selectedKeys = make(map[string]bool)
+				m.message = fmt.Sprintf("Unmapped %d keys", clearedCount)
+				m.saveChanges()
+			} else if m.cursor < len(m.sessions) {
 				session := &m.sessions[m.cursor]
-				if session.Path != "" {
-					// Clear the session
+				if session.Path != "" && !m.lockedKeys[session.Key] {
 					session.Path = ""
 					session.Repository = ""
 					session.Description = ""
-
 					m.message = fmt.Sprintf("Unmapped key %s", session.Key)
 					m.saveChanges()
 				}
@@ -1283,13 +1355,13 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.Up):
 			if m.cursor > 0 {
 				m.cursor--
-				m.justMappedKey = ""
+				m.justMappedKeys = make(map[string]bool)
 			}
 
 		case key.Matches(msg, m.keys.Down):
 			if m.cursor < len(m.sessions)-1 {
 				m.cursor++
-				m.justMappedKey = ""
+				m.justMappedKeys = make(map[string]bool)
 			}
 
 		case key.Matches(msg, m.keys.PageUp):
@@ -1298,7 +1370,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			m.justMappedKey = ""
+			m.justMappedKeys = make(map[string]bool)
 
 		case key.Matches(msg, m.keys.PageDown):
 			// Move down by half page (5 rows)
@@ -1306,15 +1378,15 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor >= len(m.sessions) {
 				m.cursor = len(m.sessions) - 1
 			}
-			m.justMappedKey = ""
+			m.justMappedKeys = make(map[string]bool)
 
 		case key.Matches(msg, m.keys.Top):
 			m.cursor = 0
-			m.justMappedKey = ""
+			m.justMappedKeys = make(map[string]bool)
 
 		case key.Matches(msg, m.keys.Bottom):
 			m.cursor = len(m.sessions) - 1
-			m.justMappedKey = ""
+			m.justMappedKeys = make(map[string]bool)
 		}
 	}
 
@@ -1371,7 +1443,7 @@ func (m *manageModel) mapSelectedSlot() (tea.Model, tea.Cmd) {
 	m.enrichedProjects[filepath.Clean(projectToMap.Path)] = projectToMap
 
 	m.message = fmt.Sprintf("Mapped key '%s' to '%s'", session.Key, projectToMap.Name)
-	m.justMappedKey = session.Key
+	m.justMappedKeys = map[string]bool{session.Key: true}
 	m.saveChanges()
 
 	if m.pendingMapProject != nil {
@@ -1639,12 +1711,17 @@ func (m *manageModel) View() string {
 
 		// Highlight just-mapped key with success style
 		keyDisplay := s.Key
-		if s.Key == m.justMappedKey {
+		if m.justMappedKeys[s.Key] {
 			keyDisplay = core_theme.DefaultTheme.Success.Render(core_theme.IconSuccess + " " + s.Key)
 		}
 
+		selectionIndicator := fmt.Sprintf("%d", i+1)
+		if m.selectedKeys[s.Key] {
+			selectionIndicator = core_theme.DefaultTheme.Success.Render("✓")
+		}
+
 		row := []string{
-			fmt.Sprintf("%d", i+1),
+			selectionIndicator,
 			keyDisplay,
 			repository,
 			branchWorktreeDisplay,
@@ -1794,8 +1871,13 @@ func (m *manageModel) View() string {
 			}
 		}
 
+		selectionIndicator := fmt.Sprintf("%d", i+1)
+		if m.selectedKeys[s.Key] {
+			selectionIndicator = core_theme.DefaultTheme.Success.Render("✓")
+		}
+
 		row := []string{
-			fmt.Sprintf("%d", i+1),
+			selectionIndicator,
 			s.Key,
 			repository,
 			branchWorktreeDisplay,
@@ -2041,7 +2123,7 @@ func (m *manageModel) cycleGroup(dir int) {
 	m.cursor = 0
 	m.rebuildSessionsOrder()
 	m.changesMade = false
-	m.justMappedKey = "" // Clear highlight when switching groups
+	m.justMappedKeys = make(map[string]bool) // Clear highlight when switching groups
 	m.message = fmt.Sprintf("Switched to group: %s", newGroup)
 }
 
@@ -2246,59 +2328,96 @@ func (m *manageModel) saveDefaultToGroup(targetGroup string) {
 	m.message = fmt.Sprintf("Saved %d mappings to '%s'", count, targetGroup)
 }
 
-// executeMoveToGroup moves the selected session to the target group
+// executeMoveToGroup moves the selected session(s) to the target group
 func (m *manageModel) executeMoveToGroup(targetGroup string) {
-	// Find the session we're moving
-	sessionPath := m.moveToGroupSession
-	sessionKey := ""
-	for _, s := range m.sessions {
-		if s.Path == sessionPath {
-			sessionKey = s.Key
-			break
-		}
-	}
-	if sessionKey == "" {
-		m.message = "Session not found"
+	if len(m.moveToGroupKeys) == 0 {
 		return
 	}
 
 	sourceGroup := m.manager.GetActiveGroup()
 
-	// Switch to target group
-	m.manager.SetActiveGroup(targetGroup)
-	targetSessions, _ := m.manager.GetSessions()
-
-	// Try to preserve the same key in target group first
-	targetKey := ""
-	for _, ts := range targetSessions {
-		if ts.Key == sessionKey && ts.Path == "" && !m.lockedKeys[ts.Key] {
-			targetKey = ts.Key
-			break
-		}
+	// First, gather paths for all keys to move
+	type keyPath struct {
+		key  string
+		path string
 	}
-
-	// If same key not available, find next available empty slot
-	if targetKey == "" {
-		for _, ts := range targetSessions {
-			if ts.Path == "" && !m.lockedKeys[ts.Key] {
-				targetKey = ts.Key
+	itemsToMove := make([]keyPath, 0, len(m.moveToGroupKeys))
+	for _, key := range m.moveToGroupKeys {
+		for _, s := range m.sessions {
+			if s.Key == key && s.Path != "" {
+				itemsToMove = append(itemsToMove, keyPath{key: key, path: s.Path})
 				break
 			}
 		}
 	}
 
-	if targetKey == "" {
-		m.message = fmt.Sprintf("No empty slots in '%s'", targetGroup)
+	if len(itemsToMove) == 0 {
+		m.message = "No paths to move"
+		return
+	}
+
+	// Switch to target group
+	m.manager.SetActiveGroup(targetGroup)
+	targetSessions, _ := m.manager.GetSessions()
+
+	// Find enough empty slots, trying to preserve same keys first
+	type assignment struct {
+		sourceKey string
+		targetKey string
+		path      string
+	}
+	assignments := make([]assignment, 0, len(itemsToMove))
+	usedTargetKeys := make(map[string]bool)
+
+	// First pass: try to preserve same keys
+	for _, item := range itemsToMove {
+		for _, ts := range targetSessions {
+			if ts.Key == item.key && ts.Path == "" && !m.lockedKeys[ts.Key] && !usedTargetKeys[ts.Key] {
+				assignments = append(assignments, assignment{sourceKey: item.key, targetKey: ts.Key, path: item.path})
+				usedTargetKeys[ts.Key] = true
+				break
+			}
+		}
+	}
+
+	// Second pass: assign remaining items to any available keys
+	for _, item := range itemsToMove {
+		// Check if already assigned
+		assigned := false
+		for _, a := range assignments {
+			if a.sourceKey == item.key {
+				assigned = true
+				break
+			}
+		}
+		if assigned {
+			continue
+		}
+
+		// Find next available slot
+		for _, ts := range targetSessions {
+			if ts.Path == "" && !m.lockedKeys[ts.Key] && !usedTargetKeys[ts.Key] {
+				assignments = append(assignments, assignment{sourceKey: item.key, targetKey: ts.Key, path: item.path})
+				usedTargetKeys[ts.Key] = true
+				break
+			}
+		}
+	}
+
+	if len(assignments) < len(itemsToMove) {
+		m.message = fmt.Sprintf("Not enough empty slots in '%s' (need %d, have %d)", targetGroup, len(itemsToMove), len(assignments))
 		m.manager.SetActiveGroup(sourceGroup)
 		return
 	}
 
-	// Set the mapping in target group
-	for i := range targetSessions {
-		if targetSessions[i].Key == targetKey {
-			targetSessions[i].Path = sessionPath
-			targetSessions[i].Repository = filepath.Base(sessionPath)
-			break
+	// Assign to target group
+	for _, a := range assignments {
+		for i := range targetSessions {
+			if targetSessions[i].Key == a.targetKey {
+				targetSessions[i].Path = a.path
+				targetSessions[i].Repository = filepath.Base(a.path)
+				break
+			}
 		}
 	}
 
@@ -2309,14 +2428,16 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 		return
 	}
 
-	// Switch back to source group and clear the mapping
+	// Switch back to source group and clear mappings
 	m.manager.SetActiveGroup(sourceGroup)
-	for i := range m.sessions {
-		if m.sessions[i].Key == sessionKey {
-			m.sessions[i].Path = ""
-			m.sessions[i].Repository = ""
-			m.sessions[i].Description = ""
-			break
+	for _, a := range assignments {
+		for i := range m.sessions {
+			if m.sessions[i].Key == a.sourceKey {
+				m.sessions[i].Path = ""
+				m.sessions[i].Repository = ""
+				m.sessions[i].Description = ""
+				break
+			}
 		}
 	}
 
@@ -2333,24 +2454,30 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 		_ = reloadTmuxConfig()
 	}
 
+	m.selectedKeys = make(map[string]bool)
 	m.changesMade = true
 
-	// Switch UI to the target group and highlight the newly placed item
+	// Switch UI to the target group
 	m.manager.SetActiveGroup(targetGroup)
 	_ = m.manager.SetLastAccessedGroup(targetGroup)
 	m.sessions, _ = m.manager.GetSessions()
 	m.rebuildSessionsOrder()
 
-	// Position the cursor onto the newly moved element
-	for i, s := range m.sessions {
-		if s.Key == targetKey {
-			m.cursor = i
-			break
+	// Position the cursor onto the first moved element and highlight all moved keys
+	if len(assignments) > 0 {
+		m.justMappedKeys = make(map[string]bool)
+		for _, a := range assignments {
+			m.justMappedKeys[a.targetKey] = true
+		}
+		for i, s := range m.sessions {
+			if s.Key == assignments[0].targetKey {
+				m.cursor = i
+				break
+			}
 		}
 	}
 
-	m.justMappedKey = targetKey
-	m.message = fmt.Sprintf("Moved to '%s' (key %s)", targetGroup, targetKey)
+	m.message = fmt.Sprintf("Moved %d items to '%s'", len(assignments), targetGroup)
 }
 
 // jumpToPath finds the group and row containing the specified path and jumps to it.

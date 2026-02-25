@@ -10,7 +10,6 @@ import (
 // SessionizeKeyMap defines the key bindings for the sessionize TUI
 type SessionizeKeyMap struct {
 	keymap.Base
-	ToggleKey            key.Binding
 	EditKey              key.Binding
 	ClearKey             key.Binding
 	CloseSession         key.Binding
@@ -62,7 +61,7 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 		{
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Session Management")),
 			k.RefreshProjects,
-			k.ToggleKey,
+			k.Select,
 			k.EditKey,
 			k.ClearKey,
 			k.CopyPath,
@@ -106,6 +105,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.Search,
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select session")),
 		),
+		keymap.SelectionSection(k.Select, k.SelectAll, k.SelectNone),
 		keymap.NewSection("Session",
 			k.RefreshProjects,
 			k.EditKey,
@@ -156,10 +156,6 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 	km := SessionizeKeyMap{
 		Base: keymap.Load(cfg, "nav.sessionize"),
-		ToggleKey: key.NewBinding(
-			key.WithKeys(" "),
-			key.WithHelp("space", "quick map/unmap"),
-		),
 		EditKey: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "edit key mapping"),

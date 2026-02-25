@@ -10,7 +10,6 @@ import (
 // ManageKeyMap defines the key bindings for the session key manager TUI.
 type ManageKeyMap struct {
 	keymap.Base
-	Toggle      key.Binding
 	Edit        key.Binding // Overrides Base.Edit with "map CWD" behavior
 	SetKey      key.Binding
 	Open        key.Binding
@@ -71,7 +70,8 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 			k.GoToSessionize,
 			k.FocusCurrent,
 		),
-		keymap.ActionsSection(k.Edit, k.SetKey, k.Toggle, k.Delete, k.CopyPath),
+		keymap.SelectionSection(k.Select, k.SelectAll, k.SelectNone),
+		keymap.ActionsSection(k.Edit, k.SetKey, k.Delete, k.CopyPath),
 		keymap.NewSection("Reorder",
 			k.MoveMode, k.Lock,
 			key.NewBinding(key.WithKeys("j/k"), key.WithHelp("j/k", "move row (in move mode)")),
@@ -88,10 +88,6 @@ func (k ManageKeyMap) Sections() []keymap.Section {
 func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 	km := ManageKeyMap{
 		Base: keymap.Load(cfg, "nav.manage"),
-		Toggle: key.NewBinding(
-			key.WithKeys(" "),
-			key.WithHelp("space", "quick toggle"),
-		),
 		Edit: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "map CWD"),
