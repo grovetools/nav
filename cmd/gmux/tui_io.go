@@ -501,6 +501,11 @@ type statusMsg struct {
 	message string
 }
 
+// jumpToMappingMsg signals that we should switch to keymanage view and jump to a specific path
+type jumpToMappingMsg struct {
+	path string
+}
+
 // clearStatusCmd returns a command that clears the status message after a delay
 func clearStatusCmd(duration time.Duration) tea.Cmd {
 	return tea.Tick(duration, func(t time.Time) tea.Msg {

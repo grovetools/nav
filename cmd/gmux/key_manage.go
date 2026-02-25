@@ -2276,6 +2276,50 @@ func (m *manageModel) executeMoveToGroup(targetGroup string) {
 	m.message = fmt.Sprintf("Moved to '%s' (key %s)", targetGroup, targetKey)
 }
 
+// jumpToPath finds the group and row containing the specified path and jumps to it.
+// Returns true if the path was found, false otherwise.
+func (m *manageModel) jumpToPath(targetPath string) bool {
+	normalizedTarget, err := pathutil.NormalizeForLookup(filepath.Clean(targetPath))
+	if err != nil {
+		return false
+	}
+
+	// Check all groups
+	groups := m.manager.GetGroups()
+	for _, g := range groups {
+		m.manager.SetActiveGroup(g)
+		sessions, _ := m.manager.GetSessions()
+
+		for i, s := range sessions {
+			if s.Path == "" {
+				continue
+			}
+			normalizedSessionPath, err := pathutil.NormalizeForLookup(filepath.Clean(s.Path))
+			if err != nil {
+				continue
+			}
+			if normalizedSessionPath == normalizedTarget {
+				// Found it! Stay on this group and set cursor
+				_ = m.manager.SetLastAccessedGroup(g)
+				m.sessions = sessions
+				lockedKeysSlice := m.manager.GetLockedKeys()
+				m.lockedKeys = make(map[string]bool)
+				for _, key := range lockedKeysSlice {
+					m.lockedKeys[key] = true
+				}
+				m.rebuildSessionsOrder()
+				m.cursor = i
+				m.changesMade = false
+				m.message = fmt.Sprintf("Found in group '%s' (key %s)", g, s.Key)
+				return true
+			}
+		}
+	}
+
+	// Not found - restore original group
+	return false
+}
+
 // formatPlanStatsForKeyManage formats plan stats into a styled string
 // Shows only job status icons and counts (e.g., "◐ 1 ○ 2 ● 5")
 func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {

@@ -21,6 +21,10 @@ type SessionizeKeyMap struct {
 	NextGroup        key.Binding
 	PrevGroup        key.Binding
 	FilterGroup      key.Binding
+	ManageGroups     key.Binding
+	NewGroup         key.Binding
+	MapToGroup       key.Binding
+	GoToMapping      key.Binding
 	ToggleGitStatus  key.Binding
 	ToggleBranch     key.Binding
 	ToggleNoteCounts key.Binding
@@ -118,6 +122,10 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.NextGroup,
 			k.PrevGroup,
 			k.FilterGroup,
+			k.ManageGroups,
+			k.NewGroup,
+			k.MapToGroup,
+			k.GoToMapping,
 		),
 		keymap.NewSection("Columns",
 			k.ToggleCx,
@@ -185,6 +193,22 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		FilterGroup: key.NewBinding(
 			key.WithKeys("F"),
 			key.WithHelp("F", "filter to group"),
+		),
+		ManageGroups: key.NewBinding(
+			key.WithKeys("E"),
+			key.WithHelp("E", "manage groups"),
+		),
+		NewGroup: key.NewBinding(
+			key.WithKeys("N"),
+			key.WithHelp("N", "new group"),
+		),
+		MapToGroup: key.NewBinding(
+			key.WithKeys("M"),
+			key.WithHelp("M", "map to group"),
+		),
+		GoToMapping: key.NewBinding(
+			key.WithKeys(","),
+			key.WithHelp(",", "go to mapping"),
 		),
 		ToggleGitStatus: key.NewBinding(
 			key.WithKeys("s"),

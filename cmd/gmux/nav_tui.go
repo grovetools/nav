@@ -379,6 +379,20 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd1, cmd2)
 
+	case jumpToMappingMsg:
+		// Switch to manage view and jump to the specified path's mapping
+		m.activeView = viewManage
+		cmd1 := m.switchToView(viewManage)
+		var cmd2 tea.Cmd
+		if m.manageModel != nil {
+			// Find which group and row contains this path
+			found := m.manageModel.jumpToPath(msg.path)
+			if !found {
+				m.manageModel.message = "Workspace not mapped to any group"
+			}
+		}
+		return m, tea.Batch(cmd1, cmd2)
+
 	// Route background data messages to their owners regardless of active view
 	case initialProjectsEnrichedMsg:
 		if m.manageModel != nil {
@@ -493,7 +507,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Check for global tab navigation (1-4) if no text input is focused
+		// Check for global tab navigation (1-4 or [ ]) if no text input is focused
 		if !m.isTextInputFocused() && msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 			r := msg.Runes[0]
 			switch r {
@@ -512,6 +526,33 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case '4':
 				if m.activeView != viewWindows && m.client != nil {
 					return m, func() tea.Msg { return switchViewMsg{to: viewWindows} }
+				}
+			case ']', '[':
+				// Define available views in order
+				views := []navView{viewSessionize, viewManage, viewHistory}
+				if m.client != nil {
+					views = append(views, viewWindows)
+				}
+
+				// Find current index
+				currIdx := 0
+				for i, v := range views {
+					if v == m.activeView {
+						currIdx = i
+						break
+					}
+				}
+
+				// Calculate next view
+				var nextView navView
+				if r == ']' { // Next
+					nextView = views[(currIdx+1)%len(views)]
+				} else { // Prev
+					nextView = views[(currIdx-1+len(views))%len(views)]
+				}
+
+				if m.activeView != nextView {
+					return m, func() tea.Msg { return switchViewMsg{to: nextView} }
 				}
 			}
 		}

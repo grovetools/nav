@@ -91,6 +91,18 @@ type sessionizeModel struct {
 
 	// Context rules state
 	rulesState map[string]grovecontext.RuleStatus // path -> status
+
+	// New group creation mode (inline)
+	newGroupMode   bool
+	newGroupStep   int    // 0 = entering name, 1 = entering prefix
+	newGroupName   string
+	newGroupPrefix string
+
+	// Map to group mode
+	mapToGroupMode    bool
+	mapToGroupOptions []string
+	mapToGroupCursor  int
+	mapToGroupPath    string
 }
 
 func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
@@ -844,6 +856,119 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Handle map to group mode
+		if m.mapToGroupMode {
+			switch {
+			case msg.Type == tea.KeyEsc:
+				m.mapToGroupMode = false
+				m.statusMessage = "Cancelled"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+
+			case key.Matches(msg, m.keys.Up):
+				if m.mapToGroupCursor > 0 {
+					m.mapToGroupCursor--
+				} else {
+					m.mapToGroupCursor = len(m.mapToGroupOptions) - 1
+				}
+				return m, nil
+
+			case key.Matches(msg, m.keys.Down):
+				if m.mapToGroupCursor < len(m.mapToGroupOptions)-1 {
+					m.mapToGroupCursor++
+				} else {
+					m.mapToGroupCursor = 0
+				}
+				return m, nil
+
+			case msg.Type == tea.KeyEnter, msg.Type == tea.KeySpace:
+				targetGroup := m.mapToGroupOptions[m.mapToGroupCursor]
+				m.executeMapToGroup(targetGroup)
+				m.mapToGroupMode = false
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Handle new group mode
+		if m.newGroupMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.newGroupMode = false
+				m.statusMessage = "Cancelled"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			case tea.KeyEnter:
+				if m.newGroupStep == 0 {
+					if m.newGroupName == "" {
+						m.statusMessage = "Group name cannot be empty"
+						m.statusTimeout = time.Now().Add(2 * time.Second)
+						return m, nil
+					}
+					m.newGroupStep = 1
+					m.statusMessage = "Enter prefix key (optional, e.g. '<grove> g'):"
+					m.statusTimeout = time.Now().Add(30 * time.Second)
+				} else {
+					// Create the group
+					if err := m.manager.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
+						m.statusMessage = fmt.Sprintf("Error: %v", err)
+					} else {
+						m.manager.SetActiveGroup(m.newGroupName)
+						_ = m.manager.SetLastAccessedGroup(m.newGroupName)
+						// Reload sessions for the new group
+						m.sessions, _ = m.manager.GetSessions()
+						m.keyMap = make(map[string]string)
+						for _, s := range m.sessions {
+							if s.Path != "" {
+								expandedPath := expandPath(s.Path)
+								absPath, err := filepath.Abs(expandedPath)
+								if err == nil {
+									m.keyMap[filepath.Clean(absPath)] = s.Key
+								}
+							}
+						}
+						if m.filterGroup {
+							m.updateFiltered()
+							m.cursor = 0
+							m.moveCursorToFirstSelectable()
+						}
+						m.statusMessage = fmt.Sprintf("Created and switched to group '%s'", m.newGroupName)
+					}
+					m.newGroupMode = false
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+				}
+				return m, clearStatusCmd(2 * time.Second)
+			case tea.KeyBackspace:
+				if m.newGroupStep == 0 {
+					if len(m.newGroupName) > 0 {
+						m.newGroupName = m.newGroupName[:len(m.newGroupName)-1]
+					}
+				} else {
+					if len(m.newGroupPrefix) > 0 {
+						m.newGroupPrefix = m.newGroupPrefix[:len(m.newGroupPrefix)-1]
+					}
+				}
+				return m, nil
+			case tea.KeySpace:
+				if m.newGroupStep == 1 {
+					m.newGroupPrefix += " "
+				}
+				return m, nil
+			case tea.KeyRunes:
+				if m.newGroupStep == 0 {
+					for _, r := range msg.Runes {
+						if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+							m.newGroupName += string(r)
+						}
+					}
+				} else {
+					m.newGroupPrefix += string(msg.Runes)
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// Process standard vim sequences (folding, dd)
 		res, idx := m.sequence.Process(msg,
 			m.keys.FoldOpen,
@@ -1193,21 +1318,33 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
 		case key.Matches(msg, m.keys.FocusCurrent):
-			// Focus on the ecosystem containing the current working directory
+			// Focus on the ecosystem (or ecosystem worktree) containing the current working directory
 			cwd, err := os.Getwd()
 			if err != nil {
 				return m, nil
 			}
-			// Find the ecosystem that contains CWD
+			// Find the ecosystem that contains CWD.
+			// Priority: ecosystem worktree > main ecosystem (most specific wins).
 			var targetEcosystem *manager.SessionizeProject
+			var targetEcosystemIsWorktree bool
+
 			for _, p := range m.projects {
-				if !p.IsEcosystem() || p.IsWorktree() {
+				if !p.IsEcosystem() {
 					continue
 				}
 				// Check if CWD is inside this ecosystem
 				if strings.HasPrefix(cwd, p.Path+string(filepath.Separator)) || cwd == p.Path {
-					targetEcosystem = p
-					break
+					// Prefer worktrees over main ecosystems (more specific context)
+					if p.IsWorktree() {
+						// Worktree always wins, so we take it and stop
+						targetEcosystem = p
+						targetEcosystemIsWorktree = true
+						break
+					} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
+						// Take main ecosystem only if we don't already have a worktree
+						targetEcosystem = p
+						targetEcosystemIsWorktree = false
+					}
 				}
 			}
 			if targetEcosystem == nil {
@@ -1298,6 +1435,60 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showCx = !m.showCx
 			_ = m.buildState().Save(m.configDir)
 			return m, nil
+
+		case key.Matches(msg, m.keys.ManageGroups):
+			// Switch to groups management view
+			return m, func() tea.Msg { return switchViewMsg{to: viewGroups} }
+
+		case key.Matches(msg, m.keys.NewGroup):
+			// Enter new group creation mode (inline in sessionize)
+			m.newGroupMode = true
+			m.newGroupStep = 0
+			m.newGroupName = ""
+			m.newGroupPrefix = ""
+			m.statusMessage = "Enter new group name:"
+			m.statusTimeout = time.Now().Add(30 * time.Second)
+			return m, nil
+
+		case key.Matches(msg, m.keys.MapToGroup):
+			// Map current project to a group (show group picker)
+			if m.cursor >= len(m.filtered) {
+				return m, nil
+			}
+			project := m.filtered[m.cursor]
+			if project == nil {
+				return m, nil
+			}
+			// Build list of target groups
+			m.mapToGroupOptions = []string{}
+			currentGroup := m.manager.GetActiveGroup()
+			for _, g := range m.manager.GetGroups() {
+				if g != currentGroup {
+					m.mapToGroupOptions = append(m.mapToGroupOptions, g)
+				}
+			}
+			if len(m.mapToGroupOptions) == 0 {
+				m.statusMessage = "No other groups to map to"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+			m.mapToGroupMode = true
+			m.mapToGroupCursor = 0
+			m.mapToGroupPath = project.Path
+			m.statusMessage = fmt.Sprintf("Map '%s' to group:", project.Name)
+			m.statusTimeout = time.Now().Add(30 * time.Second)
+			return m, nil
+
+		case key.Matches(msg, m.keys.GoToMapping):
+			// Jump to the key manager view with this project's mapping selected
+			if m.cursor >= len(m.filtered) {
+				return m, nil
+			}
+			project := m.filtered[m.cursor]
+			if project == nil {
+				return m, nil
+			}
+			return m, func() tea.Msg { return jumpToMappingMsg{path: project.Path} }
 
 		case key.Matches(msg, m.keys.ToggleWorktrees):
 			m.worktreesFolded = !m.worktreesFolded
@@ -1591,6 +1782,78 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		_ = reloadTmuxConfig()
 	}
 }
+
+// executeMapToGroup maps the selected project to the first available key in the target group
+func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
+	// Save current group
+	currentGroup := m.manager.GetActiveGroup()
+
+	// Switch to target group
+	m.manager.SetActiveGroup(targetGroup)
+	targetSessions, _ := m.manager.GetSessions()
+
+	// Find first available key in target group
+	targetKey := ""
+	for _, ts := range targetSessions {
+		if ts.Path == "" {
+			targetKey = ts.Key
+			break
+		}
+	}
+
+	if targetKey == "" {
+		m.statusMessage = fmt.Sprintf("No empty slots in '%s'", targetGroup)
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		m.manager.SetActiveGroup(currentGroup) // Restore group
+		return
+	}
+
+	// Map the project to the first available key
+	for i := range targetSessions {
+		if targetSessions[i].Key == targetKey {
+			targetSessions[i].Path = m.mapToGroupPath
+			targetSessions[i].Repository = filepath.Base(m.mapToGroupPath)
+			break
+		}
+	}
+
+	// Save target group
+	if err := m.manager.UpdateSessions(targetSessions); err != nil {
+		m.statusMessage = fmt.Sprintf("Error: %v", err)
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		m.manager.SetActiveGroup(currentGroup)
+		return
+	}
+
+	// Regenerate bindings
+	_ = m.manager.RegenerateBindings()
+	_ = reloadTmuxConfig()
+
+	// Switch to the target group
+	_ = m.manager.SetLastAccessedGroup(targetGroup)
+	// Reload sessions for new group
+	m.sessions, _ = m.manager.GetSessions()
+	m.keyMap = make(map[string]string)
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, err := filepath.Abs(expandedPath)
+			if err == nil {
+				m.keyMap[filepath.Clean(absPath)] = s.Key
+			}
+		}
+	}
+
+	if m.filterGroup {
+		m.updateFiltered()
+		m.cursor = 0
+		m.moveCursorToFirstSelectable()
+	}
+
+	m.statusMessage = fmt.Sprintf("Mapped to '%s' (key %s)", targetGroup, targetKey)
+	m.statusTimeout = time.Now().Add(2 * time.Second)
+}
+
 func (m *sessionizeModel) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
 
@@ -1976,7 +2239,26 @@ func (m sessionizeModel) View() string {
 	violetStyle := lipgloss.NewStyle().Foreground(core_theme.DefaultTheme.Colors.Violet)
 
 	// Mode and status indicators
-	if m.ecosystemPickerMode {
+	if m.newGroupMode {
+		b.WriteString("  " + core_theme.DefaultTheme.Info.Render(core_theme.IconFolderStar+" New Group Mode") + "\n")
+		if m.newGroupStep == 0 {
+			b.WriteString("  " + core_theme.DefaultTheme.Header.Render("Name: "+m.newGroupName+"█") + "\n")
+		} else {
+			b.WriteString("  " + core_theme.DefaultTheme.Muted.Render("Name: "+m.newGroupName) + "\n")
+			b.WriteString("  " + core_theme.DefaultTheme.Header.Render("Prefix: "+m.newGroupPrefix+"█") + "\n")
+		}
+		b.WriteString("  " + helpStyle.Render("Enter to confirm • Esc to cancel") + "\n")
+	} else if m.mapToGroupMode {
+		b.WriteString("  " + core_theme.DefaultTheme.Info.Render(core_theme.IconFolderStar+" Map to Group") + "\n")
+		for i, g := range m.mapToGroupOptions {
+			prefix := "  "
+			if i == m.mapToGroupCursor {
+				prefix = core_theme.DefaultTheme.Highlight.Render("> ")
+			}
+			b.WriteString("  " + prefix + g + "\n")
+		}
+		b.WriteString("  " + helpStyle.Render("j/k to select • Enter to confirm • Esc to cancel") + "\n")
+	} else if m.ecosystemPickerMode {
 		b.WriteString("  " + core_theme.DefaultTheme.Info.Render(core_theme.IconEcosystem+" Select ecosystem to focus") + "\n")
 	} else if m.focusedProject != nil {
 		focusIndicator := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("%s [%s]", core_theme.IconEcosystem, m.focusedProject.Name))
@@ -1984,7 +2266,7 @@ func (m sessionizeModel) View() string {
 	}
 
 	// Status message
-	if m.statusMessage != "" && time.Now().Before(m.statusTimeout) {
+	if m.statusMessage != "" && time.Now().Before(m.statusTimeout) && !m.newGroupMode && !m.mapToGroupMode {
 		b.WriteString("  " + core_theme.DefaultTheme.Success.Render(m.statusMessage) + "\n")
 	}
 
