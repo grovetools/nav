@@ -232,3 +232,8 @@ func (m *Manager) GetGroupSessionCount(name string) int {
 func (m *Manager) GetDefaultIcon() string {
 	return m.mgr.GetDefaultIcon()
 }
+
+// GetResolvedFeatures returns the resolved feature flags for the TUI
+func (m *Manager) GetResolvedFeatures() manager.ResolvedFeatures {
+	return m.mgr.GetResolvedFeatures()
+}

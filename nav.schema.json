@@ -29,6 +29,27 @@
         "prefix"
       ]
     },
+    "NavFeatures": {
+      "properties": {
+        "groups": {
+          "type": "boolean",
+          "description": "Enable workspace groups for multiple key prefixes"
+        },
+        "ecosystems": {
+          "type": "boolean",
+          "description": "Enable ecosystem navigation and focus mode"
+        },
+        "integrations": {
+          "type": "boolean",
+          "description": "Enable Grove integrations (Flow plans"
+        },
+        "worktrees": {
+          "type": "boolean",
+          "description": "Enable Git worktree support and folding"
+        }
+      },
+      "type": "object"
+    },
     "TmuxSessionConfig": {
       "properties": {
         "path": {
@@ -42,6 +63,21 @@
     }
   },
   "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "bare",
+        "advanced",
+        "grove"
+      ],
+      "description": "Mode preset: 'bare' (pure sessionizer)",
+      "x-layer": "global",
+      "x-priority": "68"
+    },
+    "features": {
+      "$ref": "#/$defs/NavFeatures",
+      "description": "Granular feature overrides that take precedence over mode preset"
+    },
     "prefix": {
       "type": "string",
       "description": "Prefix key for nav bindings. Options: '\u003cprefix\u003e' (default)",

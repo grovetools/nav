@@ -49,6 +49,7 @@ type sessionizeModel struct {
 	filterInput              textinput.Model
 	searchPaths              []string
 	manager                  *tmux.Manager
+	features                 manager.ResolvedFeatures // Feature flags for progressive disclosure
 	configDir                string            // configuration directory
 	keyMap          map[string]string // path -> key mapping
 	runningSessions map[string]bool   // map[sessionName] -> true
@@ -210,6 +211,9 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		projectMap[p.Path] = p
 	}
 
+	// Fetch resolved feature flags for progressive disclosure
+	features := mgr.GetResolvedFeatures()
+
 	// Load previously focused ecosystem and fold state
 	var focusedProject *manager.SessionizeProject
 	var worktreesFolded bool
@@ -224,6 +228,22 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showBinary := false  // Default off - expensive operation
 	showLink := false    // Default off - takes space
 	showCx := true       // Default on - show CX column when data available
+
+	// Override defaults based on feature flags
+	if !features.Integrations {
+		showGitStatus = false
+		showBranch = false
+		showNoteCounts = false
+		showPlanStats = false
+		showRelease = false
+		showBinary = false
+		showLink = false
+		showCx = false
+	}
+	if !features.Worktrees {
+		worktreesFolded = false
+	}
+
 	if state, err := manager.LoadState(configDir); err == nil {
 		// Prioritize CWD focus path over saved state, but clear if in unmapped workspace
 		if clearFocus {
@@ -286,6 +306,7 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		filterInput:              ti,
 		searchPaths:              searchPaths,
 		manager:                  mgr,
+		features:                 features,
 		configDir:                configDir,
 		keyMap:          keyMap,
 		runningSessions: runningSessions,
@@ -326,6 +347,38 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 		selectedPaths:            make(map[string]bool),
 		jumpList:                 make([]jumpState, 0),
 		jumpIdx:                  0,
+	}
+
+	// Prune key bindings based on feature flags (auto-removes from help menu)
+	if !features.Groups {
+		m.keys.NextGroup.SetEnabled(false)
+		m.keys.PrevGroup.SetEnabled(false)
+		m.keys.FilterGroup.SetEnabled(false)
+		m.keys.ManageGroups.SetEnabled(false)
+		m.keys.NewGroup.SetEnabled(false)
+		m.keys.MapToGroup.SetEnabled(false)
+		m.keys.GoToMappingCursor.SetEnabled(false)
+		m.keys.GoToMappingCwd.SetEnabled(false)
+	}
+	if !features.Ecosystems {
+		m.keys.FocusEcosystem.SetEnabled(false)
+		m.keys.OpenEcosystem.SetEnabled(false)
+		m.keys.FocusEcosystemCursor.SetEnabled(false)
+		m.keys.FocusEcosystemCwd.SetEnabled(false)
+		m.keys.ClearFocus.SetEnabled(false)
+	}
+	if !features.Integrations {
+		m.keys.ToggleCx.SetEnabled(false)
+		m.keys.ToggleNoteCounts.SetEnabled(false)
+		m.keys.TogglePlanStats.SetEnabled(false)
+		m.keys.ToggleHotContext.SetEnabled(false)
+		m.keys.ToggleHold.SetEnabled(false)
+		m.keys.ToggleRelease.SetEnabled(false)
+		m.keys.ToggleBinary.SetEnabled(false)
+		m.keys.ToggleLink.SetEnabled(false)
+	}
+	if !features.Worktrees {
+		m.keys.ToggleWorktrees.SetEnabled(false)
 	}
 
 	// Synchronously apply initial filters to prevent UI flash
@@ -2511,9 +2564,9 @@ func (m sessionizeModel) View() string {
 
 	var b strings.Builder
 
-	// Render group tabs (always show so users can switch groups and set keys)
+	// Render group tabs (if groups feature is enabled)
 	groups := m.manager.GetGroups()
-	if len(groups) > 0 {
+	if m.features.Groups && len(groups) > 0 {
 		labelStyle := lipgloss.NewStyle().Faint(true).Italic(true)
 		b.WriteString("  " + labelStyle.Render("Key group: "))
 

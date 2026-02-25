@@ -1743,3 +1743,48 @@ func (m *Manager) GetConfigPath() string {
 func (m *Manager) GetNavConfigPath() string {
 	return m.navConfigPath
 }
+
+// GetResolvedFeatures evaluates the mode preset and applies any granular feature overrides.
+// Mode presets:
+//   - "bare": Pure tmux-sessionizer replacement. No groups, ecosystems, integrations, or worktrees.
+//   - "advanced": Adds multi-group key management and worktree support, but no ecosystems/integrations.
+//   - "grove" (default): All features enabled.
+//
+// Granular overrides in [nav.features] take precedence over the mode preset.
+func (m *Manager) GetResolvedFeatures() ResolvedFeatures {
+	mode := "grove"
+	if m.tmuxConfig != nil && m.tmuxConfig.Mode != "" {
+		mode = m.tmuxConfig.Mode
+	}
+
+	// Start with mode baseline
+	var feat ResolvedFeatures
+	switch mode {
+	case "bare":
+		feat = ResolvedFeatures{Groups: false, Ecosystems: false, Integrations: false, Worktrees: false}
+	case "advanced":
+		feat = ResolvedFeatures{Groups: true, Ecosystems: false, Integrations: false, Worktrees: true}
+	case "grove":
+		fallthrough
+	default:
+		feat = ResolvedFeatures{Groups: true, Ecosystems: true, Integrations: true, Worktrees: true}
+	}
+
+	// Apply granular overrides if provided
+	if m.tmuxConfig != nil && m.tmuxConfig.Features != nil {
+		if m.tmuxConfig.Features.Groups != nil {
+			feat.Groups = *m.tmuxConfig.Features.Groups
+		}
+		if m.tmuxConfig.Features.Ecosystems != nil {
+			feat.Ecosystems = *m.tmuxConfig.Features.Ecosystems
+		}
+		if m.tmuxConfig.Features.Integrations != nil {
+			feat.Integrations = *m.tmuxConfig.Features.Integrations
+		}
+		if m.tmuxConfig.Features.Worktrees != nil {
+			feat.Worktrees = *m.tmuxConfig.Features.Worktrees
+		}
+	}
+
+	return feat
+}

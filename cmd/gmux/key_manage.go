@@ -129,6 +129,7 @@ type manageModel struct {
 	cursor   int
 	sessions []models.TmuxSession
 	manager  *tmux.Manager
+	features manager.ResolvedFeatures // Feature flags for progressive disclosure
 	keys     manageKeyMap
 	help     help.Model
 	quitting bool
@@ -205,6 +206,9 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		enrichedProjects = make(map[string]*manager.SessionizeProject)
 	}
 
+	// Fetch resolved feature flags for progressive disclosure
+	features := mgr.GetResolvedFeatures()
+
 	// Load locked keys from manager
 	lockedKeysSlice := mgr.GetLockedKeys()
 	lockedKeysMap := make(map[string]bool)
@@ -224,10 +228,11 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 	}
 	mgr.SetActiveGroup(currentGroup) // Restore original group
 
-	return manageModel{
+	mm := manageModel{
 		cursor:                0,
 		sessions:              sessions,
 		manager:               mgr,
+		features:              features,
 		keys:                  manageKeys,
 		help:                  helpModel,
 		cwdPath:               cwdPath,
@@ -241,6 +246,21 @@ func newManageModel(sessions []models.TmuxSession, mgr *tmux.Manager, cwdPath st
 		selectedKeys:          make(map[string]bool),
 		justMappedKeys:        make(map[string]bool),
 	}
+
+	// Prune key bindings based on feature flags (auto-removes from help menu)
+	if !features.Groups {
+		mm.keys.NextGroup.SetEnabled(false)
+		mm.keys.PrevGroup.SetEnabled(false)
+		mm.keys.LoadDefault.SetEnabled(false)
+		mm.keys.UnloadDefault.SetEnabled(false)
+		mm.keys.SaveToGroup.SetEnabled(false)
+		mm.keys.MoveToGroup.SetEnabled(false)
+		mm.keys.NewGroup.SetEnabled(false)
+		mm.keys.DeleteGroup.SetEnabled(false)
+		mm.keys.Groups.SetEnabled(false)
+	}
+
+	return mm
 }
 
 func (m *manageModel) Init() tea.Cmd {
@@ -1527,9 +1547,9 @@ func (m *manageModel) View() string {
 	}
 	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
 
-	// Render group tabs if multiple groups exist
+	// Render group tabs if groups feature is enabled and multiple groups exist
 	groups := m.manager.GetGroups()
-	if len(groups) > 1 {
+	if m.features.Groups && len(groups) > 1 {
 		b.WriteString("\n")
 		activeGroup := m.manager.GetActiveGroup()
 		var tabs []string
