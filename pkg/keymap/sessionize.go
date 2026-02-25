@@ -115,6 +115,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.FocusEcosystem,
 			k.OpenEcosystem,
 			k.FocusCurrent,
+			k.GoToMapping,
 			k.ClearFocus,
 			k.ToggleWorktrees,
 			k.FilterDirty,
@@ -127,7 +128,6 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.ManageGroups,
 			k.NewGroup,
 			k.MapToGroup,
-			k.GoToMapping,
 		),
 		keymap.NewSection("Columns",
 			k.ToggleCx,
@@ -214,7 +214,7 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		),
 		GoToMapping: key.NewBinding(
 			key.WithKeys(","),
-			key.WithHelp(",", "go to mapping"),
+			key.WithHelp(",", "focus group"),
 		),
 		ToggleGitStatus: key.NewBinding(
 			key.WithKeys("s"),

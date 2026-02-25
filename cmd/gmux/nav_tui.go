@@ -733,10 +733,13 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 
 	// Auto-select group
 	if targetGroup == "" {
-		if last := mgr.GetLastAccessedGroup(); last != "" {
-			mgr.SetActiveGroup(last)
-		} else if matched := mgr.FindGroupForPath(cwd); matched != "" {
+		if matched := mgr.FindGroupForPath(cwd); matched != "" {
 			mgr.SetActiveGroup(matched)
+		} else if _, err := workspace.GetProjectByPath(cwd); err == nil {
+			// Workspace but not mapped to any group - use default
+			mgr.SetActiveGroup("default")
+		} else if last := mgr.GetLastAccessedGroup(); last != "" {
+			mgr.SetActiveGroup(last)
 		} else {
 			mgr.SetActiveGroup("default")
 		}

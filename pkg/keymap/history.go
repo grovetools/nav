@@ -60,11 +60,11 @@ func NewHistoryKeyMap(cfg *config.Config) HistoryKeyMap {
 		),
 		GoToSessionize: key.NewBinding(
 			key.WithKeys(","),
-			key.WithHelp(",", "go to sessionize"),
+			key.WithHelp(",", "focus group"),
 		),
 		FocusCurrent: key.NewBinding(
 			key.WithKeys("."),
-			key.WithHelp(".", "focus CWD in sz"),
+			key.WithHelp(".", "focus ecosystem"),
 		),
 	}
 

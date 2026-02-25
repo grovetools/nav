@@ -114,35 +114,18 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	ti.Width = 50
 
 	// Determine initial group based on context priority
-	initialGroup := "default"
+	initialGroup := mgr.GetActiveGroup()
 	autoEnableGroupFilter := false
+	clearFocus := false
 
-	// 1. Current working directory match (most specific - we're inside a mapped project)
 	cwd, err := os.Getwd()
 	if err == nil && cwd != "" {
 		if cwdGroup := mgr.FindGroupForPath(cwd); cwdGroup != "" {
-			initialGroup = cwdGroup
+			// CWD matches a mapped project - auto-enable filter
 			autoEnableGroupFilter = true
-		}
-	}
-
-	// 2. Ecosystem focus match (if CWD didn't match a mapped project)
-	if initialGroup == "default" && cwdFocusPath != "" {
-		focusNodeName := filepath.Base(cwdFocusPath)
-		groups := mgr.GetGroups()
-		for _, g := range groups {
-			if strings.EqualFold(g, focusNodeName) {
-				initialGroup = g
-				autoEnableGroupFilter = true
-				break
-			}
-		}
-	}
-
-	// 3. Last accessed group (don't auto-enable filter for this)
-	if initialGroup == "default" {
-		if lastGroup := mgr.GetLastAccessedGroup(); lastGroup != "" {
-			initialGroup = lastGroup
+		} else if _, err := workspace.GetProjectByPath(cwd); err == nil {
+			// Workspace but not mapped to any group - clear focus
+			clearFocus = true
 		}
 	}
 
@@ -224,8 +207,10 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	showLink := false    // Default off - takes space
 	showCx := true       // Default on - show CX column when data available
 	if state, err := manager.LoadState(configDir); err == nil {
-		// Prioritize CWD focus path over saved state
-		if cwdFocusPath != "" {
+		// Prioritize CWD focus path over saved state, but clear if in unmapped workspace
+		if clearFocus {
+			state.FocusedEcosystemPath = ""
+		} else if cwdFocusPath != "" {
 			state.FocusedEcosystemPath = cwdFocusPath
 		}
 		if state.FocusedEcosystemPath != "" {
@@ -325,6 +310,20 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 	// Synchronously apply initial filters to prevent UI flash
 	m.updateFiltered()
 	m.moveCursorToFirstSelectable()
+
+	// Attempt to position cursor on the current project
+	if cwd != "" {
+		if node, err := workspace.GetProjectByPath(cwd); err == nil && node != nil {
+			normalizedProject, _ := pathutil.NormalizeForLookup(filepath.Clean(node.Path))
+			for i, p := range m.filtered {
+				normalizedPath, _ := pathutil.NormalizeForLookup(filepath.Clean(p.Path))
+				if normalizedPath == normalizedProject && !m.contextOnlyPaths[p.Path] {
+					m.cursor = i
+					break
+				}
+			}
+		}
+	}
 
 	return m
 }
