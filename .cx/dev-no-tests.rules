@@ -1,11 +1,7 @@
 *.go
 Makefile
 go.mod
-grove.yml
 
 !tests/**
 
-@view: @a:grove-ecosystem:grove-core::dev-no-tests
-@view: @a:grove-ecosystem:grove-flow::dev-no-tests
-@view: @a:grove-ecosystem:grove-hooks::dev-no-tests
 
