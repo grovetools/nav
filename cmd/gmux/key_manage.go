@@ -2375,7 +2375,7 @@ func (m *manageModel) jumpToPath(targetPath string) bool {
 			if err != nil {
 				continue
 			}
-			if normalizedSessionPath == normalizedTarget {
+			if normalizedSessionPath == normalizedTarget || strings.HasPrefix(normalizedTarget, normalizedSessionPath+string(filepath.Separator)) {
 				// Found it! Stay on this group and set cursor
 				_ = m.manager.SetLastAccessedGroup(g)
 				m.sessions = sessions

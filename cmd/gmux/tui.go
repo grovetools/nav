@@ -120,11 +120,12 @@ func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []str
 
 	cwd, err := os.Getwd()
 	if err == nil && cwd != "" {
-		if cwdGroup := mgr.FindGroupForPath(cwd); cwdGroup != "" {
-			// CWD matches a mapped project - auto-enable filter
+		cwdGroup := mgr.FindGroupForPath(cwd)
+		if cwdGroup != "" && cwdGroup != "default" {
+			// CWD matches a non-default group - auto-enable filter
 			autoEnableGroupFilter = true
 		} else if _, err := workspace.GetProjectByPath(cwd); err == nil {
-			// Workspace but not mapped to any group - clear focus
+			// Workspace in default group or unmapped - clear focus
 			clearFocus = true
 		}
 	}
@@ -1323,9 +1324,20 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursorToFirstSelectable()
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
-		case key.Matches(msg, m.keys.FocusCurrent):
+		case key.Matches(msg, m.keys.FocusEcosystemCwd):
 			// Focus on the ecosystem (or ecosystem worktree) containing the current working directory
-			return m, m.focusCwdEcosystem()
+			return m, m.focusEcosystemForPath("")
+
+		case key.Matches(msg, m.keys.FocusEcosystemCursor):
+			// Focus on the ecosystem (or ecosystem worktree) containing the project under cursor
+			if m.cursor >= len(m.filtered) {
+				return m, nil
+			}
+			project := m.filtered[m.cursor]
+			if project == nil {
+				return m, nil
+			}
+			return m, m.focusEcosystemForPath(project.Path)
 
 		case key.Matches(msg, m.keys.OpenEcosystem):
 			// Open (focus into) the ecosystem at cursor if it's an ecosystem/ecosystem-worktree
@@ -1462,7 +1474,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusTimeout = time.Now().Add(30 * time.Second)
 			return m, nil
 
-		case key.Matches(msg, m.keys.GoToMapping):
+		case key.Matches(msg, m.keys.GoToMappingCursor):
 			// Switch to the group containing this project's mapping and apply group filter
 			if m.cursor >= len(m.filtered) {
 				return m, nil
@@ -1471,50 +1483,72 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if project == nil {
 				return m, nil
 			}
-
-			targetGroup := m.manager.FindGroupForPath(project.Path)
-			if targetGroup == "" {
-				m.statusMessage = "Project is not mapped to any key"
-				m.statusTimeout = time.Now().Add(2 * time.Second)
-				return m, clearStatusCmd(2 * time.Second)
-			}
-
-			m.manager.SetActiveGroup(targetGroup)
-			_ = m.manager.SetLastAccessedGroup(targetGroup)
-
-			// Reload sessions for the new group
-			m.sessions, _ = m.manager.GetSessions()
-			m.keyMap = make(map[string]string)
-			for _, s := range m.sessions {
-				if s.Path != "" {
-					expandedPath := expandPath(s.Path)
-					absPath, err := filepath.Abs(expandedPath)
-					if err == nil {
-						m.keyMap[filepath.Clean(absPath)] = s.Key
-					}
-				}
-			}
-
-			// Apply group filter to show only mapped projects
-			m.filterGroup = true
-			m.filterInput.SetValue("")
-			m.filterDirty = false
-			m.focusedProject = nil
-			m.ecosystemPickerMode = false
-
-			m.updateFiltered()
-
-			// Position cursor on the project
-			m.cursor = 0
-			cleanTargetPath := filepath.Clean(project.Path)
-			for i, p := range m.filtered {
-				if filepath.Clean(p.Path) == cleanTargetPath {
-					m.cursor = i
+			// Check if project has a direct key mapping (not just inside a mapped parent)
+			cleanPath := filepath.Clean(project.Path)
+			normalizedPath, _ := pathutil.NormalizeForLookup(cleanPath)
+			hasDirectMapping := false
+			for path := range m.keyMap {
+				normPath, _ := pathutil.NormalizeForLookup(path)
+				if normPath == normalizedPath {
+					hasDirectMapping = true
 					break
 				}
 			}
+			// If not directly mapped, prompt to add a mapping
+			if !hasDirectMapping {
+				return m, func() tea.Msg {
+					return initiateMappingMsg{
+						project:  project,
+						returnTo: viewSessionize,
+					}
+				}
+			}
+			return m, m.goToMappingForPath(project.Path)
 
-			return m, nil
+		case key.Matches(msg, m.keys.GoToMappingCwd):
+			// Switch to the group containing CWD's mapping and apply group filter
+			cwd, err := os.Getwd()
+			if err != nil {
+				m.statusMessage = "Could not get current directory"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+			// Find the project for CWD
+			cwdNormalized, _ := pathutil.NormalizeForLookup(cwd)
+			var cwdProject *manager.SessionizeProject
+			for _, p := range m.projects {
+				pNormalized, _ := pathutil.NormalizeForLookup(p.Path)
+				if pNormalized == cwdNormalized || strings.HasPrefix(cwdNormalized, pNormalized+string(filepath.Separator)) {
+					cwdProject = p
+					break
+				}
+			}
+			if cwdProject == nil {
+				m.statusMessage = "CWD is not inside a known project"
+				m.statusTimeout = time.Now().Add(2 * time.Second)
+				return m, clearStatusCmd(2 * time.Second)
+			}
+			// Check if CWD project has a direct key mapping
+			cleanPath := filepath.Clean(cwdProject.Path)
+			normalizedPath, _ := pathutil.NormalizeForLookup(cleanPath)
+			hasDirectMapping := false
+			for path := range m.keyMap {
+				normPath, _ := pathutil.NormalizeForLookup(path)
+				if normPath == normalizedPath {
+					hasDirectMapping = true
+					break
+				}
+			}
+			// If not directly mapped, prompt to add a mapping
+			if !hasDirectMapping {
+				return m, func() tea.Msg {
+					return initiateMappingMsg{
+						project:  cwdProject,
+						returnTo: viewSessionize,
+					}
+				}
+			}
+			return m, m.goToMappingForPath(cwdProject.Path)
 
 		case key.Matches(msg, m.keys.ToggleWorktrees):
 			m.worktreesFolded = !m.worktreesFolded
@@ -2522,16 +2556,20 @@ func (m *sessionizeModel) jumpToPath(targetPath string, applyGroupFilter bool) {
 	}
 }
 
-// focusCwdEcosystem applies focus to the CWD's ecosystem and returns any needed commands
-func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil
+// focusEcosystemForPath applies focus to the ecosystem containing the given path.
+// If targetPath is empty, uses the current working directory.
+func (m *sessionizeModel) focusEcosystemForPath(targetPath string) tea.Cmd {
+	if targetPath == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil
+		}
+		targetPath = cwd
 	}
 
-	cwdNormalized, err := pathutil.NormalizeForLookup(cwd)
+	targetNormalized, err := pathutil.NormalizeForLookup(targetPath)
 	if err != nil {
-		cwdNormalized = filepath.Clean(cwd)
+		targetNormalized = filepath.Clean(targetPath)
 	}
 
 	var targetEcosystem *manager.SessionizeProject
@@ -2545,8 +2583,8 @@ func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
 		if err != nil {
 			pNormalized = filepath.Clean(p.Path)
 		}
-		// Check if CWD is inside this ecosystem
-		if strings.HasPrefix(cwdNormalized, pNormalized+string(filepath.Separator)) || cwdNormalized == pNormalized {
+		// Check if target path is inside this ecosystem
+		if strings.HasPrefix(targetNormalized, pNormalized+string(filepath.Separator)) || targetNormalized == pNormalized {
 			if p.IsWorktree() {
 				targetEcosystem = p
 				targetEcosystemIsWorktree = true
@@ -2559,7 +2597,7 @@ func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
 	}
 
 	if targetEcosystem == nil {
-		m.statusMessage = "Current directory not inside a known ecosystem"
+		m.statusMessage = "Path not inside a known ecosystem"
 		m.statusTimeout = time.Now().Add(2 * time.Second)
 		return clearStatusCmd(2 * time.Second)
 	}
@@ -2578,7 +2616,7 @@ func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
 		if err != nil {
 			pNormalized = filepath.Clean(p.Path)
 		}
-		if pNormalized == cwdNormalized {
+		if pNormalized == targetNormalized {
 			m.cursor = i
 			break
 		}
@@ -2589,4 +2627,54 @@ func (m *sessionizeModel) focusCwdEcosystem() tea.Cmd {
 
 	_ = m.buildState().Save(m.configDir)
 	return updateDaemonFocusCmd(m.getVisiblePaths())
+}
+
+// goToMappingForPath switches to the group containing the path's mapping and applies group filter.
+// Caller should verify the path is mapped before calling this function.
+func (m *sessionizeModel) goToMappingForPath(targetPath string) tea.Cmd {
+	targetGroup := m.manager.FindGroupForPath(targetPath)
+	if targetGroup == "" {
+		// Should not happen if caller verified, but handle gracefully
+		return nil
+	}
+
+	m.manager.SetActiveGroup(targetGroup)
+	_ = m.manager.SetLastAccessedGroup(targetGroup)
+
+	// Reload sessions for the new group
+	m.sessions, _ = m.manager.GetSessions()
+	m.keyMap = make(map[string]string)
+	for _, s := range m.sessions {
+		if s.Path != "" {
+			expandedPath := expandPath(s.Path)
+			absPath, err := filepath.Abs(expandedPath)
+			if err == nil {
+				m.keyMap[filepath.Clean(absPath)] = s.Key
+			}
+		}
+	}
+
+	// Apply group filter to show only mapped projects
+	m.filterGroup = true
+	m.filterInput.SetValue("")
+	m.filterDirty = false
+	m.focusedProject = nil
+	m.ecosystemPickerMode = false
+
+	m.updateFiltered()
+
+	// Position cursor on the project (or a parent if the path is deep inside)
+	m.cursor = 0
+	cleanTargetPath := filepath.Clean(targetPath)
+	targetNormalized, _ := pathutil.NormalizeForLookup(cleanTargetPath)
+	for i, p := range m.filtered {
+		pNormalized, _ := pathutil.NormalizeForLookup(filepath.Clean(p.Path))
+		// Exact match or target is inside this project
+		if pNormalized == targetNormalized || strings.HasPrefix(targetNormalized, pNormalized+string(filepath.Separator)) {
+			m.cursor = i
+			break
+		}
+	}
+
+	return nil
 }

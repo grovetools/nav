@@ -407,7 +407,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeView = viewSessionize
 		cmd1 := m.switchToView(viewSessionize)
 		if m.sessionizeModel != nil {
-			cmd2 := m.sessionizeModel.focusCwdEcosystem()
+			cmd2 := m.sessionizeModel.focusEcosystemForPath("")
 			return m, tea.Batch(cmd1, cmd2)
 		}
 		return m, cmd1

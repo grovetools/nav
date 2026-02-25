@@ -10,22 +10,24 @@ import (
 // SessionizeKeyMap defines the key bindings for the sessionize TUI
 type SessionizeKeyMap struct {
 	keymap.Base
-	ToggleKey    key.Binding
-	EditKey      key.Binding
-	ClearKey     key.Binding
-	CloseSession key.Binding
-	FocusEcosystem   key.Binding
-	OpenEcosystem    key.Binding
-	FocusCurrent     key.Binding
-	ClearFocus       key.Binding
-	ToggleWorktrees  key.Binding
-	NextGroup        key.Binding
-	PrevGroup        key.Binding
-	FilterGroup      key.Binding
-	ManageGroups     key.Binding
-	NewGroup         key.Binding
-	MapToGroup       key.Binding
-	GoToMapping      key.Binding
+	ToggleKey            key.Binding
+	EditKey              key.Binding
+	ClearKey             key.Binding
+	CloseSession         key.Binding
+	FocusEcosystem       key.Binding
+	OpenEcosystem        key.Binding
+	FocusEcosystemCursor key.Binding
+	FocusEcosystemCwd    key.Binding
+	ClearFocus           key.Binding
+	ToggleWorktrees      key.Binding
+	NextGroup            key.Binding
+	PrevGroup            key.Binding
+	FilterGroup          key.Binding
+	ManageGroups         key.Binding
+	NewGroup             key.Binding
+	MapToGroup           key.Binding
+	GoToMappingCursor    key.Binding
+	GoToMappingCwd       key.Binding
 	ToggleGitStatus  key.Binding
 	ToggleBranch     key.Binding
 	ToggleNoteCounts key.Binding
@@ -114,8 +116,10 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 		keymap.NewSection("Focus",
 			k.FocusEcosystem,
 			k.OpenEcosystem,
-			k.FocusCurrent,
-			k.GoToMapping,
+			k.FocusEcosystemCursor,
+			k.FocusEcosystemCwd,
+			k.GoToMappingCursor,
+			k.GoToMappingCwd,
 			k.ClearFocus,
 			k.ToggleWorktrees,
 			k.FilterDirty,
@@ -176,9 +180,13 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 			key.WithKeys("o"),
 			key.WithHelp("o", "open ecosystem"),
 		),
-		FocusCurrent: key.NewBinding(
+		FocusEcosystemCursor: key.NewBinding(
 			key.WithKeys("."),
-			key.WithHelp(".", "focus current ecosystem"),
+			key.WithHelp(".", "focus cursor ecosystem"),
+		),
+		FocusEcosystemCwd: key.NewBinding(
+			key.WithKeys(">"),
+			key.WithHelp(">", "focus cwd ecosystem"),
 		),
 		ClearFocus: key.NewBinding(
 			key.WithKeys("0"),
@@ -212,9 +220,13 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 			key.WithKeys("M"),
 			key.WithHelp("M", "map to group"),
 		),
-		GoToMapping: key.NewBinding(
+		GoToMappingCursor: key.NewBinding(
 			key.WithKeys(","),
-			key.WithHelp(",", "focus group"),
+			key.WithHelp(",", "go to cursor mapping"),
+		),
+		GoToMappingCwd: key.NewBinding(
+			key.WithKeys("<"),
+			key.WithHelp("<", "go to cwd mapping"),
 		),
 		ToggleGitStatus: key.NewBinding(
 			key.WithKeys("s"),
