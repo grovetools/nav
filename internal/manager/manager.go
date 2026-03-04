@@ -19,6 +19,7 @@ import (
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/tmux/keygen"
 	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/util/pathutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -647,10 +648,16 @@ func (m *Manager) GetGroupSessionCount(name string) int {
 // FindGroupForPath finds which group contains a session with the given path.
 // It matches if the target path equals a mapped path OR is inside a mapped path.
 // Prioritizes "default" group if it has a match, otherwise returns the most specific match.
+// Uses pathutil.NormalizeForLookup to handle symlinks and case sensitivity on macOS.
 func (m *Manager) FindGroupForPath(targetPath string) string {
-	targetClean, err := filepath.Abs(expandPath(targetPath))
+	// Normalize the target path to resolve symlinks and handle case sensitivity
+	targetNormalized, err := pathutil.NormalizeForLookup(expandPath(targetPath))
 	if err != nil {
-		return ""
+		// Fallback to Abs if normalization fails
+		targetNormalized, err = filepath.Abs(expandPath(targetPath))
+		if err != nil {
+			return ""
+		}
 	}
 
 	originalGroup := m.activeGroup
@@ -665,25 +672,28 @@ func (m *Manager) FindGroupForPath(targetPath string) string {
 		sessions, _ := m.GetSessions()
 		for _, s := range sessions {
 			if s.Path != "" {
-				p, err := filepath.Abs(expandPath(s.Path))
-				if err == nil {
-					// Check if target path equals or is inside the mapped path
-					// Use case-insensitive comparison for macOS compatibility
-					targetLower := strings.ToLower(targetClean)
-					pLower := strings.ToLower(p)
-					if targetLower == pLower || strings.HasPrefix(targetLower, pLower+string(filepath.Separator)) {
-						// Track default group matches separately for prioritization
-						if g == "default" && len(p) > defaultMatchLen {
-							defaultMatchLen = len(p)
-						}
-						// Keep track of the most specific (longest) match
-						if len(p) > bestMatchLen {
-							bestMatch = g
-							bestMatchLen = len(p)
-						} else if len(p) == bestMatchLen && g == "default" {
-							// Prefer default group when match lengths are equal
-							bestMatch = g
-						}
+				// Normalize the session path to resolve symlinks
+				pNormalized, err := pathutil.NormalizeForLookup(expandPath(s.Path))
+				if err != nil {
+					// Fallback to Abs if normalization fails
+					pNormalized, err = filepath.Abs(expandPath(s.Path))
+					if err != nil {
+						continue
+					}
+				}
+				// Check if target path equals or is inside the mapped path
+				if targetNormalized == pNormalized || strings.HasPrefix(targetNormalized, pNormalized+string(filepath.Separator)) {
+					// Track default group matches separately for prioritization
+					if g == "default" && len(pNormalized) > defaultMatchLen {
+						defaultMatchLen = len(pNormalized)
+					}
+					// Keep track of the most specific (longest) match
+					if len(pNormalized) > bestMatchLen {
+						bestMatch = g
+						bestMatchLen = len(pNormalized)
+					} else if len(pNormalized) == bestMatchLen && g == "default" {
+						// Prefer default group when match lengths are equal
+						bestMatch = g
 					}
 				}
 			}

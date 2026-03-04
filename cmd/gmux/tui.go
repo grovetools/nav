@@ -1603,27 +1603,19 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if project == nil {
 				return m, nil
 			}
-			// Check if project has a direct key mapping (not just inside a mapped parent)
-			cleanPath := filepath.Clean(project.Path)
-			normalizedPath, _ := pathutil.NormalizeForLookup(cleanPath)
-			hasDirectMapping := false
-			for path := range m.keyMap {
-				normPath, _ := pathutil.NormalizeForLookup(path)
-				if normPath == normalizedPath {
-					hasDirectMapping = true
-					break
+			// First check if the project is mapped in ANY group (not just current)
+			targetGroup := m.manager.FindGroupForPath(project.Path)
+			if targetGroup != "" {
+				// Project is mapped in some group - switch to that group and apply filter
+				return m, m.goToMappingForPath(project.Path)
+			}
+			// Not mapped anywhere - prompt to add a mapping
+			return m, func() tea.Msg {
+				return initiateMappingMsg{
+					project:  project,
+					returnTo: viewSessionize,
 				}
 			}
-			// If not directly mapped, prompt to add a mapping
-			if !hasDirectMapping {
-				return m, func() tea.Msg {
-					return initiateMappingMsg{
-						project:  project,
-						returnTo: viewSessionize,
-					}
-				}
-			}
-			return m, m.goToMappingForPath(project.Path)
 
 		case key.Matches(msg, m.keys.GoToMappingCwd):
 			// Switch to the group containing CWD's mapping and apply group filter
@@ -1648,27 +1640,19 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusTimeout = time.Now().Add(2 * time.Second)
 				return m, clearStatusCmd(2 * time.Second)
 			}
-			// Check if CWD project has a direct key mapping
-			cleanPath := filepath.Clean(cwdProject.Path)
-			normalizedPath, _ := pathutil.NormalizeForLookup(cleanPath)
-			hasDirectMapping := false
-			for path := range m.keyMap {
-				normPath, _ := pathutil.NormalizeForLookup(path)
-				if normPath == normalizedPath {
-					hasDirectMapping = true
-					break
+			// First check if the project is mapped in ANY group (not just current)
+			targetGroup := m.manager.FindGroupForPath(cwdProject.Path)
+			if targetGroup != "" {
+				// Project is mapped in some group - switch to that group and apply filter
+				return m, m.goToMappingForPath(cwdProject.Path)
+			}
+			// Not mapped anywhere - prompt to add a mapping
+			return m, func() tea.Msg {
+				return initiateMappingMsg{
+					project:  cwdProject,
+					returnTo: viewSessionize,
 				}
 			}
-			// If not directly mapped, prompt to add a mapping
-			if !hasDirectMapping {
-				return m, func() tea.Msg {
-					return initiateMappingMsg{
-						project:  cwdProject,
-						returnTo: viewSessionize,
-					}
-				}
-			}
-			return m, m.goToMappingForPath(cwdProject.Path)
 
 		case key.Matches(msg, m.keys.ToggleWorktrees):
 			m.worktreesFolded = !m.worktreesFolded
@@ -2026,12 +2010,21 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		_ = m.manager.UpdateSessions(m.sessions)
 		_ = m.manager.RegenerateBindings()
 
-		// Update our key map
-		delete(m.keyMap, cleanPath)
-
 		// Refresh sessions to reflect changes
 		if sessions, err := m.manager.GetSessions(); err == nil {
 			m.sessions = sessions
+		}
+
+		// Fully rebuild the keyMap from sessions to ensure visual state updates immediately
+		m.keyMap = make(map[string]string)
+		for _, s := range m.sessions {
+			if s.Path != "" {
+				expandedPath := expandPath(s.Path)
+				absPath, err := filepath.Abs(expandedPath)
+				if err == nil {
+					m.keyMap[filepath.Clean(absPath)] = s.Key
+				}
+			}
 		}
 
 		// Reload tmux config
@@ -2039,7 +2032,8 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 	}
 }
 
-// executeMapToGroup maps the selected project(s) to the first available keys in the target group
+// executeMapToGroup moves the selected project(s) to the target group.
+// It first removes them from the source group, then maps them to available keys in the target group.
 func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	if len(m.mapToGroupPaths) == 0 {
 		return
@@ -2047,8 +2041,38 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 
 	m.manager.TakeSnapshot()
 
-	// Save current group
-	currentGroup := m.manager.GetActiveGroup()
+	// Save current group (source group)
+	sourceGroup := m.manager.GetActiveGroup()
+
+	// First, remove mappings from the source group
+	sourceSessions, _ := m.manager.GetSessions()
+	pathsToMoveNormalized := make(map[string]bool)
+	for _, p := range m.mapToGroupPaths {
+		normalized, err := pathutil.NormalizeForLookup(filepath.Clean(p))
+		if err == nil {
+			pathsToMoveNormalized[normalized] = true
+		}
+	}
+
+	// Clear the paths from source sessions
+	for i := range sourceSessions {
+		if sourceSessions[i].Path != "" {
+			expandedPath := expandPath(sourceSessions[i].Path)
+			absPath, _ := filepath.Abs(expandedPath)
+			normalizedPath, err := pathutil.NormalizeForLookup(filepath.Clean(absPath))
+			if err == nil && pathsToMoveNormalized[normalizedPath] {
+				sourceSessions[i].Path = ""
+				sourceSessions[i].Repository = ""
+			}
+		}
+	}
+
+	// Save source group with removed mappings
+	if err := m.manager.UpdateSessions(sourceSessions); err != nil {
+		m.statusMessage = fmt.Sprintf("Error removing from source: %v", err)
+		m.statusTimeout = time.Now().Add(2 * time.Second)
+		return
+	}
 
 	// Switch to target group
 	m.manager.SetActiveGroup(targetGroup)
@@ -2065,7 +2089,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	if len(availableKeys) < len(m.mapToGroupPaths) {
 		m.statusMessage = fmt.Sprintf("Not enough empty slots in '%s' (need %d, have %d)", targetGroup, len(m.mapToGroupPaths), len(availableKeys))
 		m.statusTimeout = time.Now().Add(2 * time.Second)
-		m.manager.SetActiveGroup(currentGroup) // Restore group
+		m.manager.SetActiveGroup(sourceGroup) // Restore group
 		return
 	}
 
@@ -2087,7 +2111,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	if err := m.manager.UpdateSessions(targetSessions); err != nil {
 		m.statusMessage = fmt.Sprintf("Error: %v", err)
 		m.statusTimeout = time.Now().Add(2 * time.Second)
-		m.manager.SetActiveGroup(currentGroup)
+		m.manager.SetActiveGroup(sourceGroup)
 		return
 	}
 
@@ -2118,7 +2142,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 		m.moveCursorToFirstSelectable()
 	}
 
-	m.statusMessage = fmt.Sprintf("Mapped %d items to '%s'", assignedCount, targetGroup)
+	m.statusMessage = fmt.Sprintf("Moved %d items to '%s'", assignedCount, targetGroup)
 	m.statusTimeout = time.Now().Add(2 * time.Second)
 }
 
