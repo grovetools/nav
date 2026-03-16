@@ -1,18 +1,18 @@
 // Package manager provides session management for the nav TUI.
-// Enrichment logic has been consolidated into github.com/grovetools/core/pkg/enrichment.
-// This file provides thin wrappers for backward compatibility.
+// Enrichment data is now provided by the daemon. When the daemon is not running,
+// enrichment data is not available (graceful degradation).
 package manager
 
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/grovetools/core/git"
-	"github.com/grovetools/core/pkg/enrichment"
+	"github.com/grovetools/core/pkg/daemon"
 )
 
 // EnrichmentOptions controls which data to fetch and for which projects.
-// This is a local alias for the core enrichment options.
 type EnrichmentOptions struct {
 	FetchNoteCounts bool
 	FetchGitStatus  bool
@@ -31,7 +31,7 @@ func DefaultEnrichmentOptions() *EnrichmentOptions {
 }
 
 // EnrichProjects updates SessionizeProject items in-place with runtime data.
-// This function is used for local enrichment when the daemon is not running.
+// This function fetches enrichment data via the daemon client when available.
 func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *EnrichmentOptions) {
 	if opts == nil {
 		opts = DefaultEnrichmentOptions()
@@ -89,10 +89,16 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 	wg.Wait()
 }
 
-// FetchNoteCountsMap fetches note counts for all known workspaces.
-// Delegates to core/pkg/enrichment.
+// FetchNoteCountsMap fetches note counts via the daemon client.
+// Returns empty map if daemon is not running (graceful degradation).
 func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
-	coreCounts, err := enrichment.FetchNoteCountsMap()
+	client := daemon.New()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	coreCounts, err := client.GetNoteCounts(ctx)
 	if err != nil {
 		return make(map[string]*NoteCounts), err
 	}
@@ -114,10 +120,16 @@ func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
 	return result, nil
 }
 
-// FetchPlanStatsMap fetches plan statistics for all workspaces.
-// Delegates to core/pkg/enrichment.
+// FetchPlanStatsMap fetches plan statistics via the daemon client.
+// Returns empty map if daemon is not running (graceful degradation).
 func FetchPlanStatsMap() (map[string]*PlanStats, error) {
-	coreStats, err := enrichment.FetchPlanStatsMap()
+	client := daemon.New()
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	coreStats, err := client.GetPlanStats(ctx)
 	if err != nil {
 		return make(map[string]*PlanStats), err
 	}

@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/daemon"
-	"github.com/grovetools/core/pkg/enrichment"
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
@@ -368,88 +367,92 @@ func fetchAllPlanStatsCmd() tea.Cmd {
 	}
 }
 
-// fetchAllReleaseInfoCmd fetches release info using core enrichment.
+// fetchAllReleaseInfoCmd fetches release info via daemon client.
 func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		// Convert to workspace nodes for the enrichment function
-		nodes := make([]*workspace.WorkspaceNode, len(projects))
-		for i, p := range projects {
-			nodes[i] = p.WorkspaceNode
-		}
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-		// Use core enrichment function
-		coreReleases, _ := enrichment.FetchToolInfoMap(nodes, true, false)
+		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchReleaseInfo: true})
 
-		// Convert to local types
-		releases := make(map[string]*manager.ReleaseInfo, len(coreReleases))
-		for path, info := range coreReleases {
-			releases[path] = &manager.ReleaseInfo{
-				LatestTag:    info.LatestTag,
-				CommitsAhead: info.CommitsAhead,
+		releases := make(map[string]*manager.ReleaseInfo)
+		for _, ws := range workspaces {
+			if ws.ReleaseInfo != nil {
+				releases[ws.Path] = &manager.ReleaseInfo{
+					LatestTag:    ws.ReleaseInfo.LatestTag,
+					CommitsAhead: ws.ReleaseInfo.CommitsAhead,
+				}
 			}
 		}
 		return releaseInfoMapMsg{releases: releases}
 	}
 }
 
-// fetchAllBinaryStatusCmd fetches active binary status for all projects.
+// fetchAllBinaryStatusCmd fetches active binary status via daemon client.
 func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		// Convert to workspace nodes for the enrichment function
-		nodes := make([]*workspace.WorkspaceNode, len(projects))
-		for i, p := range projects {
-			nodes[i] = p.WorkspaceNode
-		}
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-		// Use core enrichment function
-		_, coreBinaries := enrichment.FetchToolInfoMap(nodes, false, true)
+		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchBinaryStatus: true})
 
-		// Convert to local types
-		statuses := make(map[string]*manager.BinaryStatus, len(coreBinaries))
-		for path, status := range coreBinaries {
-			statuses[path] = &manager.BinaryStatus{
-				ToolName:       status.ToolName,
-				IsDevActive:    status.IsDevActive,
-				LinkName:       status.LinkName,
-				CurrentVersion: status.CurrentVersion,
+		statuses := make(map[string]*manager.BinaryStatus)
+		for _, ws := range workspaces {
+			if ws.ActiveBinary != nil {
+				statuses[ws.Path] = &manager.BinaryStatus{
+					ToolName:       ws.ActiveBinary.ToolName,
+					IsDevActive:    ws.ActiveBinary.IsDevActive,
+					LinkName:       ws.ActiveBinary.LinkName,
+					CurrentVersion: ws.ActiveBinary.CurrentVersion,
+				}
 			}
 		}
 		return binaryStatusMapMsg{statuses: statuses}
 	}
 }
 
-// fetchCxPerLineStatsCmd fetches context stats using core enrichment.
+// fetchCxPerLineStatsCmd fetches context stats via daemon client.
 func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
-		// Convert to workspace nodes for the enrichment function
-		nodes := make([]*workspace.WorkspaceNode, len(projects))
-		for i, p := range projects {
-			nodes[i] = p.WorkspaceNode
-		}
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-		// Use core enrichment function
-		coreStats := enrichment.FetchCxStatsMap(nodes)
+		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchCxStats: true})
 
-		// Convert to local types
-		stats := make(map[string]*manager.CxStats, len(coreStats))
-		for path, coreStat := range coreStats {
-			stats[path] = &manager.CxStats{
-				Files:  coreStat.Files,
-				Tokens: coreStat.Tokens,
-				Size:   coreStat.Size,
+		stats := make(map[string]*manager.CxStats)
+		for _, ws := range workspaces {
+			if ws.CxStats != nil {
+				stats[ws.Path] = &manager.CxStats{
+					Files:  ws.CxStats.Files,
+					Tokens: ws.CxStats.Tokens,
+					Size:   ws.CxStats.Size,
+				}
 			}
 		}
 		return cxStatsMapMsg{stats: stats}
 	}
 }
 
-// fetchAllRemoteURLsCmd fetches the git remote URL for all projects.
+// fetchAllRemoteURLsCmd fetches the git remote URL via daemon client.
 func fetchAllRemoteURLsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	return func() tea.Msg {
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchRemoteURL: true})
+
 		urls := make(map[string]string)
-		for _, p := range projects {
-			if url := enrichment.GetRemoteURL(p.Path); url != "" {
-				urls[p.Path] = url
+		for _, ws := range workspaces {
+			if ws.GitRemoteURL != "" {
+				urls[ws.Path] = ws.GitRemoteURL
 			}
 		}
 		return remoteURLMapMsg{urls: urls}
