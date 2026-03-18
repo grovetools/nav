@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -656,9 +657,18 @@ func stopDaemonStream() {
 	daemonStreamState.started = false
 }
 
+var lastFocusPaths string // serialized for comparison
+
 // updateDaemonFocusCmd tells the daemon which workspaces to prioritize for scanning.
 // This should be called whenever the visible/filtered workspace list changes.
 func updateDaemonFocusCmd(paths []string) tea.Cmd {
+	sort.Strings(paths)
+	key := strings.Join(paths, "\x00")
+	if key == lastFocusPaths {
+		return nil // No change, skip
+	}
+	lastFocusPaths = key
+
 	return func() tea.Msg {
 		client := daemon.New()
 		defer client.Close()
