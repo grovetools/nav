@@ -271,16 +271,15 @@ func spinnerTickCmd() tea.Cmd {
 // re-discovers workspaces and broadcasts the update via SSE.
 func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 	return func() tea.Msg {
-		// Trigger daemon refresh if available (non-blocking, fire-and-forget)
-		go func() {
-			client := daemon.New()
-			defer client.Close()
-			if client.IsRunning() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = client.Refresh(ctx)
-			}
-		}()
+		// Trigger daemon refresh synchronously so the subsequent project
+		// fetch returns freshly scanned data.
+		client := daemon.New()
+		if client.IsRunning() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = client.Refresh(ctx)
+			cancel()
+		}
+		client.Close()
 
 		projects, _ := mgr.GetAvailableProjects()
 
