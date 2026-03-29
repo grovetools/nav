@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/pkg/daemon"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
@@ -433,6 +435,22 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd1
 
 	// Route background data messages to their owners regardless of active view
+	case daemonStateUpdateMsg, daemonStreamStartedMsg, daemonStreamErrorMsg:
+		// Always route daemon stream messages to the sessionize model to maintain the listening loop,
+		// regardless of the currently active view tab.
+		if m.sessionizeModel != nil {
+			newModel, cmd := m.sessionizeModel.Update(msg)
+			if sm, ok := newModel.(sessionizeModel); ok {
+				m.sessionizeModel = &sm
+			}
+			return m, cmd
+		}
+		// If sessionizeModel isn't available but stream started, ensure we keep listening
+		if _, isError := msg.(daemonStreamErrorMsg); !isError {
+			return m, listenToDaemonCmd()
+		}
+		return m, nil
+
 	case initialProjectsEnrichedMsg:
 		if m.manageModel != nil {
 			newModel, cmd := m.manageModel.Update(msg)
@@ -781,6 +799,16 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 	// Run the TUI
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
+
+	// Clear daemon focus so it stops high-frequency scanning after TUI exit
+	clientDaemon := daemon.New()
+	if clientDaemon.IsRunning() {
+		ctxDaemon, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+		_ = clientDaemon.SetFocus(ctxDaemon, []string{})
+		cancel()
+	}
+	clientDaemon.Close()
+
 	if err != nil {
 		return fmt.Errorf("error running program: %w", err)
 	}

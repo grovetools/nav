@@ -266,6 +266,30 @@ func spinnerTickCmd() tea.Cmd {
 	})
 }
 
+// loadProjectsFromManager handles fetching and formatting the project list.
+func loadProjectsFromManager(mgr *tmux.Manager, configDir string) tea.Msg {
+	projects, _ := mgr.GetAvailableProjects()
+
+	// Sort by access history
+	if history, err := mgr.GetAccessHistory(); err == nil {
+		projects = manager.SortProjectsByAccess(history, projects)
+	}
+
+	// Group cloned repos under a virtual "Cloned Repos" ecosystem
+	projects = groupClonedProjectsAsEcosystem(projects)
+
+	// Convert to pointers
+	projectPtrs := make([]*manager.SessionizeProject, len(projects))
+	for i := range projects {
+		projectPtrs[i] = &projects[i]
+	}
+
+	// Save to cache for next startup
+	_ = manager.SaveProjectCache(configDir, projects)
+
+	return projectsUpdateMsg{projects: projectPtrs}
+}
+
 // fetchProjectsCmd returns a command that re-scans configured search paths.
 // This command only performs discovery and does NOT fetch enrichment data.
 // If the daemon is running, it also triggers a daemon refresh so the daemon
@@ -282,26 +306,15 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 		}
 		client.Close()
 
-		projects, _ := mgr.GetAvailableProjects()
+		return loadProjectsFromManager(mgr, configDir)
+	}
+}
 
-		// Sort by access history
-		if history, err := mgr.GetAccessHistory(); err == nil {
-			projects = manager.SortProjectsByAccess(history, projects)
-		}
-
-		// Group cloned repos under a virtual "Cloned Repos" ecosystem
-		projects = groupClonedProjectsAsEcosystem(projects)
-
-		// Convert to pointers
-		projectPtrs := make([]*manager.SessionizeProject, len(projects))
-		for i := range projects {
-			projectPtrs[i] = &projects[i]
-		}
-
-		// Save to cache for next startup
-		_ = manager.SaveProjectCache(configDir, projects)
-
-		return projectsUpdateMsg{projects: projectPtrs}
+// reloadProjectsCmd loads projects without triggering a daemon refresh.
+// Used when reacting to a daemon-pushed workspace update.
+func reloadProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
+	return func() tea.Msg {
+		return loadProjectsFromManager(mgr, configDir)
 	}
 }
 

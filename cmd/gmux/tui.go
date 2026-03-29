@@ -802,19 +802,34 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case daemonStateUpdateMsg:
 		// Handle real-time state updates from daemon
-		// Update enrichment data for workspaces that changed
+		source := msg.update.Source
+
+		if msg.update.UpdateType == "workspaces" &&
+			(source == "workspace" || source == "workspace_watcher") {
+			// The workspace collector or watcher detected a structural change
+			// (new clone, worktree add/remove). Reload the full project list.
+			return m, tea.Batch(reloadProjectsCmd(m.manager, m.configDir), listenToDaemonCmd())
+		}
+
+		// Only process enrichment updates from sources that produce data
+		// the TUI cares about. Skip others to avoid unnecessary re-renders.
 		if msg.update.Workspaces != nil {
-			for _, ew := range msg.update.Workspaces {
-				if proj, ok := m.projectMap[ew.Path]; ok {
-					if ew.GitStatus != nil {
-						proj.GitStatus = ew.GitStatus
-						proj.EnrichmentStatus["git"] = "done"
+			switch source {
+			case "git":
+				for _, ew := range msg.update.Workspaces {
+					if proj, ok := m.projectMap[ew.Path]; ok {
+						if ew.GitStatus != nil {
+							proj.GitStatus = ew.GitStatus
+							proj.EnrichmentStatus["git"] = "done"
+						}
+						if ew.GitRemoteURL != "" {
+							proj.GitRemoteURL = ew.GitRemoteURL
+						}
 					}
-					if ew.GitRemoteURL != "" {
-						proj.GitRemoteURL = ew.GitRemoteURL
-					}
-					// Map NoteCounts from daemon
-					if ew.NoteCounts != nil {
+				}
+			case "note", "note_watcher":
+				for _, ew := range msg.update.Workspaces {
+					if proj, ok := m.projectMap[ew.Path]; ok && ew.NoteCounts != nil {
 						proj.NoteCounts = &manager.NoteCounts{
 							Current:    ew.NoteCounts.Current,
 							Issues:     ew.NoteCounts.Issues,
@@ -826,8 +841,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							Other:      ew.NoteCounts.Other,
 						}
 					}
-					// Map PlanStats from daemon
-					if ew.PlanStats != nil {
+				}
+			case "plan", "flow_watcher":
+				for _, ew := range msg.update.Workspaces {
+					if proj, ok := m.projectMap[ew.Path]; ok && ew.PlanStats != nil {
 						proj.PlanStats = &manager.PlanStats{
 							TotalPlans: ew.PlanStats.TotalPlans,
 							ActivePlan: ew.PlanStats.ActivePlan,
@@ -843,6 +860,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			// Sources like "workspace", "workspace_watcher" are handled above.
+			// Other unknown sources are ignored to avoid wasteful re-renders.
 		}
 		// Continue listening for more updates
 		return m, listenToDaemonCmd()
