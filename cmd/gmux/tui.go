@@ -811,6 +811,48 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(reloadProjectsCmd(m.manager, m.configDir), listenToDaemonCmd())
 		}
 
+		// Process partial workspace updates (deltas) — only changed fields on changed workspaces
+		if msg.update.UpdateType == "workspaces_delta" && msg.update.WorkspaceDeltas != nil {
+			for _, delta := range msg.update.WorkspaceDeltas {
+				if proj, ok := m.projectMap[delta.Path]; ok {
+					if delta.GitStatus != nil {
+						proj.GitStatus = delta.GitStatus
+						proj.EnrichmentStatus["git"] = "done"
+					}
+					if delta.GitRemoteURL != nil {
+						proj.GitRemoteURL = *delta.GitRemoteURL
+					}
+					if delta.NoteCounts != nil {
+						proj.NoteCounts = &manager.NoteCounts{
+							Current:    delta.NoteCounts.Current,
+							Issues:     delta.NoteCounts.Issues,
+							Inbox:      delta.NoteCounts.Inbox,
+							Docs:       delta.NoteCounts.Docs,
+							Completed:  delta.NoteCounts.Completed,
+							Review:     delta.NoteCounts.Review,
+							InProgress: delta.NoteCounts.InProgress,
+							Other:      delta.NoteCounts.Other,
+						}
+					}
+					if delta.PlanStats != nil {
+						proj.PlanStats = &manager.PlanStats{
+							TotalPlans: delta.PlanStats.TotalPlans,
+							ActivePlan: delta.PlanStats.ActivePlan,
+							Running:    delta.PlanStats.Running,
+							Pending:    delta.PlanStats.Pending,
+							Completed:  delta.PlanStats.Completed,
+							Failed:     delta.PlanStats.Failed,
+							Todo:       delta.PlanStats.Todo,
+							Hold:       delta.PlanStats.Hold,
+							Abandoned:  delta.PlanStats.Abandoned,
+							PlanStatus: delta.PlanStats.PlanStatus,
+						}
+					}
+				}
+			}
+			return m, listenToDaemonCmd()
+		}
+
 		// Only process enrichment updates from sources that produce data
 		// the TUI cares about. Skip others to avoid unnecessary re-renders.
 		if msg.update.Workspaces != nil {

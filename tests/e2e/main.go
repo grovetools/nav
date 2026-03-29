@@ -33,6 +33,10 @@ func main() {
 		GmuxSzColsCombinedViewScenario(),
 		GmuxSzColsFilterHidesCxScenario(),
 
+		// Delta-aware workspace update tests
+		NavDeltaUpdatesGitScenario(),
+		NavDeltaUpdatesNotesScenario(),
+		NavDeltaIgnoresUnknownPathScenario(),
 	}
 
 	if err := app.Execute(context.Background(), scenarios); err != nil {
