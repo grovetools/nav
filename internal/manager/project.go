@@ -40,7 +40,7 @@ type ReleaseInfo struct {
 
 // BinaryStatus holds the active status of a project's binary.
 type BinaryStatus struct {
-	ToolName       string `json:"tool_name"`        // The binary/tool name (e.g., "gmux", "flow")
+	ToolName       string `json:"tool_name"`        // The binary/tool name (e.g., "nav", "flow")
 	IsDevActive    bool   `json:"is_dev_active"`
 	LinkName       string `json:"link_name"`
 	CurrentVersion string `json:"current_version"` // Current installed version (e.g., "main-374a674")

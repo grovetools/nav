@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogVersion = grovelogging.NewUnifiedLogger("gmux.version")
+var ulogVersion = grovelogging.NewUnifiedLogger("nav.version")
 
 var versionCmd = &cobra.Command{
 	Use:   "version",

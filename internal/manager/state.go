@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SessionizerState holds the persistent state for the gmux sessionizer
+// SessionizerState holds the persistent state for the nav sessionizer
 type SessionizerState struct {
 	FocusedEcosystemPath string   `yaml:"focused_ecosystem_path,omitempty"`
 	WorktreesFolded      bool     `yaml:"worktrees_folded,omitempty"`

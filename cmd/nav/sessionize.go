@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogSessionize = grovelogging.NewUnifiedLogger("gmux.sessionize")
+var ulogSessionize = grovelogging.NewUnifiedLogger("nav.sessionize")
 
 // buildInitialEnrichmentOptions creates options for enriching project data.
 // For initial load, we disable enrichment to show the UI faster.
@@ -178,7 +178,7 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	// Welcome message
 	ulogSessionize.Info("First run setup").
-		Pretty("Welcome to gmux sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
+		Pretty("Welcome to nav sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
 		PrettyOnly().
 		Emit()
 
@@ -336,7 +336,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 	ulogSessionize.Success("Configuration saved").
 		Field("config_path", configPath).
 		Field("directory_count", len(searchPaths)).
-		Pretty(fmt.Sprintf("\n%s Configuration saved to: %s\n%s Added %d project director%s\n\n%s Setup complete! Run 'gmux sz' to start using the sessionizer.",
+		Pretty(fmt.Sprintf("\n%s Configuration saved to: %s\n%s Added %d project director%s\n\n%s Setup complete! Run 'nav sz' to start using the sessionizer.",
 			theme.IconSuccess, configPath,
 			theme.IconSuccess, len(searchPaths), directorySuffix,
 			theme.IconSuccess)).
@@ -357,7 +357,7 @@ func generateConfigWithPaths(searchPaths []struct{ key, path, description string
 	var content strings.Builder
 	
 	content.WriteString(`# project-search-paths.yaml
-# Configuration file for gmux sessionizer
+# Configuration file for nav sessionizer
 #
 # This file defines where to search for projects.
 # The sessionizer will scan these directories to find projects
@@ -420,7 +420,7 @@ available_keys = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m
 // getDefaultConfigContent returns a well-commented default configuration
 func getDefaultConfigContent() string {
 	return `# project-search-paths.yaml
-# Configuration file for gmux sessionizer
+# Configuration file for nav sessionizer
 #
 # This file defines where to search for projects and how to discover them.
 # The sessionizer will scan these directories and their subdirectories
@@ -482,7 +482,7 @@ explicit_projects:
 # 2. Each search path needs a unique key (like 'work', 'personal')
 # 3. Set enabled: false to temporarily disable a search path
 # 4. The sessionizer automatically discovers Git worktrees in .grove-worktrees
-# 5. Projects are sorted by recent access when using gmux
+# 5. Projects are sorted by recent access when using nav
 `
 }
 
@@ -491,7 +491,7 @@ explicit_projects:
 // ParentEcosystemPath pointing to the cx ecosystem path (~/.local/share/grove/cx).
 // This function adds a virtual ecosystem node if one doesn't already exist.
 func groupClonedProjectsAsEcosystem(projects []manager.SessionizeProject) []manager.SessionizeProject {
-	logger := grovelogging.NewLogger("gmux-sessionize")
+	logger := grovelogging.NewLogger("nav-sessionize")
 
 	// Get the cx ecosystem path to identify cloned repos
 	cxEcoPath, err := repo.GetCxEcosystemPath()

@@ -20,9 +20,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "gmux",
-	Short: "Grove tmux management tool",
-	Long:  `A CLI tool for managing tmux sessions and configurations in the Grove ecosystem.`,
+	Use:   "nav",
+	Short: "Grove navigation and workspace management tool",
+	Long:  `A CLI tool for navigating workspaces, managing tmux sessions, and handling configurations in the Grove ecosystem.`,
 }
 
 var listCmd = &cobra.Command{

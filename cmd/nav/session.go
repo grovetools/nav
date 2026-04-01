@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogSession = grovelogging.NewUnifiedLogger("gmux.session")
+var ulogSession = grovelogging.NewUnifiedLogger("nav.session")
 
 var sessionCmd = &cobra.Command{
 	Use:   "session",

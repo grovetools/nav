@@ -12,26 +12,26 @@ import (
 func main() {
 	scenarios := []*harness.Scenario{
 		// Original scenarios
-		GmuxListScenario(),
-		GmuxStatusScenario(),
+		NavListScenario(),
+		NavStatusScenario(),
 
 		// Tmux-specific scenarios (only run locally with tmux installed)
-		GmuxSessionExistsScenario(),
-		GmuxSessionKillScenario(),
-		GmuxSessionCaptureScenario(),
-		GmuxLaunchScenario(),
-		GmuxWaitScenario(),
-		GmuxStartScenario(),
-		GmuxWindowsScenario(),
-		GmuxWindowsActiveSelectionScenario(),
-		GmuxWindowsMoveScenario(),
+		NavSessionExistsScenario(),
+		NavSessionKillScenario(),
+		NavSessionCaptureScenario(),
+		NavLaunchScenario(),
+		NavWaitScenario(),
+		NavStartScenario(),
+		NavWindowsScenario(),
+		NavWindowsActiveSelectionScenario(),
+		NavWindowsMoveScenario(),
 
-		// gmux sz column refactoring tests
-		GmuxSzColsDefaultViewScenario(),
-		GmuxSzColsKeysMappedScenario(),
-		GmuxSzColsContextAppliedScenario(),
-		GmuxSzColsCombinedViewScenario(),
-		GmuxSzColsFilterHidesCxScenario(),
+		// nav sz column refactoring tests
+		NavSzColsDefaultViewScenario(),
+		NavSzColsKeysMappedScenario(),
+		NavSzColsContextAppliedScenario(),
+		NavSzColsCombinedViewScenario(),
+		NavSzColsFilterHidesCxScenario(),
 
 		// Delta-aware workspace update tests
 		NavDeltaUpdatesGitScenario(),

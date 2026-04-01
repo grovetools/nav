@@ -143,16 +143,16 @@ type szColsSetupOptions struct {
 	ContextRules map[string]string
 }
 
-// GmuxSzColsDefaultViewScenario tests the default table layout when no keys are mapped
+// NavSzColsDefaultViewScenario tests the default table layout when no keys are mapped
 // and no context rules are active.
 // Validates:
 // - No K column present
 // - No CX column present (no context data)
 // - WORKSPACE is the first column
 // - Project names don't have (key) suffix
-func GmuxSzColsDefaultViewScenario() *harness.Scenario {
+func NavSzColsDefaultViewScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:        "gmux-sz-cols-default-view",
+		Name:        "nav-sz-cols-default-view",
 		Description: "Tests the default table layout without keys or context rules",
 		LocalOnly:   true, // TUI tests require tmux
 		Steps: []harness.Step{
@@ -163,20 +163,20 @@ func GmuxSzColsDefaultViewScenario() *harness.Scenario {
 				}
 				return setupSzColsTestEnv(ctx, &szColsSetupOptions{})
 			}),
-			harness.NewStep("Launch gmux sz and verify default layout", func(ctx *harness.Context) error {
+			harness.NewStep("Launch nav sz and verify default layout", func(ctx *harness.Context) error {
 				if shouldSkipTmuxTest(ctx) {
 					return nil
 				}
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to find gmux binary: %w", err)
+					return fmt.Errorf("failed to find nav binary: %w", err)
 				}
 
 				// Start the TUI
-				session, err := ctx.StartTUI(gmuxBinary, []string{"sz"})
+				session, err := ctx.StartTUI(navBinary, []string{"sz"})
 				if err != nil {
-					return fmt.Errorf("failed to start gmux sz: %w", err)
+					return fmt.Errorf("failed to start nav sz: %w", err)
 				}
 
 				// Wait for the TUI to render
@@ -222,14 +222,14 @@ func GmuxSzColsDefaultViewScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSzColsKeysMappedScenario tests that session keys are correctly appended to workspace names.
+// NavSzColsKeysMappedScenario tests that session keys are correctly appended to workspace names.
 // Validates:
 // - No dedicated K column
 // - Keys appear as suffix on workspace names e.g., "proj-a (a)"
 // - Projects without keys have no suffix
-func GmuxSzColsKeysMappedScenario() *harness.Scenario {
+func NavSzColsKeysMappedScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:        "gmux-sz-cols-keys-mapped",
+		Name:        "nav-sz-cols-keys-mapped",
 		Description: "Tests that session keys are appended to workspace names",
 		LocalOnly:   true,
 		Steps: []harness.Step{
@@ -245,19 +245,19 @@ func GmuxSzColsKeysMappedScenario() *harness.Scenario {
 					},
 				})
 			}),
-			harness.NewStep("Launch gmux sz and verify key suffix format", func(ctx *harness.Context) error {
+			harness.NewStep("Launch nav sz and verify key suffix format", func(ctx *harness.Context) error {
 				if shouldSkipTmuxTest(ctx) {
 					return nil
 				}
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to find gmux binary: %w", err)
+					return fmt.Errorf("failed to find nav binary: %w", err)
 				}
 
-				session, err := ctx.StartTUI(gmuxBinary, []string{"sz"})
+				session, err := ctx.StartTUI(navBinary, []string{"sz"})
 				if err != nil {
-					return fmt.Errorf("failed to start gmux sz: %w", err)
+					return fmt.Errorf("failed to start nav sz: %w", err)
 				}
 
 				if err := session.WaitForText("WORKSPACE", 10*time.Second); err != nil {
@@ -295,14 +295,14 @@ func GmuxSzColsKeysMappedScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSzColsContextAppliedScenario tests that the CX column appears when context rules are active.
+// NavSzColsContextAppliedScenario tests that the CX column appears when context rules are active.
 // NOTE: This test is currently marked as ExplicitOnly because setting up context rules in the test
 // environment requires a complex integration with grove-context's rule system which reads from
 // .grove/rules files in the working directory. The CX column functionality is tested manually.
 // TODO: Enable this test when grove-context test utilities are available.
-func GmuxSzColsContextAppliedScenario() *harness.Scenario {
+func NavSzColsContextAppliedScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:         "gmux-sz-cols-context-applied",
+		Name:         "nav-sz-cols-context-applied",
 		Description:  "Tests that CX column appears when context rules are active (requires explicit --run)",
 		LocalOnly:    true,
 		ExplicitOnly: true, // Skipped in 'run all' - requires grove-context setup
@@ -316,13 +316,13 @@ func GmuxSzColsContextAppliedScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSzColsCombinedViewScenario tests the layout with both keys and context rules active.
+// NavSzColsCombinedViewScenario tests the layout with both keys and context rules active.
 // NOTE: This test is currently marked as ExplicitOnly because setting up context rules in the test
 // environment requires a complex integration with grove-context's rule system.
 // TODO: Enable this test when grove-context test utilities are available.
-func GmuxSzColsCombinedViewScenario() *harness.Scenario {
+func NavSzColsCombinedViewScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:         "gmux-sz-cols-combined-view",
+		Name:         "nav-sz-cols-combined-view",
 		Description:  "Tests the layout with both keys and context rules active (requires explicit --run)",
 		LocalOnly:    true,
 		ExplicitOnly: true, // Skipped in 'run all' - requires grove-context setup
@@ -335,14 +335,14 @@ func GmuxSzColsCombinedViewScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSzColsFilterHidesCxScenario tests that the CX column dynamically hides
+// NavSzColsFilterHidesCxScenario tests that the CX column dynamically hides
 // when filtering results in no projects with context data.
 // NOTE: This test is currently marked as ExplicitOnly because setting up context rules in the test
 // environment requires a complex integration with grove-context's rule system.
 // TODO: Enable this test when grove-context test utilities are available.
-func GmuxSzColsFilterHidesCxScenario() *harness.Scenario {
+func NavSzColsFilterHidesCxScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:         "gmux-sz-cols-filter-hides-cx",
+		Name:         "nav-sz-cols-filter-hides-cx",
 		Description:  "Tests that CX column hides when filtered projects have no context (requires explicit --run)",
 		LocalOnly:    true,
 		ExplicitOnly: true, // Skipped in 'run all' - requires grove-context setup

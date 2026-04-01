@@ -33,10 +33,10 @@ func cleanupSession(sessionName string) {
 	command.New("tmux", "kill-session", "-t", sessionName).Run()
 }
 
-// GmuxSessionExistsScenario tests the 'gmux session exists' command
-func GmuxSessionExistsScenario() *harness.Scenario {
+// NavSessionExistsScenario tests the 'nav session exists' command
+func NavSessionExistsScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-session-exists",
+		Name: "nav-session-exists",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session exists functionality", func(ctx *harness.Context) error {
@@ -57,12 +57,12 @@ func GmuxSessionExistsScenario() *harness.Scenario {
 				defer cleanupSession(sessionName)
 
 				// Check session exists
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gmuxBinary, "session", "exists", sessionName)
+				cmd = command.New(navBinary, "session", "exists", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -75,7 +75,7 @@ func GmuxSessionExistsScenario() *harness.Scenario {
 				}
 
 				// Check non-existent session
-				cmd = command.New(gmuxBinary, "session", "exists", "non-existent-session-12345")
+				cmd = command.New(navBinary, "session", "exists", "non-existent-session-12345")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -93,10 +93,10 @@ func GmuxSessionExistsScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSessionKillScenario tests the 'gmux session kill' command
-func GmuxSessionKillScenario() *harness.Scenario {
+// NavSessionKillScenario tests the 'nav session kill' command
+func NavSessionKillScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-session-kill",
+		Name: "nav-session-kill",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session kill functionality", func(ctx *harness.Context) error {
@@ -113,13 +113,13 @@ func GmuxSessionKillScenario() *harness.Scenario {
 					return fmt.Errorf("failed to create test session: %s", result.Stderr)
 				}
 
-				// Kill using gmux
-				gmuxBinary, err := FindProjectBinary()
+				// Kill using nav
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gmuxBinary, "session", "kill", sessionName)
+				cmd = command.New(navBinary, "session", "kill", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -144,10 +144,10 @@ func GmuxSessionKillScenario() *harness.Scenario {
 	}
 }
 
-// GmuxSessionCaptureScenario tests the 'gmux session capture' command
-func GmuxSessionCaptureScenario() *harness.Scenario {
+// NavSessionCaptureScenario tests the 'nav session capture' command
+func NavSessionCaptureScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-session-capture",
+		Name: "nav-session-capture",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test session capture functionality", func(ctx *harness.Context) error {
@@ -172,13 +172,13 @@ func GmuxSessionCaptureScenario() *harness.Scenario {
 				// Wait a bit for content to appear
 				time.Sleep(200 * time.Millisecond)
 
-				// Capture using gmux
-				gmuxBinary, err := FindProjectBinary()
+				// Capture using nav
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
-				cmd = command.New(gmuxBinary, "session", "capture", sessionName)
+				cmd = command.New(navBinary, "session", "capture", sessionName)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -196,10 +196,10 @@ func GmuxSessionCaptureScenario() *harness.Scenario {
 	}
 }
 
-// GmuxLaunchScenario tests the 'gmux launch' command
-func GmuxLaunchScenario() *harness.Scenario {
+// NavLaunchScenario tests the 'nav launch' command
+func NavLaunchScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-launch",
+		Name: "nav-launch",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test simple session launch", func(ctx *harness.Context) error {
@@ -209,13 +209,13 @@ func GmuxLaunchScenario() *harness.Scenario {
 
 				sessionName := fmt.Sprintf("test-launch-%d", time.Now().Unix())
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Launch session
-				cmd := command.New(gmuxBinary, "launch", sessionName)
+				cmd := command.New(navBinary, "launch", sessionName)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -246,13 +246,13 @@ func GmuxLaunchScenario() *harness.Scenario {
 
 				sessionName := fmt.Sprintf("test-multipane-%d", time.Now().Unix())
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Launch session with 3 panes
-				cmd := command.New(gmuxBinary, "launch", sessionName,
+				cmd := command.New(navBinary, "launch", sessionName,
 					"--window-name", "dev",
 					"--pane", "echo 'Pane 1'",
 					"--pane", "echo 'Pane 2'",
@@ -288,10 +288,10 @@ func GmuxLaunchScenario() *harness.Scenario {
 	}
 }
 
-// GmuxWaitScenario tests the 'gmux wait' command
-func GmuxWaitScenario() *harness.Scenario {
+// NavWaitScenario tests the 'nav wait' command
+func NavWaitScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-wait",
+		Name: "nav-wait",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Test wait for session close", func(ctx *harness.Context) error {
@@ -308,14 +308,14 @@ func GmuxWaitScenario() *harness.Scenario {
 					return fmt.Errorf("failed to create test session: %s", result.Stderr)
 				}
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Start waiting
 				start := time.Now()
-				cmd = command.New(gmuxBinary, "wait", sessionName, "--poll-interval", "200ms")
+				cmd = command.New(navBinary, "wait", sessionName, "--poll-interval", "200ms")
 				result = cmd.Run()
 				duration := time.Since(start)
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -352,13 +352,13 @@ func GmuxWaitScenario() *harness.Scenario {
 				// Cleanup
 				defer cleanupSession(sessionName)
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Wait with short timeout
-				cmd = command.New(gmuxBinary, "wait", sessionName, "--timeout", "500ms", "--poll-interval", "100ms")
+				cmd = command.New(navBinary, "wait", sessionName, "--timeout", "500ms", "--poll-interval", "100ms")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -377,10 +377,10 @@ func GmuxWaitScenario() *harness.Scenario {
 	}
 }
 
-// GmuxStartScenario tests the 'gmux start' command
-func GmuxStartScenario() *harness.Scenario {
+// NavStartScenario tests the 'nav start' command
+func NavStartScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-start",
+		Name: "nav-start",
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
 			harness.NewStep("Setup mock tmux config", func(ctx *harness.Context) error {
@@ -394,7 +394,7 @@ func GmuxStartScenario() *harness.Scenario {
 					return nil
 				}
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -402,7 +402,7 @@ func GmuxStartScenario() *harness.Scenario {
 				configDir := ctx.GetString("config_dir")
 
 				// Start session 'a' which has a path configured
-				cmd := command.New(gmuxBinary, "start", "a", "--config-dir", configDir)
+				cmd := command.New(navBinary, "start", "a", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -425,7 +425,7 @@ func GmuxStartScenario() *harness.Scenario {
 				}
 
 				// Try to start 'a' again (should report it already exists)
-				cmd = command.New(gmuxBinary, "start", "a", "--config-dir", configDir)
+				cmd = command.New(navBinary, "start", "a", "--config-dir", configDir)
 				result = cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -444,7 +444,7 @@ func GmuxStartScenario() *harness.Scenario {
 					return nil
 				}
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
@@ -452,7 +452,7 @@ func GmuxStartScenario() *harness.Scenario {
 				configDir := ctx.GetString("config_dir")
 
 				// Try to start a non-configured key
-				cmd := command.New(gmuxBinary, "start", "z", "--config-dir", configDir)
+				cmd := command.New(navBinary, "start", "z", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
@@ -471,11 +471,11 @@ func GmuxStartScenario() *harness.Scenario {
 	}
 }
 
-// GmuxWindowsScenario tests the 'gmux windows' TUI with interactive behavior
-func GmuxWindowsScenario() *harness.Scenario {
+// NavWindowsScenario tests the 'nav windows' TUI with interactive behavior
+func NavWindowsScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:        "gmux-windows-tui",
-		Description: "Tests the gmux windows TUI including active window selection, visual indicators, and icon assignment",
+		Name:        "nav-windows-tui",
+		Description: "Tests the nav windows TUI including active window selection, visual indicators, and icon assignment",
 		LocalOnly:   true, // TUI tests require tmux
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
@@ -488,7 +488,7 @@ func GmuxWindowsScenario() *harness.Scenario {
 				ctx.Set("session_name", sessionName)
 				ctx.ShowCommandOutput("Session name", sessionName, "")
 
-				// Create a session with a shell in the first window (we'll use this to run gmux windows)
+				// Create a session with a shell in the first window (we'll use this to run nav windows)
 				cmd := command.New("tmux", "new-session", "-d", "-s", sessionName, "-n", "main")
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -539,18 +539,18 @@ func GmuxWindowsScenario() *harness.Scenario {
 
 				return nil
 			}),
-			harness.NewStep("Launch gmux windows TUI", func(ctx *harness.Context) error {
+			harness.NewStep("Launch nav windows TUI", func(ctx *harness.Context) error {
 				if shouldSkipTmuxTest(ctx) {
 					return nil
 				}
 
 				sessionName := ctx.GetString("session_name")
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to find gmux binary: %w", err)
+					return fmt.Errorf("failed to find nav binary: %w", err)
 				}
-				ctx.ShowCommandOutput("Using gmux binary", gmuxBinary, "")
+				ctx.ShowCommandOutput("Using nav binary", navBinary, "")
 
 				// Switch to the main window which has a shell ready
 				cmd := command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:main", sessionName))
@@ -562,13 +562,13 @@ func GmuxWindowsScenario() *harness.Scenario {
 
 				time.Sleep(100 * time.Millisecond)
 
-				// Run gmux windows in the main window
-				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				// Run nav windows in the main window
+				cmdStr := fmt.Sprintf("%s windows", navBinary)
 				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:main", sessionName), cmdStr, "Enter")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
 				if result.ExitCode != 0 {
-					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+					return fmt.Errorf("failed to launch nav windows: %s", result.Stderr)
 				}
 
 				// Wait for TUI to render by polling for "Window Selector" in the pane content
@@ -757,11 +757,11 @@ func GmuxWindowsScenario() *harness.Scenario {
 	}
 }
 
-// GmuxWindowsActiveSelectionScenario tests that the windows TUI starts with cursor on active window
-func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
+// NavWindowsActiveSelectionScenario tests that the windows TUI starts with cursor on active window
+func NavWindowsActiveSelectionScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:        "gmux-windows-active-selection",
-		Description: "Tests that gmux windows TUI initializes with cursor on the currently active window",
+		Name:        "nav-windows-active-selection",
+		Description: "Tests that nav windows TUI initializes with cursor on the currently active window",
 		LocalOnly:   true,
 		Steps: []harness.Step{
 			harness.NewStep("Check tmux availability", skipIfNoTmux),
@@ -817,18 +817,18 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 
 				return nil
 			}),
-			harness.NewStep("Launch gmux windows and verify initial selection", func(ctx *harness.Context) error {
+			harness.NewStep("Launch nav windows and verify initial selection", func(ctx *harness.Context) error {
 				if shouldSkipTmuxTest(ctx) {
 					return nil
 				}
 
 				sessionName := ctx.GetString("session_name")
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to find gmux binary: %w", err)
+					return fmt.Errorf("failed to find nav binary: %w", err)
 				}
-				ctx.ShowCommandOutput("Using gmux binary", gmuxBinary, "")
+				ctx.ShowCommandOutput("Using nav binary", navBinary, "")
 
 				// Switch to window0 which has a shell
 				cmd := command.New("tmux", "select-window", "-t", fmt.Sprintf("%s:window0", sessionName))
@@ -840,13 +840,13 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 
 				time.Sleep(100 * time.Millisecond)
 
-				// Run gmux windows from window0
-				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				// Run nav windows from window0
+				cmdStr := fmt.Sprintf("%s windows", navBinary)
 				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:window0", sessionName), cmdStr, "Enter")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
 				if result.ExitCode != 0 {
-					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+					return fmt.Errorf("failed to launch nav windows: %s", result.Stderr)
 				}
 
 				ctx.ShowCommandOutput("Waiting for TUI to render", "waiting for Window Selector", "")
@@ -964,10 +964,10 @@ func GmuxWindowsActiveSelectionScenario() *harness.Scenario {
 	}
 }
 
-// GmuxWindowsMoveScenario tests the move window functionality in the windows TUI
-func GmuxWindowsMoveScenario() *harness.Scenario {
+// NavWindowsMoveScenario tests the move window functionality in the windows TUI
+func NavWindowsMoveScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name:        "gmux-windows-move",
+		Name:        "nav-windows-move",
 		Description: "Tests the move window feature that allows reordering windows with m key and j/k navigation",
 		LocalOnly:   true,
 		Steps: []harness.Step{
@@ -981,7 +981,7 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 				ctx.Set("session_name", sessionName)
 				ctx.ShowCommandOutput("Session name", sessionName, "")
 
-				// Create session with a default shell window (will be used to launch gmux)
+				// Create session with a default shell window (will be used to launch nav)
 				cmd := command.New("tmux", "new-session", "-d", "-s", sessionName, "-n", "shell")
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
@@ -1010,16 +1010,16 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 
 				return nil
 			}),
-			harness.NewStep("Launch gmux windows TUI", func(ctx *harness.Context) error {
+			harness.NewStep("Launch nav windows TUI", func(ctx *harness.Context) error {
 				if shouldSkipTmuxTest(ctx) {
 					return nil
 				}
 
 				sessionName := ctx.GetString("session_name")
 
-				gmuxBinary, err := FindProjectBinary()
+				navBinary, err := FindProjectBinary()
 				if err != nil {
-					return fmt.Errorf("failed to find gmux binary: %w", err)
+					return fmt.Errorf("failed to find nav binary: %w", err)
 				}
 
 				// Switch to shell window
@@ -1032,13 +1032,13 @@ func GmuxWindowsMoveScenario() *harness.Scenario {
 
 				time.Sleep(100 * time.Millisecond)
 
-				// Launch gmux windows
-				cmdStr := fmt.Sprintf("%s windows", gmuxBinary)
+				// Launch nav windows
+				cmdStr := fmt.Sprintf("%s windows", navBinary)
 				cmd = command.New("tmux", "send-keys", "-t", fmt.Sprintf("%s:shell", sessionName), cmdStr, "Enter")
 				result = cmd.Run()
 				ctx.ShowCommandOutput(fmt.Sprintf("Launching: %s", cmdStr), result.Stdout, result.Stderr)
 				if result.ExitCode != 0 {
-					return fmt.Errorf("failed to launch gmux windows: %s", result.Stderr)
+					return fmt.Errorf("failed to launch nav windows: %s", result.Stderr)
 				}
 
 				// Wait for TUI to render by polling for "Window Selector" in the pane content

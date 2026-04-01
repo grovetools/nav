@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogStart = grovelogging.NewUnifiedLogger("gmux.start")
+var ulogStart = grovelogging.NewUnifiedLogger("nav.start")
 
 var startCmd = &cobra.Command{
 	Use:   "start <key>",

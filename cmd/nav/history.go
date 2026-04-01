@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogHistory = grovelogging.NewUnifiedLogger("gmux.history")
+var ulogHistory = grovelogging.NewUnifiedLogger("nav.history")
 
 const mutedThreshold = 7 * 24 * time.Hour // 1 week
 

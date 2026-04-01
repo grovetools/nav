@@ -74,25 +74,25 @@ tmux:
 	return nil
 }
 
-// GmuxListScenario tests the 'gmux list' command
-func GmuxListScenario() *harness.Scenario {
+// NavListScenario tests the 'nav list' command
+func NavListScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-list-command",
+		Name: "nav-list-command",
 		Steps: []harness.Step{
 			harness.NewStep("Setup mock tmux config", setupMockTmuxConfig),
-			harness.NewStep("Run 'gmux list'", func(ctx *harness.Context) error {
-				gmuxBinary, err := FindProjectBinary()
+			harness.NewStep("Run 'nav list'", func(ctx *harness.Context) error {
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Use ctx.Command to get sandboxed environment (XDG_STATE_HOME, etc.)
 				configDir := ctx.GetString("config_dir")
-				cmd := ctx.Command(gmuxBinary, "list", "--config-dir", configDir)
+				cmd := ctx.Command(navBinary, "list", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if err := assert.Equal(0, result.ExitCode, "gmux list should exit successfully"); err != nil {
+				if err := assert.Equal(0, result.ExitCode, "nav list should exit successfully"); err != nil {
 					return err
 				}
 
@@ -121,10 +121,10 @@ func GmuxListScenario() *harness.Scenario {
 	}
 }
 
-// GmuxStatusScenario tests the 'gmux status' command
-func GmuxStatusScenario() *harness.Scenario {
+// NavStatusScenario tests the 'nav status' command
+func NavStatusScenario() *harness.Scenario {
 	return &harness.Scenario{
-		Name: "gmux-status-command",
+		Name: "nav-status-command",
 		Steps: []harness.Step{
 			harness.NewStep("Setup mock tmux config with git repo", func(ctx *harness.Context) error {
 				// Setup basic config
@@ -147,19 +147,19 @@ func GmuxStatusScenario() *harness.Scenario {
 
 				return nil
 			}),
-			harness.NewStep("Run 'gmux status'", func(ctx *harness.Context) error {
-				gmuxBinary, err := FindProjectBinary()
+			harness.NewStep("Run 'nav status'", func(ctx *harness.Context) error {
+				navBinary, err := FindProjectBinary()
 				if err != nil {
 					return err
 				}
 
 				// Use ctx.Command to get sandboxed environment (XDG_STATE_HOME, etc.)
 				configDir := ctx.GetString("config_dir")
-				cmd := ctx.Command(gmuxBinary, "status", "--config-dir", configDir)
+				cmd := ctx.Command(navBinary, "status", "--config-dir", configDir)
 				result := cmd.Run()
 				ctx.ShowCommandOutput(cmd.String(), result.Stdout, result.Stderr)
 
-				if err := assert.Equal(0, result.ExitCode, "gmux status should exit successfully"); err != nil {
+				if err := assert.Equal(0, result.ExitCode, "nav status should exit successfully"); err != nil {
 					return err
 				}
 

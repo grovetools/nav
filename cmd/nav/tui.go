@@ -1303,7 +1303,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.cursor = 0
 
 						// Save state
-						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
+						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/nav/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
 						if err := m.buildState().Save(m.configDir); err != nil {
 							// Log error but don't fail the operation
 							fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
@@ -1865,7 +1865,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.moveCursorToFirstSelectable()
 
 					// Save state
-					fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/gmux/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
+					fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/nav/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
 					if err := m.buildState().Save(m.configDir); err != nil {
 						fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
 					} else {

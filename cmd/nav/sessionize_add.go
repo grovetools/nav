@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogSessionizeAdd = grovelogging.NewUnifiedLogger("gmux.sessionize.add")
+var ulogSessionizeAdd = grovelogging.NewUnifiedLogger("nav.sessionize.add")
 
 var sessionizeAddCmd = &cobra.Command{
 	Use:   "add [path]",

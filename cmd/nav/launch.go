@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogLaunch = grovelogging.NewUnifiedLogger("gmux.launch")
+var ulogLaunch = grovelogging.NewUnifiedLogger("nav.launch")
 
 var (
 	launchWindowName string
@@ -26,16 +26,16 @@ var launchCmd = &cobra.Command{
 
 Examples:
   # Simple session
-  gmux launch dev-session
+  nav launch dev-session
 
   # Session with window name and working directory
-  gmux launch dev-session --window-name coding --working-dir /path/to/project
+  nav launch dev-session --window-name coding --working-dir /path/to/project
 
   # Session with multiple panes
-  gmux launch dev-session --pane "vim main.go" --pane "go test -v" --pane "htop"
+  nav launch dev-session --pane "vim main.go" --pane "go test -v" --pane "htop"
 
   # Complex panes with working directories (format: command[@workdir])
-  gmux launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
+  nav launch dev-session --pane "npm run dev@/app/frontend" --pane "go run .@/app/backend"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessionName := args[0]

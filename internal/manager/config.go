@@ -51,7 +51,7 @@ type GroupState struct {
 	LockedKeys []string                     `yaml:"locked_keys,omitempty"`
 }
 
-// TmuxSessionsFile represents the sessions file stored in ~/.config/grove/gmux/sessions.yml
+// TmuxSessionsFile represents the sessions file stored in ~/.config/grove/nav/sessions.yml
 // This is separate from grove.yml to avoid polluting version control with dynamic state
 type TmuxSessionsFile struct {
 	Sessions   map[string]TmuxSessionConfig `yaml:"sessions"`

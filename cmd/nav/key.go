@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogKey = grovelogging.NewUnifiedLogger("gmux.key")
+var ulogKey = grovelogging.NewUnifiedLogger("nav.key")
 
 // (listStyle is now declared in main.go)
 

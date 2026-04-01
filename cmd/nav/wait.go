@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ulogWait = grovelogging.NewUnifiedLogger("gmux.wait")
+var ulogWait = grovelogging.NewUnifiedLogger("nav.wait")
 
 var (
 	waitPollInterval string

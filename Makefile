@@ -34,7 +34,7 @@ schema:
 build: schema
 	@mkdir -p $(BIN_DIR)
 	@echo "Building $(BINARY_NAME) version $(VERSION)..."
-	@go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/gmux
+	@go build $(LDFLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/nav
 
 test:
 	@echo "Running tests..."
@@ -83,12 +83,12 @@ build-all:
 		arch=$$(echo $$platform | cut -d'/' -f2); \
 		output_name="$(BINARY_NAME)-$${os}-$${arch}"; \
 		echo "  -> Building $${output_name} version $(VERSION)"; \
-		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $(DIST_DIR)/$${output_name} ./cmd/gmux; \
+		GOOS=$$os GOARCH=$$arch go build $(LDFLAGS) -o $(DIST_DIR)/$${output_name} ./cmd/nav; \
 	done
 
 # --- E2E Testing ---
 # Build the custom tend binary for grove-tmux E2E tests.
-# Run E2E tests. Depends on the main 'gmux' binary and the test runner.
+# Run E2E tests. Depends on the main 'nav' binary and the test runner.
 # Pass arguments via ARGS, e.g., make test-e2e ARGS="run -i"
 test-e2e: build
 	@echo "Running E2E tests..."
@@ -108,4 +108,4 @@ help:
 	@echo "  make dev         - Build with race detector"
 	@echo "  make build-all   - Build for multiple platforms"
 	@echo "  make test-e2e ARGS=...- Run E2E test runner binary"
-	@echo "  make test-e2e ARGS=...- Run E2E tests (e.g., ARGS=\"run -i gmux-basic-generation\")"
+	@echo "  make test-e2e ARGS=...- Run E2E tests (e.g., ARGS=\"run -i nav-list-command\")"
