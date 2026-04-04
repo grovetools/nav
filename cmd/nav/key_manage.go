@@ -773,7 +773,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 									m.message = fmt.Sprintf("Failed to get project info: %v", err)
 									return m, nil
 								}
-								sessionName := projInfo.Identifier()
+								sessionName := projInfo.Identifier("_")
 								client, err := tmuxclient.NewClient()
 								if err != nil {
 									m.message = fmt.Sprintf("Failed to create tmux client: %v", err)
@@ -1274,7 +1274,7 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.message = fmt.Sprintf("Failed to get project info: %v", err)
 							return m, nil
 						}
-						sessionName := projInfo.Identifier()
+						sessionName := projInfo.Identifier("_")
 
 						// Create tmux client
 						client, err := tmuxclient.NewClient()

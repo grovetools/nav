@@ -1485,7 +1485,7 @@ func (m *Manager) Sessionize(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get project info: %w", err)
 	}
-	sessionName := projInfo.Identifier()
+	sessionName := projInfo.Identifier("_")
 
 	ctx := context.Background()
 

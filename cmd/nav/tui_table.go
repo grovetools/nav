@@ -286,7 +286,7 @@ func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, sh
 	}
 
 	// Determine icon color based on session status
-	sessionName := project.Identifier()
+	sessionName := project.Identifier("_")
 	sessionExists := m.runningSessions[sessionName]
 
 	var iconStyle lipgloss.Style

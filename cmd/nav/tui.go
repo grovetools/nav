@@ -1393,7 +1393,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Close session
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
-				sessionName := project.Identifier()
+				sessionName := project.Identifier("_")
 
 				// Check if session exists before trying to close it
 				client, err := tmuxclient.NewClient()
@@ -1414,7 +1414,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 								// First, try to find the most recently accessed session from our list
 								for _, p := range m.filtered {
-									candidateName := p.Identifier()
+									candidateName := p.Identifier("_")
 
 									// Skip the current session
 									if candidateName == sessionName {
@@ -2580,7 +2580,7 @@ func (m *sessionizeModel) updateFiltered() {
 		var hasActive func(path string) bool
 		hasActive = func(path string) bool {
 			p := projectByPath[path]
-			if p != nil && m.runningSessions[p.Identifier()] {
+			if p != nil && m.runningSessions[p.Identifier("_")] {
 				return true
 			}
 			for _, child := range childrenByParent[path] {

@@ -126,7 +126,7 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 
 	// The project object already contains all necessary information.
 	// We no longer need to call workspace.GetProjectByPath.
-	sessionName := project.Identifier()
+	sessionName := project.Identifier("_")
 	absPath := project.Path
 
 	// Check if we're in tmux
