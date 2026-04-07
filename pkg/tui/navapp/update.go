@@ -3,6 +3,7 @@ package navapp
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/nav/pkg/tui/groups"
 	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/keymanage"
@@ -187,6 +188,60 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case switchTabMsg:
 		return m, m.doSwitchTab(msg.to)
+
+	case embed.SetWorkspaceMsg:
+		// Workspace changes must reach every initialized sub-model, not
+		// just the active one — otherwise tabs the user hasn't opened
+		// yet operate on a stale workspace pointer when they're later
+		// focused. Fan out to each live sub-model the same way
+		// tea.WindowSizeMsg does.
+		var cmds []tea.Cmd
+		if m.sessionize != nil {
+			updated, cmd := m.sessionize.Update(msg)
+			if sm, ok := updated.(*sessionizer.Model); ok {
+				m.sessionize = sm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.keymanage != nil {
+			updated, cmd := m.keymanage.Update(msg)
+			if km, ok := updated.(*keymanage.Model); ok {
+				m.keymanage = km
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.history != nil {
+			updated, cmd := m.history.Update(msg)
+			if hm, ok := updated.(*history.Model); ok {
+				m.history = hm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.windows != nil {
+			updated, cmd := m.windows.Update(msg)
+			if wm, ok := updated.(*windows.Model); ok {
+				m.windows = wm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.groups != nil {
+			updated, cmd := m.groups.Update(msg)
+			if gm, ok := updated.(*groups.Model); ok {
+				m.groups = gm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
 
 	// ---- Cross-TUI routing ------------------------------------------------
 
