@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/grovetools/core/git"
+	"github.com/grovetools/core/pkg/models"
 	core_theme "github.com/grovetools/core/tui/theme"
-	"github.com/grovetools/nav/internal/manager"
 )
 
 // highlightMatch highlights the matched portion of text with a yellow background
@@ -100,7 +100,7 @@ func formatChanges(status *git.StatusInfo, extStatus *git.ExtendedGitStatus) str
 
 // formatPlanStats formats plan stats into a styled string
 // Shows: total plans (active plan name) [job stats]
-func formatPlanStats(stats *manager.PlanStats) string {
+func formatPlanStats(stats *models.PlanStats) string {
 	if stats == nil || stats.TotalPlans == 0 {
 		return ""
 	}
@@ -159,7 +159,7 @@ func formatTokens(tokens int) string {
 }
 
 // formatReleaseInfo formats release info for display
-func formatReleaseInfo(info *manager.ReleaseInfo) string {
+func formatReleaseInfo(info *models.ReleaseInfo) string {
 	if info == nil || info.LatestTag == "" {
 		return "-"
 	}
@@ -181,7 +181,7 @@ func formatReleaseInfo(info *manager.ReleaseInfo) string {
 }
 
 // formatToolName formats the tool name for display
-func formatToolName(status *manager.BinaryStatus) string {
+func formatToolName(status *models.BinaryStatus) string {
 	if status == nil || status.ToolName == "" {
 		return "-"
 	}
@@ -189,7 +189,7 @@ func formatToolName(status *manager.BinaryStatus) string {
 }
 
 // formatCurrentVersion formats the current version for display
-func formatCurrentVersion(status *manager.BinaryStatus) string {
+func formatCurrentVersion(status *models.BinaryStatus) string {
 	if status == nil || status.CurrentVersion == "" {
 		return "-"
 	}

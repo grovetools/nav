@@ -40,18 +40,18 @@ type gitStatusMapMsg struct {
 
 // noteCountsMapMsg is sent when all note counts are fetched.
 type noteCountsMapMsg struct {
-	counts map[string]*manager.NoteCounts
+	counts map[string]*models.NoteCounts
 }
 
 // planStatsMapMsg is sent when all plan stats are fetched.
 type planStatsMapMsg struct {
-	stats map[string]*manager.PlanStats
+	stats map[string]*models.PlanStats
 }
 
 // New message types for additional column data
-type releaseInfoMapMsg struct{ releases map[string]*manager.ReleaseInfo }
-type binaryStatusMapMsg struct{ statuses map[string]*manager.BinaryStatus }
-type cxStatsMapMsg struct{ stats map[string]*manager.CxStats }
+type releaseInfoMapMsg struct{ releases map[string]*models.ReleaseInfo }
+type binaryStatusMapMsg struct{ statuses map[string]*models.BinaryStatus }
+type cxStatsMapMsg struct{ stats map[string]*models.CxStats }
 type remoteURLMapMsg struct{ urls map[string]string }
 
 // tickMsg is sent periodically to refresh git status
@@ -390,13 +390,10 @@ func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
 
 		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchReleaseInfo: true})
 
-		releases := make(map[string]*manager.ReleaseInfo)
+		releases := make(map[string]*models.ReleaseInfo)
 		for _, ws := range workspaces {
 			if ws.ReleaseInfo != nil {
-				releases[ws.Path] = &manager.ReleaseInfo{
-					LatestTag:    ws.ReleaseInfo.LatestTag,
-					CommitsAhead: ws.ReleaseInfo.CommitsAhead,
-				}
+				releases[ws.Path] = ws.ReleaseInfo
 			}
 		}
 		return releaseInfoMapMsg{releases: releases}
@@ -413,15 +410,10 @@ func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 
 		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchBinaryStatus: true})
 
-		statuses := make(map[string]*manager.BinaryStatus)
+		statuses := make(map[string]*models.BinaryStatus)
 		for _, ws := range workspaces {
 			if ws.ActiveBinary != nil {
-				statuses[ws.Path] = &manager.BinaryStatus{
-					ToolName:       ws.ActiveBinary.ToolName,
-					IsDevActive:    ws.ActiveBinary.IsDevActive,
-					LinkName:       ws.ActiveBinary.LinkName,
-					CurrentVersion: ws.ActiveBinary.CurrentVersion,
-				}
+				statuses[ws.Path] = ws.ActiveBinary
 			}
 		}
 		return binaryStatusMapMsg{statuses: statuses}
@@ -438,14 +430,10 @@ func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 
 		workspaces, _ := client.GetEnrichedWorkspaces(ctx, &models.EnrichmentOptions{FetchCxStats: true})
 
-		stats := make(map[string]*manager.CxStats)
+		stats := make(map[string]*models.CxStats)
 		for _, ws := range workspaces {
 			if ws.CxStats != nil {
-				stats[ws.Path] = &manager.CxStats{
-					Files:  ws.CxStats.Files,
-					Tokens: ws.CxStats.Tokens,
-					Size:   ws.CxStats.Size,
-				}
+				stats[ws.Path] = ws.CxStats
 			}
 		}
 		return cxStatsMapMsg{stats: stats}

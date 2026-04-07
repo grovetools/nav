@@ -1191,65 +1191,20 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 		return []DiscoveredProject{}, fmt.Errorf("failed to get workspaces: %w", err)
 	}
 
-	// Transform []*enrichment.EnrichedWorkspace into []DiscoveredProject (SessionizeProject)
+	// Transform []*models.EnrichedWorkspace into []DiscoveredProject (SessionizeProject).
+	// Both types now use core/pkg/models enrichment types directly, so no field conversion needed.
 	projects := make([]DiscoveredProject, len(enrichedWorkspaces))
 	for i, ew := range enrichedWorkspaces {
-		proj := SessionizeProject{
+		projects[i] = SessionizeProject{
 			WorkspaceNode: ew.WorkspaceNode,
 			GitStatus:     ew.GitStatus,
 			GitRemoteURL:  ew.GitRemoteURL,
+			NoteCounts:    ew.NoteCounts,
+			PlanStats:     ew.PlanStats,
+			ReleaseInfo:   ew.ReleaseInfo,
+			ActiveBinary:  ew.ActiveBinary,
+			CxStats:       ew.CxStats,
 		}
-
-		// Map enrichment types from core to nav local types
-		if ew.NoteCounts != nil {
-			proj.NoteCounts = &NoteCounts{
-				Current:    ew.NoteCounts.Current,
-				Issues:     ew.NoteCounts.Issues,
-				Inbox:      ew.NoteCounts.Inbox,
-				Docs:       ew.NoteCounts.Docs,
-				Completed:  ew.NoteCounts.Completed,
-				Review:     ew.NoteCounts.Review,
-				InProgress: ew.NoteCounts.InProgress,
-				Other:      ew.NoteCounts.Other,
-			}
-		}
-		if ew.PlanStats != nil {
-			proj.PlanStats = &PlanStats{
-				TotalPlans: ew.PlanStats.TotalPlans,
-				ActivePlan: ew.PlanStats.ActivePlan,
-				Running:    ew.PlanStats.Running,
-				Pending:    ew.PlanStats.Pending,
-				Completed:  ew.PlanStats.Completed,
-				Failed:     ew.PlanStats.Failed,
-				Todo:       ew.PlanStats.Todo,
-				Hold:       ew.PlanStats.Hold,
-				Abandoned:  ew.PlanStats.Abandoned,
-				PlanStatus: ew.PlanStats.PlanStatus,
-			}
-		}
-		if ew.ReleaseInfo != nil {
-			proj.ReleaseInfo = &ReleaseInfo{
-				LatestTag:    ew.ReleaseInfo.LatestTag,
-				CommitsAhead: ew.ReleaseInfo.CommitsAhead,
-			}
-		}
-		if ew.ActiveBinary != nil {
-			proj.ActiveBinary = &BinaryStatus{
-				ToolName:       ew.ActiveBinary.ToolName,
-				IsDevActive:    ew.ActiveBinary.IsDevActive,
-				LinkName:       ew.ActiveBinary.LinkName,
-				CurrentVersion: ew.ActiveBinary.CurrentVersion,
-			}
-		}
-		if ew.CxStats != nil {
-			proj.CxStats = &CxStats{
-				Files:  ew.CxStats.Files,
-				Tokens: ew.CxStats.Tokens,
-				Size:   ew.CxStats.Size,
-			}
-		}
-
-		projects[i] = proj
 	}
 
 	return projects, nil

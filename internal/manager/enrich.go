@@ -10,6 +10,7 @@ import (
 
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/daemon"
+	"github.com/grovetools/core/pkg/models"
 )
 
 // EnrichmentOptions controls which data to fetch and for which projects.
@@ -37,11 +38,11 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 		opts = DefaultEnrichmentOptions()
 	}
 
-	var noteCountsMap map[string]*NoteCounts
+	var noteCountsMap map[string]*models.NoteCounts
 	if opts.FetchNoteCounts {
 		noteCountsByName, _ := FetchNoteCountsMap()
 		// Map by project name to project path
-		noteCountsMap = make(map[string]*NoteCounts)
+		noteCountsMap = make(map[string]*models.NoteCounts)
 		for _, proj := range projects {
 			if counts, ok := noteCountsByName[proj.Name]; ok {
 				noteCountsMap[proj.Path] = counts
@@ -49,7 +50,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 		}
 	}
 
-	var planStatsMap map[string]*PlanStats
+	var planStatsMap map[string]*models.PlanStats
 	if opts.FetchPlanStats {
 		planStatsMap, _ = FetchPlanStatsMap()
 	}
@@ -91,64 +92,24 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 
 // FetchNoteCountsMap fetches note counts via the daemon client.
 // Returns empty map if daemon is not running (graceful degradation).
-func FetchNoteCountsMap() (map[string]*NoteCounts, error) {
+func FetchNoteCountsMap() (map[string]*models.NoteCounts, error) {
 	client := daemon.New()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	coreCounts, err := client.GetNoteCounts(ctx)
-	if err != nil {
-		return make(map[string]*NoteCounts), err
-	}
-
-	// Convert core types to local types
-	result := make(map[string]*NoteCounts, len(coreCounts))
-	for name, coreCount := range coreCounts {
-		result[name] = &NoteCounts{
-			Current:    coreCount.Current,
-			Issues:     coreCount.Issues,
-			Inbox:      coreCount.Inbox,
-			Docs:       coreCount.Docs,
-			Completed:  coreCount.Completed,
-			Review:     coreCount.Review,
-			InProgress: coreCount.InProgress,
-			Other:      coreCount.Other,
-		}
-	}
-	return result, nil
+	return client.GetNoteCounts(ctx)
 }
 
 // FetchPlanStatsMap fetches plan statistics via the daemon client.
 // Returns empty map if daemon is not running (graceful degradation).
-func FetchPlanStatsMap() (map[string]*PlanStats, error) {
+func FetchPlanStatsMap() (map[string]*models.PlanStats, error) {
 	client := daemon.New()
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	coreStats, err := client.GetPlanStats(ctx)
-	if err != nil {
-		return make(map[string]*PlanStats), err
-	}
-
-	// Convert core types to local types
-	result := make(map[string]*PlanStats, len(coreStats))
-	for path, coreStat := range coreStats {
-		result[path] = &PlanStats{
-			TotalPlans: coreStat.TotalPlans,
-			ActivePlan: coreStat.ActivePlan,
-			Running:    coreStat.Running,
-			Pending:    coreStat.Pending,
-			Completed:  coreStat.Completed,
-			Failed:     coreStat.Failed,
-			Todo:       coreStat.Todo,
-			Hold:       coreStat.Hold,
-			Abandoned:  coreStat.Abandoned,
-			PlanStatus: coreStat.PlanStatus,
-		}
-	}
-	return result, nil
+	return client.GetPlanStats(ctx)
 }

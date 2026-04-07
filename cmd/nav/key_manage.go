@@ -2596,7 +2596,7 @@ func (m *manageModel) jumpToPath(targetPath string) bool {
 
 // formatPlanStatsForKeyManage formats plan stats into a styled string
 // Shows only job status icons and counts (e.g., "◐ 1 ○ 2 ● 5")
-func formatPlanStatsForKeyManage(stats *manager.PlanStats) string {
+func formatPlanStatsForKeyManage(stats *models.PlanStats) string {
 	if stats == nil || stats.TotalPlans == 0 {
 		return ""
 	}

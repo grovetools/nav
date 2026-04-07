@@ -823,30 +823,10 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						proj.GitRemoteURL = *delta.GitRemoteURL
 					}
 					if delta.NoteCounts != nil {
-						proj.NoteCounts = &manager.NoteCounts{
-							Current:    delta.NoteCounts.Current,
-							Issues:     delta.NoteCounts.Issues,
-							Inbox:      delta.NoteCounts.Inbox,
-							Docs:       delta.NoteCounts.Docs,
-							Completed:  delta.NoteCounts.Completed,
-							Review:     delta.NoteCounts.Review,
-							InProgress: delta.NoteCounts.InProgress,
-							Other:      delta.NoteCounts.Other,
-						}
+						proj.NoteCounts = delta.NoteCounts
 					}
 					if delta.PlanStats != nil {
-						proj.PlanStats = &manager.PlanStats{
-							TotalPlans: delta.PlanStats.TotalPlans,
-							ActivePlan: delta.PlanStats.ActivePlan,
-							Running:    delta.PlanStats.Running,
-							Pending:    delta.PlanStats.Pending,
-							Completed:  delta.PlanStats.Completed,
-							Failed:     delta.PlanStats.Failed,
-							Todo:       delta.PlanStats.Todo,
-							Hold:       delta.PlanStats.Hold,
-							Abandoned:  delta.PlanStats.Abandoned,
-							PlanStatus: delta.PlanStats.PlanStatus,
-						}
+						proj.PlanStats = delta.PlanStats
 					}
 				}
 			}
@@ -872,33 +852,13 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "note", "note_watcher":
 				for _, ew := range msg.update.Workspaces {
 					if proj, ok := m.projectMap[ew.Path]; ok && ew.NoteCounts != nil {
-						proj.NoteCounts = &manager.NoteCounts{
-							Current:    ew.NoteCounts.Current,
-							Issues:     ew.NoteCounts.Issues,
-							Inbox:      ew.NoteCounts.Inbox,
-							Docs:       ew.NoteCounts.Docs,
-							Completed:  ew.NoteCounts.Completed,
-							Review:     ew.NoteCounts.Review,
-							InProgress: ew.NoteCounts.InProgress,
-							Other:      ew.NoteCounts.Other,
-						}
+						proj.NoteCounts = ew.NoteCounts
 					}
 				}
 			case "plan", "flow_watcher":
 				for _, ew := range msg.update.Workspaces {
 					if proj, ok := m.projectMap[ew.Path]; ok && ew.PlanStats != nil {
-						proj.PlanStats = &manager.PlanStats{
-							TotalPlans: ew.PlanStats.TotalPlans,
-							ActivePlan: ew.PlanStats.ActivePlan,
-							Running:    ew.PlanStats.Running,
-							Pending:    ew.PlanStats.Pending,
-							Completed:  ew.PlanStats.Completed,
-							Failed:     ew.PlanStats.Failed,
-							Todo:       ew.PlanStats.Todo,
-							Hold:       ew.PlanStats.Hold,
-							Abandoned:  ew.PlanStats.Abandoned,
-							PlanStatus: ew.PlanStats.PlanStatus,
-						}
+						proj.PlanStats = ew.PlanStats
 					}
 				}
 			}
