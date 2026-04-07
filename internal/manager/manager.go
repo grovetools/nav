@@ -19,6 +19,7 @@ import (
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
+	"github.com/grovetools/nav/pkg/api"
 	navbindings "github.com/grovetools/nav/pkg/bindings"
 	"gopkg.in/yaml.v3"
 )
@@ -436,6 +437,18 @@ func (m *Manager) GetGroupConfig(group string) (GroupRef, bool) {
 	}
 	cfg, ok := m.tmuxConfig.Groups[group]
 	return cfg, ok
+}
+
+// GetGroupIcon returns the icon configured for a group, or "" if the group
+// has no icon (or doesn't exist). This is the narrow accessor that the
+// extracted sessionizer TUI uses instead of pulling the whole GroupRef
+// across the package boundary.
+func (m *Manager) GetGroupIcon(group string) string {
+	cfg, ok := m.GetGroupConfig(group)
+	if !ok {
+		return ""
+	}
+	return cfg.Icon
 }
 
 // ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations.
@@ -1177,7 +1190,7 @@ func isGitRepository(path string) bool {
 // GetAvailableProjects uses the daemon client to fetch enriched workspaces.
 // If the daemon is running, it uses cached/pre-computed data including git status.
 // If not, it falls back to direct discovery via LocalClient.
-func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
+func (m *Manager) GetAvailableProjects() ([]api.Project, error) {
 	// Create daemon client (automatically falls back to local if daemon not running)
 	client := daemon.New()
 	defer client.Close()
@@ -1188,14 +1201,14 @@ func (m *Manager) GetAvailableProjects() ([]DiscoveredProject, error) {
 	if err != nil {
 		// Return an empty list if discovery fails - sessionize will handle the empty case
 		// This allows first-run setup to trigger
-		return []DiscoveredProject{}, fmt.Errorf("failed to get workspaces: %w", err)
+		return []api.Project{}, fmt.Errorf("failed to get workspaces: %w", err)
 	}
 
-	// Transform []*models.EnrichedWorkspace into []DiscoveredProject (SessionizeProject).
-	// Both types now use core/pkg/models enrichment types directly, so no field conversion needed.
-	projects := make([]DiscoveredProject, len(enrichedWorkspaces))
+	// Transform []*models.EnrichedWorkspace into []api.Project. Both types now
+	// use core/pkg/models enrichment types directly, so no field conversion needed.
+	projects := make([]api.Project, len(enrichedWorkspaces))
 	for i, ew := range enrichedWorkspaces {
-		projects[i] = SessionizeProject{
+		projects[i] = api.Project{
 			WorkspaceNode: ew.WorkspaceNode,
 			GitStatus:     ew.GitStatus,
 			GitRemoteURL:  ew.GitRemoteURL,
