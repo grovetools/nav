@@ -1,4 +1,4 @@
-package main
+package sessionizer
 
 import (
 	"fmt"
@@ -7,18 +7,18 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/table"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
-	"github.com/grovetools/nav/internal/manager"
+	grovecontext "github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/nav/pkg/api"
 )
 
 // renderTable renders the table view for projects
-func (m sessionizeModel) renderTable() string {
+func (m *Model) renderTable() string {
 	// Handle empty state - still show table structure for visual stability
 	if len(m.filtered) == 0 {
 		workspaceHeader := "WORKSPACE"
@@ -173,7 +173,7 @@ func (m sessionizeModel) renderTable() string {
 }
 
 // formatProjectRow formats a single project into a table row
-func (m sessionizeModel) formatProjectRow(project *manager.SessionizeProject, showCxColumn bool) []string {
+func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []string {
 	// --- WORKSPACE ---
 	workspaceName := project.Name
 

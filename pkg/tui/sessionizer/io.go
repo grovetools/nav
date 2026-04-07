@@ -1,4 +1,4 @@
-package main
+package sessionizer
 
 import (
 	"context"
@@ -14,11 +14,9 @@ import (
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	grovecontext "github.com/grovetools/cx/pkg/context"
-	"github.com/grovetools/nav/internal/manager"
-	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/api"
 )
 
 // gitStatusMsg is sent when git status for a single project is fetched.
@@ -29,8 +27,8 @@ type gitStatusMsg struct {
 
 // initialProjectsEnrichedMsg is sent after initial project data is loaded from session paths.
 type initialProjectsEnrichedMsg struct {
-	enrichedProjects map[string]*manager.SessionizeProject
-	projectList      []*manager.SessionizeProject
+	enrichedProjects map[string]*api.Project
+	projectList      []*api.Project
 }
 
 // gitStatusMapMsg is sent when git statuses for multiple projects are fetched.
@@ -38,87 +36,94 @@ type gitStatusMapMsg struct {
 	statuses map[string]*git.ExtendedGitStatus
 }
 
-// noteCountsMapMsg is sent when all note counts are fetched.
 type noteCountsMapMsg struct {
 	counts map[string]*models.NoteCounts
 }
 
-// planStatsMapMsg is sent when all plan stats are fetched.
 type planStatsMapMsg struct {
 	stats map[string]*models.PlanStats
 }
 
-// New message types for additional column data
 type releaseInfoMapMsg struct{ releases map[string]*models.ReleaseInfo }
 type binaryStatusMapMsg struct{ statuses map[string]*models.BinaryStatus }
 type cxStatsMapMsg struct{ stats map[string]*models.CxStats }
 type remoteURLMapMsg struct{ urls map[string]string }
 
-// tickMsg is sent periodically to refresh git status
 type tickMsg time.Time
-
-// spinnerTickMsg is sent frequently to animate the spinner
 type spinnerTickMsg time.Time
 
-// projectsUpdateMsg is sent when the list of discovered projects is updated
+// projectsUpdateMsg is sent when the list of discovered projects is updated.
 type projectsUpdateMsg struct {
-	projects []*manager.SessionizeProject
+	projects []*api.Project
 }
 
-// runningSessionsUpdateMsg is sent with the latest list of running tmux sessions
+// runningSessionsUpdateMsg is sent with the latest list of active sessions.
 type runningSessionsUpdateMsg struct {
-	sessions map[string]bool // A set of session names for quick lookups
+	sessions map[string]bool
 }
 
-// keyMapUpdateMsg is sent when the key mappings from tmux-sessions.yaml are reloaded
+// keyMapUpdateMsg is sent when key mappings are reloaded.
 type keyMapUpdateMsg struct {
-	keyMap   map[string]string     // map[path]key
-	sessions []models.TmuxSession // Also pass the full session list
+	keyMap   map[string]string
+	sessions []models.TmuxSession
 }
 
-// rulesStateUpdateMsg is sent when the context rules have been parsed.
 type rulesStateUpdateMsg struct {
 	rulesState map[string]grovecontext.RuleStatus
 }
 
-// ruleToggleResultMsg is sent after a rule is toggled.
 type ruleToggleResultMsg struct {
 	err error
 }
 
-// daemonStateUpdateMsg is sent when the daemon pushes a state update via SSE.
 type daemonStateUpdateMsg struct {
 	update daemon.StateUpdate
 }
 
-// daemonStreamErrorMsg is sent when the daemon stream encounters an error or closes.
 type daemonStreamErrorMsg struct {
 	err error
 }
 
+type daemonStreamStartedMsg struct{}
+
+// statusMsg is a transient status line update.
+type statusMsg struct {
+	message string
+}
+
+// RequestManageGroupsMsg is emitted when the user asks to open the groups
+// management view. Hosts that embed the sessionizer should translate this
+// into whatever view-switching mechanism they use.
+type RequestManageGroupsMsg struct{}
+
+// RequestMapKeyMsg is emitted when the user asks to map a project to a
+// tmux key binding. Hosts should route this to their key manage view.
+type RequestMapKeyMsg struct {
+	Project *api.Project
+}
+
+// BulkMappingDoneMsg is emitted after the sessionizer bulk-maps a set of
+// selected projects to keys. Hosts typically switch to the key manage view
+// and highlight the new mappings.
+type BulkMappingDoneMsg struct {
+	MappedKeys []string
+}
+
 // fetchRulesStateCmd loads the context rules and determines the status for each project path.
-// This uses version-aware matching via grove-context's MatchesGitRule.
-func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchRulesStateCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		mgr := grovecontext.NewManager("") // Use CWD
+		mgr := grovecontext.NewManager("")
 		rulesState := make(map[string]grovecontext.RuleStatus)
 
-		// Fetch all Git rules upfront for version-aware matching
 		gitRules, _ := mgr.ListGitRules()
 
 		for _, project := range projects {
 			var status grovecontext.RuleStatus
 
-			// Check for git-based rule first if this is a cx-repo managed project
 			if project.RepoShorthand != "" && len(gitRules) > 0 {
-				// Construct the expected repo URL from the shorthand
 				expectedRepoURL := "https://github.com/" + project.RepoShorthand
-
-				// Get the project's current HEAD commit for comparison
 				projectHeadCommit, _ := git.GetHeadCommit(project.Path)
 
-				// Get the project's current version (branch or commit)
-				// Priority: GitStatus.Branch (actual checked out branch) > Name (for worktrees) > Version
 				projectVersion := project.Version
 				if project.GitStatus != nil && project.GitStatus.Branch != "" {
 					projectVersion = project.GitStatus.Branch
@@ -129,7 +134,6 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 					projectVersion = "main"
 				}
 
-				// Match against git rules using centralized matching logic
 				for _, rule := range gitRules {
 					if grovecontext.MatchesGitRule(rule, expectedRepoURL, projectVersion, projectHeadCommit, project.Path) {
 						status = rule.ContextType
@@ -138,12 +142,9 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 				}
 			}
 
-			// Check for ecosystem alias rule if this is part of an ecosystem
 			if status == 0 && project.RootEcosystemPath != "" {
-				// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
 				ecosystemName := filepath.Base(project.RootEcosystemPath)
 				if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
-					// This is inside an ecosystem worktree, use the worktree name
 					ecosystemName = filepath.Base(project.ParentEcosystemPath)
 				}
 				workspaceName := project.Name
@@ -155,7 +156,6 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 				status = mgr.GetRuleStatus(aliasRule)
 			}
 
-			// If no alias status found, check for path-based rule
 			if status == 0 {
 				pathRule := filepath.Join(project.Path, "**")
 				status = mgr.GetRuleStatus(pathRule)
@@ -167,10 +167,7 @@ func fetchRulesStateCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// toggleRuleCmd adds or removes a context rule for a given project.
-// If the project already has the requested status, the rule is removed.
-// Otherwise, any existing rule is removed first, then the new rule is added.
-func toggleRuleCmd(project *manager.SessionizeProject, action string, currentStatus grovecontext.RuleStatus) tea.Cmd {
+func toggleRuleCmd(project *api.Project, action string, currentStatus grovecontext.RuleStatus) tea.Cmd {
 	return func() tea.Msg {
 		if project == nil {
 			return ruleToggleResultMsg{err: fmt.Errorf("no project selected")}
@@ -179,40 +176,30 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string, currentSta
 
 		var rule string
 
-		// Check if this is a cx-repo managed project (has RepoShorthand set)
 		if project.RepoShorthand != "" {
 			version := project.Version
 			if version == "" {
-				version = "main" // Sensible fallback
+				version = "main"
 			}
-			// For git aliases, we always use the 'default' ruleset,
-			// as it's a generic reference to an external repository.
 			ruleset := "default"
 			rule = fmt.Sprintf("@a:git:%s@%s::%s", project.RepoShorthand, version, ruleset)
 		} else if project.RootEcosystemPath != "" {
-			// If this is part of an ecosystem, construct an alias
-			// Use the immediate parent ecosystem (worktree if applicable, otherwise root)
 			ecosystemName := filepath.Base(project.RootEcosystemPath)
 			if project.ParentEcosystemPath != "" && project.ParentEcosystemPath != project.RootEcosystemPath {
-				// This is inside an ecosystem worktree, use the worktree name
 				ecosystemName = filepath.Base(project.ParentEcosystemPath)
 			}
 			workspaceName := project.Name
 
-			// Get the default rule name from grove.yml
 			ruleName := mgr.GetDefaultRuleName()
 			if ruleName == "" {
 				ruleName = "default"
 			}
 
-			// Construct alias: @a:ecosystem:workspace::rule
 			rule = fmt.Sprintf("@a:%s:%s::%s", ecosystemName, workspaceName, ruleName)
 		} else {
-			// Fallback to path-based rule
 			rule = filepath.Join(project.Path, "**")
 		}
 
-		// Map action to expected RuleStatus
 		var targetStatus grovecontext.RuleStatus
 		switch action {
 		case "hot":
@@ -223,7 +210,6 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string, currentSta
 			targetStatus = grovecontext.RuleExcluded
 		}
 
-		// If already in the target state, remove the rule (toggle off)
 		if currentStatus == targetStatus {
 			if err := mgr.RemoveRule(rule); err != nil {
 				return ruleToggleResultMsg{err: err}
@@ -231,7 +217,6 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string, currentSta
 			return ruleToggleResultMsg{err: nil}
 		}
 
-		// Otherwise, add the rule (AppendRule handles removing conflicting rules)
 		if err := mgr.AppendRule(rule, action); err != nil {
 			return ruleToggleResultMsg{err: err}
 		}
@@ -240,64 +225,23 @@ func toggleRuleCmd(project *manager.SessionizeProject, action string, currentSta
 	}
 }
 
-// getWorktreeParent checks if a path is a Git worktree and returns the parent path
-func getWorktreeParent(path string) string {
-	// Check if this is inside a .grove-worktrees directory
-	if strings.Contains(path, ".grove-worktrees") {
-		parts := strings.Split(path, ".grove-worktrees")
-		if len(parts) >= 1 {
-			return parts[0]
-		}
-	}
-	return ""
-}
-
-// tickCmd returns a command that sends a tick message after a delay
 func tickCmd() tea.Cmd {
 	return tea.Tick(10*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
-// spinnerTickCmd returns a command that sends a spinner tick message quickly (for animation)
 func spinnerTickCmd() tea.Cmd {
 	return tea.Tick(80*time.Millisecond, func(t time.Time) tea.Msg {
 		return spinnerTickMsg(t)
 	})
 }
 
-// loadProjectsFromManager handles fetching and formatting the project list.
-func loadProjectsFromManager(mgr *tmux.Manager, configDir string) tea.Msg {
-	projects, _ := mgr.GetAvailableProjects()
-
-	// Sort by access history
-	if history, err := mgr.GetAccessHistory(); err == nil {
-		projects = manager.SortProjectsByAccess(history, projects)
-	}
-
-	// Group cloned repos under a virtual "Cloned Repos" ecosystem
-	projects = groupClonedProjectsAsEcosystem(projects)
-
-	// Convert to pointers
-	projectPtrs := make([]*manager.SessionizeProject, len(projects))
-	for i := range projects {
-		projectPtrs[i] = &projects[i]
-	}
-
-	// Save to cache for next startup
-	_ = manager.SaveProjectCache(configDir, projects)
-
-	return projectsUpdateMsg{projects: projectPtrs}
-}
-
-// fetchProjectsCmd returns a command that re-scans configured search paths.
-// This command only performs discovery and does NOT fetch enrichment data.
-// If the daemon is running, it also triggers a daemon refresh so the daemon
-// re-discovers workspaces and broadcasts the update via SSE.
-func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
+// fetchProjectsCmd reloads the project list via the loader supplied on Config.
+// If the daemon is running, it also triggers a daemon refresh first so the
+// daemon re-discovers workspaces and broadcasts the update via SSE.
+func fetchProjectsCmd(loader ProjectLoader) tea.Cmd {
 	return func() tea.Msg {
-		// Trigger daemon refresh synchronously so the subsequent project
-		// fetch returns freshly scanned data.
 		client := daemon.New()
 		if client.IsRunning() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -306,19 +250,25 @@ func fetchProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
 		}
 		client.Close()
 
-		return loadProjectsFromManager(mgr, configDir)
+		if loader == nil {
+			return projectsUpdateMsg{projects: nil}
+		}
+		projects, _ := loader()
+		return projectsUpdateMsg{projects: projects}
 	}
 }
 
 // reloadProjectsCmd loads projects without triggering a daemon refresh.
-// Used when reacting to a daemon-pushed workspace update.
-func reloadProjectsCmd(mgr *tmux.Manager, configDir string) tea.Cmd {
+func reloadProjectsCmd(loader ProjectLoader) tea.Cmd {
 	return func() tea.Msg {
-		return loadProjectsFromManager(mgr, configDir)
+		if loader == nil {
+			return projectsUpdateMsg{projects: nil}
+		}
+		projects, _ := loader()
+		return projectsUpdateMsg{projects: projects}
 	}
 }
 
-// fetchGitStatusCmd returns a command to fetch git status for a single path.
 func fetchGitStatusCmd(path string) tea.Cmd {
 	return func() tea.Msg {
 		status, _ := git.GetExtendedStatus(path)
@@ -326,17 +276,14 @@ func fetchGitStatusCmd(path string) tea.Cmd {
 	}
 }
 
-// fetchAllGitStatusesCmd returns a command to fetch git status for multiple paths concurrently.
-// Projects that already have GitStatus pre-populated (from daemon) are skipped.
-func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		statuses := make(map[string]*git.ExtendedGitStatus)
-		semaphore := make(chan struct{}, 10) // Limit to 10 concurrent git processes
+		semaphore := make(chan struct{}, 10)
 
 		for _, p := range projects {
-			// Skip projects that already have git status from daemon
 			if p.GitStatus != nil {
 				mu.Lock()
 				statuses[p.Path] = p.GitStatus
@@ -345,7 +292,7 @@ func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 			}
 
 			wg.Add(1)
-			go func(proj *manager.SessionizeProject) {
+			go func(proj *api.Project) {
 				defer wg.Done()
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
@@ -364,24 +311,29 @@ func fetchAllGitStatusesCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchAllNoteCountsCmd returns a command to fetch all note counts.
 func fetchAllNoteCountsCmd() tea.Cmd {
 	return func() tea.Msg {
-		counts, _ := manager.FetchNoteCountsMap()
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		counts, _ := client.GetNoteCounts(ctx)
 		return noteCountsMapMsg{counts: counts}
 	}
 }
 
-// fetchAllPlanStatsCmd returns a command to fetch all plan stats.
 func fetchAllPlanStatsCmd() tea.Cmd {
 	return func() tea.Msg {
-		stats, _ := manager.FetchPlanStatsMap()
+		client := daemon.New()
+		defer client.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		stats, _ := client.GetPlanStats(ctx)
 		return planStatsMapMsg{stats: stats}
 	}
 }
 
-// fetchAllReleaseInfoCmd fetches release info via daemon client.
-func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchAllReleaseInfoCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		client := daemon.New()
 		defer client.Close()
@@ -400,8 +352,7 @@ func fetchAllReleaseInfoCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchAllBinaryStatusCmd fetches active binary status via daemon client.
-func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchAllBinaryStatusCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		client := daemon.New()
 		defer client.Close()
@@ -420,8 +371,7 @@ func fetchAllBinaryStatusCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchCxPerLineStatsCmd fetches context stats via daemon client.
-func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchCxPerLineStatsCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		client := daemon.New()
 		defer client.Close()
@@ -440,8 +390,7 @@ func fetchCxPerLineStatsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchAllRemoteURLsCmd fetches the git remote URL via daemon client.
-func fetchAllRemoteURLsCmd(projects []*manager.SessionizeProject) tea.Cmd {
+func fetchAllRemoteURLsCmd(projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		client := daemon.New()
 		defer client.Close()
@@ -460,29 +409,26 @@ func fetchAllRemoteURLsCmd(projects []*manager.SessionizeProject) tea.Cmd {
 	}
 }
 
-// fetchRunningSessionsCmd returns a command that gets the list of currently running tmux sessions
-func fetchRunningSessionsCmd() tea.Cmd {
+// fetchRunningSessionsCmd asks the SessionStateProvider for the active set.
+func fetchRunningSessionsCmd(state SessionStateProvider) tea.Cmd {
 	return func() tea.Msg {
 		sessionsMap := make(map[string]bool)
-		if os.Getenv("TMUX") != "" {
-			client, err := tmuxclient.NewClient()
-			if err == nil {
-				ctx := context.Background()
-				sessionNames, _ := client.ListSessions(ctx)
-				for _, name := range sessionNames {
-					sessionsMap[name] = true
-				}
+		if state != nil {
+			ctx := context.Background()
+			names, _ := state.ListActive(ctx)
+			for _, name := range names {
+				sessionsMap[name] = true
 			}
 		}
 		return runningSessionsUpdateMsg{sessions: sessionsMap}
 	}
 }
 
-// fetchKeyMapCmd returns a command that reloads the tmux-sessions.yaml file
-func fetchKeyMapCmd(mgr *tmux.Manager) tea.Cmd {
+// fetchKeyMapCmd reloads sessions via Store and rebuilds the path→key map.
+func fetchKeyMapCmd(store Store) tea.Cmd {
 	return func() tea.Msg {
 		keyMap := make(map[string]string)
-		sessions, err := mgr.GetSessions()
+		sessions, err := store.GetSessions()
 		if err != nil {
 			sessions = []models.TmuxSession{}
 		}
@@ -500,39 +446,20 @@ func fetchKeyMapCmd(mgr *tmux.Manager) tea.Cmd {
 	}
 }
 
-// statusMsg represents a temporary status message to show to the user
-type statusMsg struct {
-	message string
-}
-
-// jumpToMappingMsg signals that we should switch to keymanage view and jump to a specific path
-type jumpToMappingMsg struct {
-	path string
-}
-
-// jumpToSessionizeMsg signals that we should switch to sessionize view and focus on a path
-type jumpToSessionizeMsg struct {
-	path            string
-	applyGroupFilter bool
-}
-
-// focusCwdEcosystemMsg signals that we should switch to sessionize view and focus on the CWD's ecosystem
-type focusCwdEcosystemMsg struct{}
-
-// clearStatusCmd returns a command that clears the status message after a delay
 func clearStatusCmd(duration time.Duration) tea.Cmd {
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
 		return statusMsg{message: ""}
 	})
 }
 
-// enrichInitialProjectsCmd gets WorkspaceNode info for all mapped sessions.
-func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[string]*manager.SessionizeProject) tea.Cmd {
+// enrichInitialProjectsCmd populates session-mapped paths into a project map
+// using workspace.GetProjectByPath. Used by other TUIs (key manage); the
+// sessionizer keeps it here so its message types stay self-contained.
+func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[string]*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		enrichedProjects := make(map[string]*manager.SessionizeProject)
-		var projectList []*manager.SessionizeProject
+		enrichedProjects := make(map[string]*api.Project)
+		var projectList []*api.Project
 
-		// Copy cached projects first to avoid re-analyzing paths
 		for path, proj := range cachedProjects {
 			enrichedProjects[path] = proj
 		}
@@ -542,25 +469,22 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 				continue
 			}
 
-			// Use expanded and cleaned path as the key
 			expandedPath := expandPath(s.Path)
 			cleanPath, err := filepath.Abs(expandedPath)
 			if err != nil {
-				continue // Skip if path is invalid
+				continue
 			}
 			cleanPath = filepath.Clean(cleanPath)
 
 			if _, exists := enrichedProjects[cleanPath]; !exists {
-				// Not in cache, so we need to get its info
 				node, err := workspace.GetProjectByPath(s.Path)
 				if err == nil {
-					proj := &manager.SessionizeProject{WorkspaceNode: node}
+					proj := &api.Project{WorkspaceNode: node}
 					enrichedProjects[cleanPath] = proj
 				}
 			}
 		}
 
-		// Create list from map
 		for _, proj := range enrichedProjects {
 			projectList = append(projectList, proj)
 		}
@@ -573,36 +497,27 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 }
 
 // daemonStreamState holds the state for the daemon SSE stream subscription.
-// This is used to maintain the stream connection across multiple tea.Cmd invocations.
 var daemonStreamState struct {
-	mu       sync.Mutex
-	ch       <-chan daemon.StateUpdate
-	cancel   context.CancelFunc
-	started  bool
+	mu      sync.Mutex
+	ch      <-chan daemon.StateUpdate
+	cancel  context.CancelFunc
+	started bool
 }
 
-// daemonStreamStartedMsg is sent after the daemon stream subscription is established.
-type daemonStreamStartedMsg struct{}
-
-// subscribeToDaemonCmd starts listening to daemon state updates via SSE.
-// After setup, it returns daemonStreamStartedMsg to trigger listening.
-// If the daemon is not running, this is a no-op.
 func subscribeToDaemonCmd() tea.Cmd {
 	return func() tea.Msg {
 		daemonStreamState.mu.Lock()
 		defer daemonStreamState.mu.Unlock()
 
-		// If stream already started, just signal ready
 		if daemonStreamState.started {
 			return daemonStreamStartedMsg{}
 		}
 
 		client := daemon.New()
 
-		// Only subscribe if daemon is actually running (RemoteClient)
 		if !client.IsRunning() {
 			client.Close()
-			return nil // No daemon, no streaming
+			return nil
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -621,8 +536,6 @@ func subscribeToDaemonCmd() tea.Cmd {
 	}
 }
 
-// listenToDaemonCmd waits for the next update from the daemon stream.
-// This should be called after receiving daemonStreamStartedMsg.
 func listenToDaemonCmd() tea.Cmd {
 	return func() tea.Msg {
 		daemonStreamState.mu.Lock()
@@ -631,13 +544,11 @@ func listenToDaemonCmd() tea.Cmd {
 		daemonStreamState.mu.Unlock()
 
 		if !started || ch == nil {
-			return nil // Stream not active
+			return nil
 		}
 
-		// Block waiting for next update
 		update, ok := <-ch
 		if !ok {
-			// Channel closed
 			return daemonStreamErrorMsg{err: nil}
 		}
 
@@ -645,28 +556,13 @@ func listenToDaemonCmd() tea.Cmd {
 	}
 }
 
-// stopDaemonStream stops the daemon SSE stream subscription.
-func stopDaemonStream() {
-	daemonStreamState.mu.Lock()
-	defer daemonStreamState.mu.Unlock()
+var lastFocusPaths string
 
-	if daemonStreamState.cancel != nil {
-		daemonStreamState.cancel()
-	}
-	daemonStreamState.ch = nil
-	daemonStreamState.cancel = nil
-	daemonStreamState.started = false
-}
-
-var lastFocusPaths string // serialized for comparison
-
-// updateDaemonFocusCmd tells the daemon which workspaces to prioritize for scanning.
-// This should be called whenever the visible/filtered workspace list changes.
 func updateDaemonFocusCmd(paths []string) tea.Cmd {
 	sort.Strings(paths)
 	key := strings.Join(paths, "\x00")
 	if key == lastFocusPaths {
-		return nil // No change, skip
+		return nil
 	}
 	lastFocusPaths = key
 
@@ -675,13 +571,25 @@ func updateDaemonFocusCmd(paths []string) tea.Cmd {
 		defer client.Close()
 
 		if !client.IsRunning() {
-			return nil // No daemon, no focus to update
+			return nil
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
 		_ = client.SetFocus(ctx, paths)
-		return nil // Fire and forget
+		return nil
 	}
+}
+
+// expandPath expands a leading ~/ in a path. Duplicated here so the
+// sessionizer package has no cmd/nav dependency.
+func expandPath(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
 }

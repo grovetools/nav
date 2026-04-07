@@ -1,9 +1,8 @@
-package main
+package sessionizer
 
 import (
 	"context"
 	"fmt"
-	grovecontext "github.com/grovetools/cx/pkg/context"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,395 +15,20 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/pkg/models"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/core/tui/components/help"
 	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
-	"github.com/grovetools/nav/internal/manager"
-	"github.com/grovetools/nav/pkg/tmux"
+	grovecontext "github.com/grovetools/cx/pkg/context"
+	"github.com/grovetools/nav/pkg/api"
 )
 
 var pageStyle = lipgloss.NewStyle()
 
-// jumpState captures the view state for the jump list (C-o/C-i navigation)
-type jumpState struct {
-	focusedPath     string
-	cursor          int
-	filterText      string
-	filterGroup     bool
-	filterDirty     bool
-	worktreesFolded bool
-	activeGroup     string
-}
-
-// sessionizeModel is the model for the interactive project picker
-type sessionizeModel struct {
-	projects                 []*manager.SessionizeProject
-	filtered                 []*manager.SessionizeProject
-	selected                 *manager.SessionizeProject
-	projectMap               map[string]*manager.SessionizeProject // For fast lookups by path
-	cursor                   int
-	filterInput              textinput.Model
-	searchPaths              []string
-	manager                  *tmux.Manager
-	features                 manager.ResolvedFeatures // Feature flags for progressive disclosure
-	configDir                string            // configuration directory
-	keyMap          map[string]string // path -> key mapping
-	runningSessions map[string]bool   // map[sessionName] -> true
-	currentSession  string            // name of the current tmux session
-	width                    int
-	height                   int
-	keys                     sessionizeKeyMap  // keybindings for this TUI
-	availableKeys []string
-	sessions      []models.TmuxSession
-	help          help.Model
-
-	// Focus mode state
-	ecosystemPickerMode bool // True when showing only ecosystems for selection
-	focusedProject      *manager.SessionizeProject
-	worktreesFolded     bool // Whether worktrees are hidden/collapsed
-	foldedPaths         map[string]bool // Paths that are currently folded closed
-	hasChildren         map[string]bool // Cheap tracking of parent nodes
-	sequence            *keymap.SequenceState // Core standard vim sequence tracker
-
-	// View toggles
-	showGitStatus  bool // Whether to fetch and show Git status
-	showBranch     bool // Whether to show branch names
-	showNoteCounts bool // Whether to fetch and show note counts
-	showPlanStats  bool // Whether to show plan stats from grove-flow
-	showOnHold         bool // Whether to show on-hold plans
-	pathDisplayMode    int  // 0=no paths, 1=compact (~), 2=full paths
-	showRelease    bool // Whether to show release info column
-	showBinary     bool // Whether to show active binary column
-	showLink       bool // Whether to show repository link column
-	showCx         bool // Whether to show CX (context) column
-
-	// Filter mode
-	filterDirty bool // Whether to filter to only projects with dirty Git status
-	filterGroup bool // Whether to filter to only projects in the active group
-
-	// Context-only projects (shown but not selectable during filtered search in focus mode)
-	contextOnlyPaths map[string]bool
-
-	// Status message
-	statusMessage string
-	statusTimeout time.Time
-
-	// Loading state
-	isLoading    bool
-	usedCache    bool      // Whether we loaded from cache on startup
-	spinnerFrame int       // Current frame of the spinner animation
-	lastSpinTime time.Time // Last time spinner was updated
-
-	// Enrichment loading state
-	enrichmentLoading map[string]bool // tracks which enrichments are currently loading
-
-	// Context rules state
-	rulesState map[string]grovecontext.RuleStatus // path -> status
-
-	// New group creation mode (inline)
-	newGroupMode   bool
-	newGroupStep   int    // 0 = entering name, 1 = entering prefix
-	newGroupName   string
-	newGroupPrefix string
-
-	// Map to group mode
-	mapToGroupMode    bool
-	mapToGroupOptions []string
-	mapToGroupCursor  int
-	mapToGroupPaths   []string
-
-	selectedPaths     map[string]bool // Paths currently selected for bulk operations
-
-	// Jump list for C-o/C-i navigation
-	jumpList []jumpState
-	jumpIdx  int
-}
-
-func newSessionizeModel(projects []*manager.SessionizeProject, searchPaths []string, mgr *tmux.Manager, configDir string, usedCache bool, cwdFocusPath string) sessionizeModel {
-	// Create text input for filtering (start unfocused)
-	ti := textinput.New()
-	ti.Placeholder = ""
-	ti.Prompt = core_theme.DefaultTheme.Muted.Render("󰍉 ")
-	ti.CharLimit = 256
-	ti.Width = 50
-
-	// Determine initial group based on context priority
-	initialGroup := mgr.GetActiveGroup()
-	autoEnableGroupFilter := false
-	clearFocus := false
-
-	cwd, err := os.Getwd()
-	if err == nil && cwd != "" {
-		cwdGroup := mgr.FindGroupForPath(cwd)
-		if cwdGroup != "" && cwdGroup != "default" {
-			// CWD matches a non-default group - auto-enable filter
-			autoEnableGroupFilter = true
-		} else if _, err := workspace.GetProjectByPath(cwd); err == nil {
-			// Workspace in default group or unmapped - clear focus
-			clearFocus = true
-		}
-	}
-
-	// Set the active group before fetching sessions
-	mgr.SetActiveGroup(initialGroup)
-	_ = mgr.SetLastAccessedGroup(initialGroup)
-
-	// Build key mapping from sessions
-	keyMap := make(map[string]string)
-	sessions, err := mgr.GetSessions()
-	if err != nil {
-		sessions = []models.TmuxSession{}
-	}
-
-	for _, s := range sessions {
-		if s.Path != "" {
-			// Get absolute path for consistent matching
-			expandedPath := expandPath(s.Path)
-			absPath, err := filepath.Abs(expandedPath)
-			if err == nil {
-				// Store with clean path
-				cleanPath := filepath.Clean(absPath)
-				keyMap[cleanPath] = s.Key
-			}
-		}
-	}
-
-	// Get available keys
-	availableKeys := mgr.GetAvailableKeys()
-
-	// Create running sessions map and get current session name if we're in tmux
-	runningSessions := make(map[string]bool)
-	currentSession := ""
-	if os.Getenv("TMUX") != "" {
-		client, err := tmuxclient.NewClient()
-		if err == nil {
-			ctx := context.Background()
-			if current, err := client.GetCurrentSession(ctx); err == nil {
-				currentSession = current
-			}
-			// Populate running sessions synchronously to avoid reordering flash
-			if sessionNames, err := client.ListSessions(ctx); err == nil {
-				for _, name := range sessionNames {
-					runningSessions[name] = true
-				}
-			}
-		}
-	}
-
-	helpModel := help.NewBuilder().
-		WithKeys(sessionizeKeys).
-		WithTitle("Project Sessionizer - Help").
-		WithLegend("Icons: " + core_theme.IconBullet + " current • " + core_theme.IconBullet + " active • " + core_theme.IconEcosystem + " ecosystem • " + core_theme.IconRepo + " repo • " + core_theme.IconWorktree + " worktree • " + core_theme.IconGitBranch + " branch").
-		Build()
-
-	// Build project map for fast lookups and initialize enrichment status
-	projectMap := make(map[string]*manager.SessionizeProject, len(projects))
-	for _, p := range projects {
-		p.EnrichmentStatus = make(map[string]string)
-		// Mark cached enrichment data as done so it doesn't get overwritten with "loading"
-		if p.GitStatus != nil {
-			p.EnrichmentStatus["git"] = "done"
-		}
-		projectMap[p.Path] = p
-	}
-
-	// Fetch resolved feature flags for progressive disclosure
-	features := mgr.GetResolvedFeatures()
-
-	// Load previously focused ecosystem and fold state
-	var focusedProject *manager.SessionizeProject
-	var worktreesFolded bool
-	foldedPaths := make(map[string]bool)
-	// Set sensible defaults for toggles
-	showGitStatus := true
-	showBranch := true
-	showNoteCounts := true
-	showPlanStats := true
-	pathDisplayMode := 1 // Default to compact paths (~)
-	showRelease := false // Default off - expensive operation
-	showBinary := false  // Default off - expensive operation
-	showLink := false    // Default off - takes space
-	showCx := true       // Default on - show CX column when data available
-
-	// Override defaults based on feature flags
-	if !features.Integrations {
-		showGitStatus = false
-		showBranch = false
-		showNoteCounts = false
-		showPlanStats = false
-		showRelease = false
-		showBinary = false
-		showLink = false
-		showCx = false
-	}
-	if !features.Worktrees {
-		worktreesFolded = false
-	}
-
-	if state, err := manager.LoadState(configDir); err == nil {
-		// Prioritize CWD focus path over saved state, but clear if in unmapped workspace
-		if clearFocus {
-			state.FocusedEcosystemPath = ""
-		} else if cwdFocusPath != "" {
-			state.FocusedEcosystemPath = cwdFocusPath
-		}
-		if state.FocusedEcosystemPath != "" {
-			// Find the project with this path using normalized path comparison
-			normalizedFocusPath, err := pathutil.NormalizeForLookup(state.FocusedEcosystemPath)
-			if err == nil {
-				for path, proj := range projectMap {
-					normalizedPath, err := pathutil.NormalizeForLookup(path)
-					if err == nil && normalizedPath == normalizedFocusPath {
-						focusedProject = proj
-						break
-					}
-				}
-			}
-		}
-		worktreesFolded = state.WorktreesFolded
-		// Override defaults with saved state if present
-		if state.ShowGitStatus != nil {
-			showGitStatus = *state.ShowGitStatus
-		}
-		if state.ShowBranch != nil {
-			showBranch = *state.ShowBranch
-		}
-		if state.ShowNoteCounts != nil {
-			showNoteCounts = *state.ShowNoteCounts
-		}
-		if state.ShowPlanStats != nil {
-			showPlanStats = *state.ShowPlanStats
-		}
-		if state.PathDisplayMode != nil {
-			pathDisplayMode = *state.PathDisplayMode
-		}
-		if state.ShowRelease != nil {
-			showRelease = *state.ShowRelease
-		}
-		if state.ShowBinary != nil {
-			showBinary = *state.ShowBinary
-		}
-		if state.ShowLink != nil {
-			showLink = *state.ShowLink
-		}
-		if state.ShowCx != nil {
-			showCx = *state.ShowCx
-		}
-		for _, p := range state.FoldedPaths {
-			foldedPaths[p] = true
-		}
-	}
-
-	m := sessionizeModel{
-		rulesState:               make(map[string]grovecontext.RuleStatus),
-		projects:                 projects,
-		filtered:                 projects,
-		projectMap:               projectMap,
-		filterInput:              ti,
-		searchPaths:              searchPaths,
-		manager:                  mgr,
-		features:                 features,
-		configDir:                configDir,
-		keyMap:          keyMap,
-		runningSessions: runningSessions,
-		currentSession:  currentSession,
-		width:                    0,
-		height:                   0,
-		keys:                     sessionizeKeys,
-		cursor:                   0,
-		availableKeys:            availableKeys,
-		sessions:                 sessions,
-		help:                     helpModel,
-		worktreesFolded:          worktreesFolded,
-		showGitStatus:            showGitStatus,
-		showBranch:               showBranch,
-		showNoteCounts:           showNoteCounts,
-		showPlanStats:            showPlanStats,
-		showOnHold:               false, // Default to hiding on-hold plans
-		pathDisplayMode:          pathDisplayMode,
-		showRelease:              showRelease,
-		showBinary:               showBinary,
-		showLink:                 showLink,
-		showCx:                   showCx,
-		filterGroup:              autoEnableGroupFilter,
-		// Clear ecosystem focus when group filter is auto-enabled
-		focusedProject: func() *manager.SessionizeProject {
-			if autoEnableGroupFilter {
-				return nil
-			}
-			return focusedProject
-		}(),
-		contextOnlyPaths:         make(map[string]bool),
-		usedCache:                usedCache,
-		isLoading:                usedCache, // Start as loading if we used cache (will refresh in background)
-		enrichmentLoading:        make(map[string]bool),
-		foldedPaths:              foldedPaths,
-		hasChildren:              make(map[string]bool),
-		sequence:                 keymap.NewSequenceState(),
-		selectedPaths:            make(map[string]bool),
-		jumpList:                 make([]jumpState, 0),
-		jumpIdx:                  0,
-	}
-
-	// Prune key bindings based on feature flags (auto-removes from help menu)
-	if !features.Groups {
-		m.keys.NextGroup.SetEnabled(false)
-		m.keys.PrevGroup.SetEnabled(false)
-		m.keys.FilterGroup.SetEnabled(false)
-		m.keys.ManageGroups.SetEnabled(false)
-		m.keys.NewGroup.SetEnabled(false)
-		m.keys.MapToGroup.SetEnabled(false)
-		m.keys.GoToMappingCursor.SetEnabled(false)
-		m.keys.GoToMappingCwd.SetEnabled(false)
-	}
-	if !features.Ecosystems {
-		m.keys.FocusEcosystem.SetEnabled(false)
-		m.keys.OpenEcosystem.SetEnabled(false)
-		m.keys.FocusEcosystemCursor.SetEnabled(false)
-		m.keys.FocusEcosystemCwd.SetEnabled(false)
-		m.keys.ClearFocus.SetEnabled(false)
-	}
-	if !features.Integrations {
-		m.keys.ToggleCx.SetEnabled(false)
-		m.keys.ToggleNoteCounts.SetEnabled(false)
-		m.keys.TogglePlanStats.SetEnabled(false)
-		m.keys.ToggleHotContext.SetEnabled(false)
-		m.keys.ToggleHold.SetEnabled(false)
-		m.keys.ToggleRelease.SetEnabled(false)
-		m.keys.ToggleBinary.SetEnabled(false)
-		m.keys.ToggleLink.SetEnabled(false)
-	}
-	if !features.Worktrees {
-		m.keys.ToggleWorktrees.SetEnabled(false)
-	}
-
-	// Synchronously apply initial filters to prevent UI flash
-	m.updateFiltered()
-	m.moveCursorToFirstSelectable()
-
-	// Attempt to position cursor on the current project
-	if cwd != "" {
-		if node, err := workspace.GetProjectByPath(cwd); err == nil && node != nil {
-			normalizedProject, _ := pathutil.NormalizeForLookup(filepath.Clean(node.Path))
-			for i, p := range m.filtered {
-				normalizedPath, _ := pathutil.NormalizeForLookup(filepath.Clean(p.Path))
-				if normalizedPath == normalizedProject && !m.contextOnlyPaths[p.Path] {
-					m.cursor = i
-					break
-				}
-			}
-		}
-	}
-
-	return m
-}
 
 // cycleGroup switches to the next or previous workspace group
-func (m *sessionizeModel) cycleGroup(dir int) {
-	groups := m.manager.GetGroups()
+func (m *Model) cycleGroup(dir int) {
+	groups := m.store.GetGroups()
 	if len(groups) <= 1 {
 		m.statusMessage = "No other groups configured"
 		m.statusTimeout = time.Now().Add(2 * time.Second)
@@ -413,7 +37,7 @@ func (m *sessionizeModel) cycleGroup(dir int) {
 
 	currentIdx := 0
 	for i, g := range groups {
-		if g == m.manager.GetActiveGroup() {
+		if g == m.store.GetActiveGroup() {
 			currentIdx = i
 			break
 		}
@@ -425,11 +49,11 @@ func (m *sessionizeModel) cycleGroup(dir int) {
 	}
 
 	newGroup := groups[nextIdx]
-	m.manager.SetActiveGroup(newGroup)
-	_ = m.manager.SetLastAccessedGroup(newGroup)
+	m.store.SetActiveGroup(newGroup)
+	_ = m.store.SetLastAccessedGroup(newGroup)
 
 	// Reload sessions and keyMap
-	m.sessions, _ = m.manager.GetSessions()
+	m.sessions, _ = m.store.GetSessions()
 	m.keyMap = make(map[string]string)
 	for _, s := range m.sessions {
 		if s.Path != "" {
@@ -448,124 +72,8 @@ func (m *sessionizeModel) cycleGroup(dir int) {
 	}
 }
 
-// buildState creates a SessionizerState from the current model
-func (m sessionizeModel) buildState() *manager.SessionizerState {
-	state := &manager.SessionizerState{
-		FocusedEcosystemPath: "",
-		WorktreesFolded:      m.worktreesFolded,
-		ShowGitStatus:        boolPtr(m.showGitStatus),
-		ShowBranch:           boolPtr(m.showBranch),
-		ShowNoteCounts:       boolPtr(m.showNoteCounts),
-		ShowPlanStats:        boolPtr(m.showPlanStats),
-		PathDisplayMode:      intPtr(m.pathDisplayMode),
-		ShowRelease:          boolPtr(m.showRelease),
-		ShowBinary:           boolPtr(m.showBinary),
-		ShowLink:             boolPtr(m.showLink),
-		ShowCx:               boolPtr(m.showCx),
-	}
-	if m.focusedProject != nil {
-		state.FocusedEcosystemPath = m.focusedProject.Path
-	}
-	for path, folded := range m.foldedPaths {
-		if folded {
-			state.FoldedPaths = append(state.FoldedPaths, path)
-		}
-	}
-	return state
-}
-
-// boolPtr returns a pointer to a bool value
-func boolPtr(b bool) *bool {
-	return &b
-}
-
-// intPtr returns a pointer to an int value
-func intPtr(i int) *int {
-	return &i
-}
-
-// stringPtr returns a pointer to a string value
-func stringPtr(s string) *string {
-	return &s
-}
-func (m sessionizeModel) Init() tea.Cmd {
-	cmds := []tea.Cmd{
-		fetchRunningSessionsCmd(),
-		fetchKeyMapCmd(m.manager),
-		tickCmd(), // Start the periodic refresh cycle
-		subscribeToDaemonCmd(), // Subscribe to daemon state updates (if daemon is running)
-		updateDaemonFocusCmd(m.getVisiblePaths()), // Set initial focus for daemon
-	}
-
-	// Only do full project discovery if we didn't load from cache
-	// If we used cache, we already have projects with enrichment data
-	if !m.usedCache {
-		cmds = append(cmds, fetchProjectsCmd(m.manager, m.configDir))
-	} else {
-		// if we used cache, we have projects, so we can fetch rules state
-		cmds = append(cmds, fetchRulesStateCmd(m.projects))
-	}
-
-	// Use daemon's cached data if available (fast startup)
-	// Only fetch if daemon didn't provide the data
-	hasGitStatus, hasNoteCounts, hasPlanStats := false, false, false
-	for _, p := range m.projects {
-		if p.GitStatus != nil {
-			hasGitStatus = true
-		}
-		if p.NoteCounts != nil {
-			hasNoteCounts = true
-		}
-		if p.PlanStats != nil {
-			hasPlanStats = true
-		}
-	}
-
-	if m.showNoteCounts && !hasNoteCounts {
-		m.enrichmentLoading["notes"] = true
-		cmds = append(cmds, fetchAllNoteCountsCmd())
-	}
-	if m.showPlanStats && !hasPlanStats {
-		m.enrichmentLoading["plans"] = true
-		cmds = append(cmds, fetchAllPlanStatsCmd())
-	}
-	if m.showGitStatus && !hasGitStatus {
-		m.enrichmentLoading["git"] = true
-		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
-	}
-	if m.showRelease {
-		m.enrichmentLoading["release"] = true
-		cmds = append(cmds, fetchAllReleaseInfoCmd(m.projects))
-	}
-	if m.showBinary {
-		m.enrichmentLoading["binary"] = true
-		cmds = append(cmds, fetchAllBinaryStatusCmd(m.projects))
-	}
-	if m.showLink {
-		m.enrichmentLoading["link"] = true
-		cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
-	}
-	// Always fetch CX stats in the background to augment the CX column
-	m.enrichmentLoading["cxstats"] = true
-	cmds = append(cmds, fetchCxPerLineStatsCmd(m.projects))
-
-	// Start spinner animation if loading or if any enrichment is loading
-	anyEnrichmentLoading := m.isLoading
-	for _, loading := range m.enrichmentLoading {
-		if loading {
-			anyEnrichmentLoading = true
-			break
-		}
-	}
-	if anyEnrichmentLoading {
-		cmds = append(cmds, spinnerTickCmd())
-	}
-
-	return tea.Batch(cmds...)
-}
-
 // moveCursorUp moves the cursor up, skipping context-only (non-selectable) items
-func (m *sessionizeModel) moveCursorUp() {
+func (m *Model) moveCursorUp() {
 	if m.cursor <= 0 {
 		return
 	}
@@ -590,7 +98,7 @@ func (m *sessionizeModel) moveCursorUp() {
 }
 
 // moveCursorDown moves the cursor down, skipping context-only (non-selectable) items
-func (m *sessionizeModel) moveCursorDown() {
+func (m *Model) moveCursorDown() {
 	if m.cursor >= len(m.filtered)-1 {
 		return
 	}
@@ -619,7 +127,7 @@ func (m *sessionizeModel) moveCursorDown() {
 }
 
 // moveCursorToFirstSelectable moves the cursor to the first selectable item
-func (m *sessionizeModel) moveCursorToFirstSelectable() {
+func (m *Model) moveCursorToFirstSelectable() {
 	for i := 0; i < len(m.filtered); i++ {
 		if !m.contextOnlyPaths[m.filtered[i].Path] {
 			m.cursor = i
@@ -630,7 +138,7 @@ func (m *sessionizeModel) moveCursorToFirstSelectable() {
 	m.cursor = 0
 }
 
-func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -728,7 +236,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update the main project list and map
 		m.projects = msg.projects
-		m.projectMap = make(map[string]*manager.SessionizeProject, len(m.projects))
+		m.projectMap = make(map[string]*api.Project, len(m.projects))
 		for _, p := range m.projects {
 			p.EnrichmentStatus = make(map[string]string)
 			m.projectMap[p.Path] = p
@@ -808,7 +316,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			(source == "workspace" || source == "workspace_watcher") {
 			// The workspace collector or watcher detected a structural change
 			// (new clone, worktree add/remove). Reload the full project list.
-			return m, tea.Batch(reloadProjectsCmd(m.manager, m.configDir), listenToDaemonCmd())
+			return m, tea.Batch(reloadProjectsCmd(m.cfg.LoadProjects), listenToDaemonCmd())
 		}
 
 		// Process partial workspace updates (deltas) — only changed fields on changed workspaces
@@ -896,8 +404,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Periodically refresh enrichment data, but NOT the project list itself.
 		// The project list is only updated on manual refresh (ctrl+r).
 		cmds := []tea.Cmd{
-			fetchRunningSessionsCmd(),
-			fetchKeyMapCmd(m.manager),
+			fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
+			fetchKeyMapCmd(m.store),
 			tickCmd(), // This reschedules the tick
 			updateDaemonFocusCmd(m.getVisiblePaths()), // Keep daemon focus in sync
 		}
@@ -1010,15 +518,15 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = "Enter prefix key (optional, e.g. '<grove> g'):"
 					m.statusTimeout = time.Now().Add(30 * time.Second)
 				} else {
-					m.manager.TakeSnapshot()
+					m.store.TakeSnapshot()
 					// Create the group
-					if err := m.manager.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
+					if err := m.store.CreateGroup(m.newGroupName, m.newGroupPrefix); err != nil {
 						m.statusMessage = fmt.Sprintf("Error: %v", err)
 					} else {
-						m.manager.SetActiveGroup(m.newGroupName)
-						_ = m.manager.SetLastAccessedGroup(m.newGroupName)
+						m.store.SetActiveGroup(m.newGroupName)
+						_ = m.store.SetLastAccessedGroup(m.newGroupName)
 						// Reload sessions for the new group
-						m.sessions, _ = m.manager.GetSessions()
+						m.sessions, _ = m.store.GetSessions()
 						m.keyMap = make(map[string]string)
 						for _, s := range m.sessions {
 							if s.Path != "" {
@@ -1136,11 +644,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle non-letter key bindings that should work even in search mode
 		switch {
-		case key.Matches(msg, sessionizeKeys.RefreshProjects):
+		case key.Matches(msg, m.keys.RefreshProjects):
 			m.isLoading = true
-			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.manager, m.configDir))
+			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.cfg.LoadProjects))
 
-		case key.Matches(msg, sessionizeKeys.ClearFocus):
+		case key.Matches(msg, m.keys.ClearFocus):
 			m.saveJumpState()
 			// Clear group filter if active
 			if m.filterGroup {
@@ -1170,7 +678,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, updateDaemonFocusCmd(m.getVisiblePaths())
 
-		case key.Matches(msg, sessionizeKeys.FilterDirty):
+		case key.Matches(msg, m.keys.FilterDirty):
 			m.saveJumpState()
 			// Toggle dirty filter
 			m.filterDirty = !m.filterDirty
@@ -1184,7 +692,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursorToFirstSelectable()
 			return m, nil
 
-		case key.Matches(msg, sessionizeKeys.FilterGroup):
+		case key.Matches(msg, m.keys.FilterGroup):
 			m.saveJumpState()
 			m.filterGroup = !m.filterGroup
 			m.filterInput.SetValue("") // Clear text filter
@@ -1192,7 +700,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filterDirty = false
 				// Check if there are any mappings in the current group
 				if len(m.keyMap) == 0 {
-					m.statusMessage = fmt.Sprintf("No key mappings in group '%s'. Press Tab to switch groups.", m.manager.GetActiveGroup())
+					m.statusMessage = fmt.Sprintf("No key mappings in group '%s'. Press Tab to switch groups.", m.store.GetActiveGroup())
 					m.statusTimeout = time.Now().Add(3 * time.Second)
 				}
 			}
@@ -1201,17 +709,17 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursorToFirstSelectable()
 			return m, nil
 
-		case key.Matches(msg, sessionizeKeys.NextGroup):
+		case key.Matches(msg, m.keys.NextGroup):
 			m.saveJumpState()
 			m.cycleGroup(1)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
-		case key.Matches(msg, sessionizeKeys.PrevGroup):
+		case key.Matches(msg, m.keys.PrevGroup):
 			m.saveJumpState()
 			m.cycleGroup(-1)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
-		case key.Matches(msg, sessionizeKeys.ToggleHold):
+		case key.Matches(msg, m.keys.ToggleHold):
 			// Toggle on-hold plans visibility
 			m.showOnHold = !m.showOnHold
 			m.updateFiltered()
@@ -1350,72 +858,52 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.CloseSession):
-			// Close session
-			if m.cursor < len(m.filtered) {
+			// Close session via the configured driver + state provider.
+			if m.cursor < len(m.filtered) && m.cfg.SessionDriver != nil {
 				project := m.filtered[m.cursor]
 				sessionName := project.Identifier("_")
+				ctx := context.Background()
 
-				// Check if session exists before trying to close it
-				client, err := tmuxclient.NewClient()
-				if err == nil {
-					ctx := context.Background()
-					exists, err := client.SessionExists(ctx, sessionName)
-					if err == nil && exists {
-						// Check if we're in tmux and if this is the current session
-						if os.Getenv("TMUX") != "" {
-							currentSession, err := client.GetCurrentSession(ctx)
-							if err == nil && currentSession == sessionName {
-								// We're closing the current session - need to switch first
-								// Get all sessions
-								sessions, _ := client.ListSessions(ctx)
+				exists := true
+				if m.cfg.SessionStateProvider != nil {
+					exists, _ = m.cfg.SessionStateProvider.Exists(ctx, sessionName)
+				}
+				if exists {
+					// If we're killing the current session, switch to another one first.
+					if m.currentSession != "" && m.currentSession == sessionName && m.cfg.SessionStateProvider != nil {
+						active, _ := m.cfg.SessionStateProvider.ListActive(ctx)
 
-								// Find the best session to switch to
-								var targetSession string
-
-								// First, try to find the most recently accessed session from our list
-								for _, p := range m.filtered {
-									candidateName := p.Identifier("_")
-
-									// Skip the current session
-									if candidateName == sessionName {
-										continue
-									}
-
-									// Check if this session exists
-									for _, s := range sessions {
-										if s == candidateName {
-											targetSession = candidateName
-											break
-										}
-									}
-
-									if targetSession != "" {
-										break
-									}
+						var targetSession string
+						for _, p := range m.filtered {
+							candidateName := p.Identifier("_")
+							if candidateName == sessionName {
+								continue
+							}
+							for _, s := range active {
+								if s == candidateName {
+									targetSession = candidateName
+									break
 								}
-
-								// If no session from our list, just pick any other session
-								if targetSession == "" {
-									for _, s := range sessions {
-										if s != sessionName {
-											targetSession = s
-											break
-										}
-									}
-								}
-
-								// Switch to the target session before killing current
-								if targetSession != "" {
-									_ = client.SwitchClient(ctx, targetSession)
+							}
+							if targetSession != "" {
+								break
+							}
+						}
+						if targetSession == "" {
+							for _, s := range active {
+								if s != sessionName {
+									targetSession = s
+									break
 								}
 							}
 						}
-
-						// Kill the session
-						if err := client.KillSession(ctx, sessionName); err == nil {
-							// Clear the cached session status
-							delete(m.runningSessions, sessionName)
+						if targetSession != "" {
+							_ = m.cfg.SessionDriver.SwitchTo(ctx, targetSession)
 						}
+					}
+
+					if err := m.cfg.SessionDriver.Kill(ctx, sessionName); err == nil {
+						delete(m.runningSessions, sessionName)
 					}
 				}
 			}
@@ -1561,7 +1049,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.ManageGroups):
 			// Switch to groups management view
-			return m, func() tea.Msg { return switchViewMsg{to: viewGroups} }
+			return m, func() tea.Msg { return RequestManageGroupsMsg{} }
 
 		case key.Matches(msg, m.keys.NewGroup):
 			// Enter new group creation mode (inline in sessionize)
@@ -1592,8 +1080,8 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Build list of target groups
 			m.mapToGroupOptions = []string{}
-			currentGroup := m.manager.GetActiveGroup()
-			for _, g := range m.manager.GetGroups() {
+			currentGroup := m.store.GetActiveGroup()
+			for _, g := range m.store.GetGroups() {
 				if g != currentGroup {
 					m.mapToGroupOptions = append(m.mapToGroupOptions, g)
 				}
@@ -1625,17 +1113,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			// First check if the project is mapped in ANY group (not just current)
-			targetGroup := m.manager.FindGroupForPath(project.Path)
+			targetGroup := m.store.FindGroupForPath(project.Path)
 			if targetGroup != "" {
 				// Project is mapped in some group - switch to that group and apply filter
 				return m, m.goToMappingForPath(project.Path)
 			}
 			// Not mapped anywhere - prompt to add a mapping
 			return m, func() tea.Msg {
-				return initiateMappingMsg{
-					project:  project,
-					returnTo: viewSessionize,
-				}
+				return RequestMapKeyMsg{Project: project}
 			}
 
 		case key.Matches(msg, m.keys.GoToMappingCwd):
@@ -1648,7 +1133,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Find the project for CWD
 			cwdNormalized, _ := pathutil.NormalizeForLookup(cwd)
-			var cwdProject *manager.SessionizeProject
+			var cwdProject *api.Project
 			for _, p := range m.projects {
 				pNormalized, _ := pathutil.NormalizeForLookup(p.Path)
 				if pNormalized == cwdNormalized || strings.HasPrefix(cwdNormalized, pNormalized+string(filepath.Separator)) {
@@ -1662,17 +1147,14 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, clearStatusCmd(2 * time.Second)
 			}
 			// First check if the project is mapped in ANY group (not just current)
-			targetGroup := m.manager.FindGroupForPath(cwdProject.Path)
+			targetGroup := m.store.FindGroupForPath(cwdProject.Path)
 			if targetGroup != "" {
 				// Project is mapped in some group - switch to that group and apply filter
 				return m, m.goToMappingForPath(cwdProject.Path)
 			}
 			// Not mapped anywhere - prompt to add a mapping
 			return m, func() tea.Msg {
-				return initiateMappingMsg{
-					project:  cwdProject,
-					returnTo: viewSessionize,
-				}
+				return RequestMapKeyMsg{Project: cwdProject}
 			}
 
 		case key.Matches(msg, m.keys.ToggleWorktrees):
@@ -1728,7 +1210,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				// Map each path to an available key and collect assigned keys
-				m.manager.TakeSnapshot()
+				m.store.TakeSnapshot()
 				mappedKeys := make([]string, 0, len(pathsToMap))
 				for i, p := range pathsToMap {
 					m.updateKeyMapping(p, availableKeys[i])
@@ -1738,7 +1220,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectedPaths = make(map[string]bool)
 				// Switch to key manage view with highlights
 				return m, func() tea.Msg {
-					return bulkMappingDoneMsg{mappedKeys: mappedKeys}
+					return BulkMappingDoneMsg{MappedKeys: mappedKeys}
 				}
 			}
 
@@ -1746,10 +1228,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.filtered) {
 				project := m.filtered[m.cursor]
 				return m, func() tea.Msg {
-					return initiateMappingMsg{
-						project:  project,
-						returnTo: viewSessionize,
-					}
+					return RequestMapKeyMsg{Project: project}
 				}
 			}
 			return m, nil
@@ -1783,7 +1262,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 
 				if mappedKey != "" {
-					m.manager.TakeSnapshot()
+					m.store.TakeSnapshot()
 					m.clearKeyMapping(p)
 					clearedCount++
 				}
@@ -1838,11 +1317,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.filtered) {
 				m.selected = m.filtered[m.cursor]
 				// Save cache before quitting to persist enrichment data
-				projects := make([]manager.SessionizeProject, len(m.projects))
+				projects := make([]api.Project, len(m.projects))
 				for i, p := range m.projects {
 					projects[i] = *p
 				}
-				_ = manager.SaveProjectCache(m.configDir, projects)
+				_ = api.SaveProjectCache(m.configDir, projects)
 				return m, tea.Quit
 			}
 			return m, nil
@@ -1887,7 +1366,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, m.keys.Undo):
-			if err := m.manager.Undo(); err != nil {
+			if err := m.store.Undo(); err != nil {
 				m.statusMessage = fmt.Sprintf("Undo failed: %v", err)
 			} else {
 				m.refreshStateAfterUndoRedo()
@@ -1897,7 +1376,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, clearStatusCmd(2 * time.Second)
 
 		case key.Matches(msg, m.keys.Redo):
-			if err := m.manager.Redo(); err != nil {
+			if err := m.store.Redo(); err != nil {
 				m.statusMessage = fmt.Sprintf("Redo failed: %v", err)
 			} else {
 				m.refreshStateAfterUndoRedo()
@@ -1908,11 +1387,11 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keys.Quit):
 			// Save cache before quitting to persist enrichment data
-			projects := make([]manager.SessionizeProject, len(m.projects))
+			projects := make([]api.Project, len(m.projects))
 			for i, p := range m.projects {
 				projects[i] = *p
 			}
-			_ = manager.SaveProjectCache(m.configDir, projects)
+			_ = api.SaveProjectCache(m.configDir, projects)
 			return m, tea.Quit
 		}
 	}
@@ -1920,7 +1399,7 @@ func (m sessionizeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
+func (m *Model) updateKeyMapping(projectPath, newKey string) {
 	// Find if there's already a session with this key
 	var existingSessionIndex = -1
 	var targetSessionIndex = -1
@@ -1981,8 +1460,8 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Save the updated sessions
-	_ = m.manager.UpdateSessions(m.sessions)
-	_ = m.manager.RegenerateBindings()
+	_ = m.store.UpdateSessions(m.sessions)
+	_ = m.store.RegenerateBindings()
 
 	// Update our key map to reflect all changes
 	m.keyMap = make(map[string]string)
@@ -1998,10 +1477,10 @@ func (m *sessionizeModel) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Reload tmux config
-	_ = reloadTmuxConfig()
+	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
 }
 
-func (m *sessionizeModel) clearKeyMapping(projectPath string) {
+func (m *Model) clearKeyMapping(projectPath string) {
 	cleanPath := filepath.Clean(projectPath)
 	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
 	if err != nil {
@@ -2028,11 +1507,11 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		m.sessions[targetSessionIndex].Repository = ""
 
 		// Save the updated sessions
-		_ = m.manager.UpdateSessions(m.sessions)
-		_ = m.manager.RegenerateBindings()
+		_ = m.store.UpdateSessions(m.sessions)
+		_ = m.store.RegenerateBindings()
 
 		// Refresh sessions to reflect changes
-		if sessions, err := m.manager.GetSessions(); err == nil {
+		if sessions, err := m.store.GetSessions(); err == nil {
 			m.sessions = sessions
 		}
 
@@ -2049,24 +1528,24 @@ func (m *sessionizeModel) clearKeyMapping(projectPath string) {
 		}
 
 		// Reload tmux config
-		_ = reloadTmuxConfig()
+		if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
 	}
 }
 
 // executeMapToGroup moves the selected project(s) to the target group.
 // It first removes them from the source group, then maps them to available keys in the target group.
-func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
+func (m *Model) executeMapToGroup(targetGroup string) {
 	if len(m.mapToGroupPaths) == 0 {
 		return
 	}
 
-	m.manager.TakeSnapshot()
+	m.store.TakeSnapshot()
 
 	// Save current group (source group)
-	sourceGroup := m.manager.GetActiveGroup()
+	sourceGroup := m.store.GetActiveGroup()
 
 	// First, remove mappings from the source group
-	sourceSessions, _ := m.manager.GetSessions()
+	sourceSessions, _ := m.store.GetSessions()
 	pathsToMoveNormalized := make(map[string]bool)
 	for _, p := range m.mapToGroupPaths {
 		normalized, err := pathutil.NormalizeForLookup(filepath.Clean(p))
@@ -2089,15 +1568,15 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	}
 
 	// Save source group with removed mappings
-	if err := m.manager.UpdateSessions(sourceSessions); err != nil {
+	if err := m.store.UpdateSessions(sourceSessions); err != nil {
 		m.statusMessage = fmt.Sprintf("Error removing from source: %v", err)
 		m.statusTimeout = time.Now().Add(2 * time.Second)
 		return
 	}
 
 	// Switch to target group
-	m.manager.SetActiveGroup(targetGroup)
-	targetSessions, _ := m.manager.GetSessions()
+	m.store.SetActiveGroup(targetGroup)
+	targetSessions, _ := m.store.GetSessions()
 
 	// Find available keys in target group
 	var availableKeys []string
@@ -2110,7 +1589,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	if len(availableKeys) < len(m.mapToGroupPaths) {
 		m.statusMessage = fmt.Sprintf("Not enough empty slots in '%s' (need %d, have %d)", targetGroup, len(m.mapToGroupPaths), len(availableKeys))
 		m.statusTimeout = time.Now().Add(2 * time.Second)
-		m.manager.SetActiveGroup(sourceGroup) // Restore group
+		m.store.SetActiveGroup(sourceGroup) // Restore group
 		return
 	}
 
@@ -2129,23 +1608,23 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 	}
 
 	// Save target group
-	if err := m.manager.UpdateSessions(targetSessions); err != nil {
+	if err := m.store.UpdateSessions(targetSessions); err != nil {
 		m.statusMessage = fmt.Sprintf("Error: %v", err)
 		m.statusTimeout = time.Now().Add(2 * time.Second)
-		m.manager.SetActiveGroup(sourceGroup)
+		m.store.SetActiveGroup(sourceGroup)
 		return
 	}
 
 	// Regenerate bindings
-	_ = m.manager.RegenerateBindings()
-	_ = reloadTmuxConfig()
+	_ = m.store.RegenerateBindings()
+	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
 
 	m.selectedPaths = make(map[string]bool)
 
 	// Switch to the target group
-	_ = m.manager.SetLastAccessedGroup(targetGroup)
+	_ = m.store.SetLastAccessedGroup(targetGroup)
 	// Reload sessions for new group
-	m.sessions, _ = m.manager.GetSessions()
+	m.sessions, _ = m.store.GetSessions()
 	m.keyMap = make(map[string]string)
 	for _, s := range m.sessions {
 		if s.Path != "" {
@@ -2168,7 +1647,7 @@ func (m *sessionizeModel) executeMapToGroup(targetGroup string) {
 }
 
 // currentJumpState captures the current view state for the jump list
-func (m *sessionizeModel) currentJumpState() jumpState {
+func (m *Model) currentJumpState() jumpState {
 	focusedPath := ""
 	if m.focusedProject != nil {
 		focusedPath = m.focusedProject.Path
@@ -2180,12 +1659,12 @@ func (m *sessionizeModel) currentJumpState() jumpState {
 		filterGroup:     m.filterGroup,
 		filterDirty:     m.filterDirty,
 		worktreesFolded: m.worktreesFolded,
-		activeGroup:     m.manager.GetActiveGroup(),
+		activeGroup:     m.store.GetActiveGroup(),
 	}
 }
 
 // saveJumpState saves the current state to the jump list before a navigation change
-func (m *sessionizeModel) saveJumpState() {
+func (m *Model) saveJumpState() {
 	curr := m.currentJumpState()
 
 	// Truncate forward history if we moved back and are now branching
@@ -2206,7 +1685,7 @@ func (m *sessionizeModel) saveJumpState() {
 }
 
 // restoreJumpState restores a previously saved view state
-func (m *sessionizeModel) restoreJumpState(state jumpState) {
+func (m *Model) restoreJumpState(state jumpState) {
 	if state.focusedPath == "" {
 		m.focusedProject = nil
 	} else {
@@ -2223,10 +1702,10 @@ func (m *sessionizeModel) restoreJumpState(state jumpState) {
 	m.filterDirty = state.filterDirty
 	m.worktreesFolded = state.worktreesFolded
 
-	if state.activeGroup != m.manager.GetActiveGroup() {
-		m.manager.SetActiveGroup(state.activeGroup)
-		_ = m.manager.SetLastAccessedGroup(state.activeGroup)
-		m.sessions, _ = m.manager.GetSessions()
+	if state.activeGroup != m.store.GetActiveGroup() {
+		m.store.SetActiveGroup(state.activeGroup)
+		_ = m.store.SetLastAccessedGroup(state.activeGroup)
+		m.sessions, _ = m.store.GetSessions()
 		m.keyMap = make(map[string]string)
 		for _, s := range m.sessions {
 			if s.Path != "" {
@@ -2252,8 +1731,8 @@ func (m *sessionizeModel) restoreJumpState(state jumpState) {
 }
 
 // refreshStateAfterUndoRedo refreshes the model state after an undo/redo operation
-func (m *sessionizeModel) refreshStateAfterUndoRedo() {
-	m.sessions, _ = m.manager.GetSessions()
+func (m *Model) refreshStateAfterUndoRedo() {
+	m.sessions, _ = m.store.GetSessions()
 	m.keyMap = make(map[string]string)
 	for _, s := range m.sessions {
 		if s.Path != "" {
@@ -2268,20 +1747,20 @@ func (m *sessionizeModel) refreshStateAfterUndoRedo() {
 		m.updateFiltered()
 		m.moveCursorToFirstSelectable()
 	}
-	_ = reloadTmuxConfig()
+	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
 }
 
-func (m *sessionizeModel) updateFiltered() {
+func (m *Model) updateFiltered() {
 	filter := strings.ToLower(m.filterInput.Value())
 
 	if m.ecosystemPickerMode {
-		m.filtered = []*manager.SessionizeProject{}
+		m.filtered = []*api.Project{}
 		m.contextOnlyPaths = make(map[string]bool) // Clear context-only paths so all ecosystems are selectable
 		m.hasChildren = make(map[string]bool)
 
 		// Separate into main ecosystems and worktrees
-		mainEcosystemsMap := make(map[string]*manager.SessionizeProject)
-		worktreesByParent := make(map[string][]*manager.SessionizeProject)
+		mainEcosystemsMap := make(map[string]*api.Project)
+		worktreesByParent := make(map[string][]*api.Project)
 		ecoOrder := make(map[string]int)
 
 		for i, p := range m.projects {
@@ -2315,7 +1794,7 @@ func (m *sessionizeModel) updateFiltered() {
 			}
 		}
 
-		var mainEcosystems []*manager.SessionizeProject
+		var mainEcosystems []*api.Project
 		for _, eco := range mainEcosystemsMap {
 			mainEcosystems = append(mainEcosystems, eco)
 		}
@@ -2361,7 +1840,7 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 
 	// 1. Determine base set of projects (Focus vs Global)
-	var baseProjects []*manager.SessionizeProject
+	var baseProjects []*api.Project
 	if m.focusedProject != nil {
 		// Build a set of ecosystem worktree paths to filter out their subprojects
 		ecoWorktreePaths := make(map[string]bool)
@@ -2411,7 +1890,7 @@ func (m *sessionizeModel) updateFiltered() {
 	// 3. Apply attribute filters (Group, Dirty, Hold, Folding)
 	pathsToKeep := make(map[string]bool)
 
-	hasKey := func(p *manager.SessionizeProject) bool {
+	hasKey := func(p *api.Project) bool {
 		cleanPath := filepath.Clean(p.Path)
 		if _, ok := m.keyMap[cleanPath]; ok {
 			return true
@@ -2455,7 +1934,7 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 
 	// 4. Trace Ancestry to Build Context Tree
-	projectByPath := make(map[string]*manager.SessionizeProject)
+	projectByPath := make(map[string]*api.Project)
 	for _, p := range baseProjects {
 		projectByPath[p.Path] = p
 	}
@@ -2504,8 +1983,8 @@ func (m *sessionizeModel) updateFiltered() {
 	}
 
 	// 5. Structure Hierarchical Roots & Children
-	childrenByParent := make(map[string][]*manager.SessionizeProject)
-	var roots []*manager.SessionizeProject
+	childrenByParent := make(map[string][]*api.Project)
+	var roots []*api.Project
 	m.hasChildren = make(map[string]bool)
 
 	for path := range finalIncludedPaths {
@@ -2571,9 +2050,9 @@ func (m *sessionizeModel) updateFiltered() {
 		return strings.ToLower(roots[i].Name) < strings.ToLower(roots[j].Name)
 	})
 
-	m.filtered = []*manager.SessionizeProject{}
-	var flatten func(p *manager.SessionizeProject)
-	flatten = func(p *manager.SessionizeProject) {
+	m.filtered = []*api.Project{}
+	var flatten func(p *api.Project)
+	flatten = func(p *api.Project) {
 		m.filtered = append(m.filtered, p)
 
 		// Check for active folding (ignored if actively text searching)
@@ -2601,7 +2080,7 @@ func (m *sessionizeModel) updateFiltered() {
 		flatten(root)
 	}
 }
-func (m sessionizeModel) View() string {
+func (m *Model) View() string {
 	// If help is visible, show it and return
 	if m.help.ShowAll {
 		return pageStyle.Render(m.help.View())
@@ -2610,24 +2089,24 @@ func (m sessionizeModel) View() string {
 	var b strings.Builder
 
 	// Render group tabs (if groups feature is enabled)
-	groups := m.manager.GetGroups()
+	groups := m.store.GetGroups()
 	if m.features.Groups && len(groups) > 0 {
 		labelStyle := lipgloss.NewStyle().Faint(true).Italic(true)
 		b.WriteString("  " + labelStyle.Render("Key group: "))
 
-		activeGroup := m.manager.GetActiveGroup()
+		activeGroup := m.store.GetActiveGroup()
 		var tabs []string
 		for _, g := range groups {
 			iconStr := ""
 			if g == "default" {
-				if defIcon := m.manager.GetDefaultIcon(); defIcon != "" {
+				if defIcon := m.store.GetDefaultIcon(); defIcon != "" {
 					iconStr = resolveIcon(defIcon) + " "
 				} else {
 					iconStr = core_theme.IconHome + " "
 				}
 			} else {
-				if cfg, ok := m.manager.GetGroupConfig(g); ok && cfg.Icon != "" {
-					iconStr = resolveIcon(cfg.Icon) + " "
+				if ic := m.store.GetGroupIcon(g); ic != "" {
+					iconStr = resolveIcon(ic) + " "
 				} else {
 					iconStr = core_theme.IconFolderStar + " "
 				}
@@ -2724,7 +2203,7 @@ func (m sessionizeModel) View() string {
 }
 
 // enrichVisibleProjects creates commands to fetch git status for visible projects.
-func (m *sessionizeModel) enrichVisibleProjects() tea.Cmd {
+func (m *Model) enrichVisibleProjects() tea.Cmd {
 	if !m.showGitStatus && !m.showBranch {
 		return nil
 	}
@@ -2746,7 +2225,7 @@ func (m *sessionizeModel) enrichVisibleProjects() tea.Cmd {
 }
 
 // hasVisibleContextData checks if any filtered projects have a context rule applied or cx stats.
-func (m sessionizeModel) hasVisibleContextData() bool {
+func (m *Model) hasVisibleContextData() bool {
 	for _, project := range m.filtered {
 		if status, ok := m.rulesState[project.Path]; ok {
 			if status == grovecontext.RuleHot || status == grovecontext.RuleCold || status == grovecontext.RuleExcluded {
@@ -2761,7 +2240,7 @@ func (m sessionizeModel) hasVisibleContextData() bool {
 }
 
 // getVisibleRange calculates the start and end indices of visible projects.
-func (m *sessionizeModel) getVisibleRange() (int, int) {
+func (m *Model) getVisibleRange() (int, int) {
 	visibleHeight := m.height - 10
 	if visibleHeight < 5 {
 		visibleHeight = 5
@@ -2795,7 +2274,7 @@ func (m *sessionizeModel) getVisibleRange() (int, int) {
 // This is used to tell the daemon which workspaces to prioritize for scanning.
 // When focused, returns all filtered paths (the focused ecosystem's children).
 // Otherwise returns just the visible range.
-func (m *sessionizeModel) getVisiblePaths() []string {
+func (m *Model) getVisiblePaths() []string {
 	// If focused or height not yet set, use all filtered paths
 	if m.focusedProject != nil || m.height == 0 {
 		paths := make([]string, 0, len(m.filtered))
@@ -2815,14 +2294,14 @@ func (m *sessionizeModel) getVisiblePaths() []string {
 }
 
 // jumpToPath sets up the UI to focus on the ecosystem containing the target path
-func (m *sessionizeModel) jumpToPath(targetPath string, applyGroupFilter bool) {
+func (m *Model) jumpToPath(targetPath string, applyGroupFilter bool) {
 	m.filterInput.SetValue("")
 	m.filterDirty = false
 	m.ecosystemPickerMode = false
 
 	targetNormalized, _ := pathutil.NormalizeForLookup(targetPath)
 
-	var targetProj *manager.SessionizeProject
+	var targetProj *api.Project
 	for _, p := range m.projects {
 		norm, _ := pathutil.NormalizeForLookup(p.Path)
 		if norm == targetNormalized {
@@ -2842,7 +2321,7 @@ func (m *sessionizeModel) jumpToPath(targetPath string, applyGroupFilter bool) {
 		m.focusedProject = nil
 	} else if targetProj != nil {
 		// Apply ecosystem focus for this project
-		var targetEcosystem *manager.SessionizeProject
+		var targetEcosystem *api.Project
 		var targetEcosystemIsWorktree bool
 
 		for _, p := range m.projects {
@@ -2889,7 +2368,7 @@ func (m *sessionizeModel) jumpToPath(targetPath string, applyGroupFilter bool) {
 
 // focusEcosystemForPath applies focus to the ecosystem containing the given path.
 // If targetPath is empty, uses the current working directory.
-func (m *sessionizeModel) focusEcosystemForPath(targetPath string) tea.Cmd {
+func (m *Model) focusEcosystemForPath(targetPath string) tea.Cmd {
 	if targetPath == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -2903,7 +2382,7 @@ func (m *sessionizeModel) focusEcosystemForPath(targetPath string) tea.Cmd {
 		targetNormalized = filepath.Clean(targetPath)
 	}
 
-	var targetEcosystem *manager.SessionizeProject
+	var targetEcosystem *api.Project
 	var targetEcosystemIsWorktree bool
 
 	for _, p := range m.projects {
@@ -2962,18 +2441,18 @@ func (m *sessionizeModel) focusEcosystemForPath(targetPath string) tea.Cmd {
 
 // goToMappingForPath switches to the group containing the path's mapping and applies group filter.
 // Caller should verify the path is mapped before calling this function.
-func (m *sessionizeModel) goToMappingForPath(targetPath string) tea.Cmd {
-	targetGroup := m.manager.FindGroupForPath(targetPath)
+func (m *Model) goToMappingForPath(targetPath string) tea.Cmd {
+	targetGroup := m.store.FindGroupForPath(targetPath)
 	if targetGroup == "" {
 		// Should not happen if caller verified, but handle gracefully
 		return nil
 	}
 
-	m.manager.SetActiveGroup(targetGroup)
-	_ = m.manager.SetLastAccessedGroup(targetGroup)
+	m.store.SetActiveGroup(targetGroup)
+	_ = m.store.SetLastAccessedGroup(targetGroup)
 
 	// Reload sessions for the new group
-	m.sessions, _ = m.manager.GetSessions()
+	m.sessions, _ = m.store.GetSessions()
 	m.keyMap = make(map[string]string)
 	for _, s := range m.sessions {
 		if s.Path != "" {

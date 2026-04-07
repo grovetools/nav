@@ -1,4 +1,4 @@
-package main
+package sessionizer
 
 import (
 	"fmt"
@@ -8,6 +8,44 @@ import (
 	"github.com/grovetools/core/pkg/models"
 	core_theme "github.com/grovetools/core/tui/theme"
 )
+
+// resolveIcon maps a config icon reference (human name or IconXxx constant)
+// to its Nerd Font glyph. Duplicated from cmd/nav's key_manage.go so the
+// sessionizer package has no dependency on package main.
+func resolveIcon(iconRef string) string {
+	switch iconRef {
+	case "IconTree", "tree":
+		return core_theme.IconTree
+	case "IconProject", "project":
+		return core_theme.IconProject
+	case "IconRepo", "repo":
+		return core_theme.IconRepo
+	case "IconWorktree", "worktree":
+		return core_theme.IconWorktree
+	case "IconEcosystem", "ecosystem":
+		return core_theme.IconEcosystem
+	case "IconFolder", "folder":
+		return core_theme.IconFolder
+	case "IconFolderStar", "folder-star", "star":
+		return core_theme.IconFolderStar
+	case "IconHome", "home":
+		return core_theme.IconHome
+	case "IconCloud", "cloud":
+		return "󰅧"
+	case "IconCode", "code":
+		return core_theme.IconCode
+	case "IconBriefcase", "briefcase", "work":
+		return "󰃖"
+	case "IconKeyboard", "keyboard":
+		return core_theme.IconKeyboard
+	case "IconNote", "note":
+		return core_theme.IconNote
+	case "IconPlan", "plan":
+		return core_theme.IconPlan
+	default:
+		return iconRef
+	}
+}
 
 // highlightMatch highlights the matched portion of text with a yellow background
 func highlightMatch(text, filter string) string {

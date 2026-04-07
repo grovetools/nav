@@ -16,7 +16,9 @@ import (
 	"github.com/grovetools/core/pkg/workspace"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/api"
 	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tui/sessionizer"
 )
 
 // navView represents which view is currently active
@@ -54,7 +56,7 @@ type NavTUIOptions struct {
 // navModel is the root model that manages view switching between all nav TUIs
 type navModel struct {
 	activeView      navView
-	sessionizeModel *sessionizeModel
+	sessionizeModel *sessionizer.Model
 	manageModel     *manageModel
 	historyModel    *historyModel
 	windowsModel    *windowsModel
@@ -73,7 +75,7 @@ func (m *navModel) isTextInputFocused() bool {
 	switch m.activeView {
 	case viewSessionize:
 		if m.sessionizeModel != nil {
-			return m.sessionizeModel.filterInput.Focused()
+			return m.sessionizeModel.IsTextInputFocused()
 		}
 	case viewManage:
 		if m.manageModel != nil {
@@ -167,13 +169,33 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			}
 
 			if len(projects) > 0 {
-				projectPtrs := make([]*manager.SessionizeProject, len(projects))
+				projectPtrs := make([]*api.Project, len(projects))
 				for i := range projects {
 					projectPtrs[i] = &projects[i]
 				}
 				searchPaths, _ := m.manager.GetEnabledSearchPaths()
-				sm := newSessionizeModel(projectPtrs, searchPaths, m.manager, m.configDir, usedCache, m.opts.CwdFocusPath)
-				m.sessionizeModel = &sm
+				currentSession := ""
+				if m.client != nil {
+					if cur, err := m.client.GetCurrentSession(context.Background()); err == nil {
+						currentSession = cur
+					}
+				}
+				driver := NewTmuxDriver(m.client)
+				cfg := sessionizer.Config{
+					Store:                m.manager,
+					SessionDriver:        driver,
+					SessionStateProvider: driver,
+					ConfigDir:            m.configDir,
+					SearchPaths:          searchPaths,
+					Features:             m.manager.GetResolvedFeatures(),
+					CwdFocusPath:         m.opts.CwdFocusPath,
+					UsedCache:            usedCache,
+					CurrentSession:       currentSession,
+					LoadProjects:         buildProjectLoader(m.manager, m.configDir),
+					ReloadConfig:         reloadTmuxConfig,
+					KeyMap:               sessionizeKeys,
+				}
+				m.sessionizeModel = sessionizer.New(cfg, projectPtrs)
 			}
 		}
 		if m.sessionizeModel != nil {
@@ -182,8 +204,8 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			if m.width > 0 && m.height > 0 {
 				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 				newModel, _ := m.sessionizeModel.Update(childMsg)
-				if sm, ok := newModel.(sessionizeModel); ok {
-					m.sessionizeModel = &sm
+				if sm, ok := newModel.(*sessionizer.Model); ok {
+					m.sessionizeModel = sm
 				}
 			}
 		}
@@ -333,8 +355,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		childMsg := tea.WindowSizeMsg{Width: msg.Width - 4, Height: msg.Height - 4}
 		if m.sessionizeModel != nil {
 			newModel, _ := m.sessionizeModel.Update(childMsg)
-			if sm, ok := newModel.(sessionizeModel); ok {
-				m.sessionizeModel = &sm
+			if sm, ok := newModel.(*sessionizer.Model); ok {
+				m.sessionizeModel = sm
 			}
 		}
 		if m.manageModel != nil {
@@ -420,7 +442,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeView = viewSessionize
 		cmd1 := m.switchToView(viewSessionize)
 		if m.sessionizeModel != nil {
-			m.sessionizeModel.jumpToPath(msg.path, msg.applyGroupFilter)
+			m.sessionizeModel.JumpToPath(msg.path, msg.applyGroupFilter)
 		}
 		return m, cmd1
 
@@ -429,7 +451,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeView = viewSessionize
 		cmd1 := m.switchToView(viewSessionize)
 		if m.sessionizeModel != nil {
-			cmd2 := m.sessionizeModel.focusEcosystemForPath("")
+			cmd2 := m.sessionizeModel.FocusEcosystemForPath("")
 			return m, tea.Batch(cmd1, cmd2)
 		}
 		return m, cmd1
@@ -440,8 +462,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// regardless of the currently active view tab.
 		if m.sessionizeModel != nil {
 			newModel, cmd := m.sessionizeModel.Update(msg)
-			if sm, ok := newModel.(sessionizeModel); ok {
-				m.sessionizeModel = &sm
+			if sm, ok := newModel.(*sessionizer.Model); ok {
+				m.sessionizeModel = sm
 			}
 			return m, cmd
 		}
@@ -476,8 +498,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmds []tea.Cmd
 		if m.sessionizeModel != nil {
 			newModel, cmd := m.sessionizeModel.Update(msg)
-			if sm, ok := newModel.(sessionizeModel); ok {
-				m.sessionizeModel = &sm
+			if sm, ok := newModel.(*sessionizer.Model); ok {
+				m.sessionizeModel = sm
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
@@ -539,8 +561,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewSessionize:
 			if m.sessionizeModel != nil {
 				newModel, cmd := m.sessionizeModel.Update(msg)
-				if sm, ok := newModel.(sessionizeModel); ok {
-					m.sessionizeModel = &sm
+				if sm, ok := newModel.(*sessionizer.Model); ok {
+					m.sessionizeModel = sm
 				}
 				return m, cmd
 			}
@@ -620,8 +642,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewSessionize:
 		if m.sessionizeModel != nil {
 			newModel, cmd := m.sessionizeModel.Update(msg)
-			if sm, ok := newModel.(sessionizeModel); ok {
-				m.sessionizeModel = &sm
+			if sm, ok := newModel.(*sessionizer.Model); ok {
+				m.sessionizeModel = sm
 			}
 			return m, cmd
 		}
@@ -837,14 +859,15 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 		}
 
 		// Handle sessionize model exit
-		if nm.sessionizeModel != nil && nm.sessionizeModel.selected != nil {
-			sm := nm.sessionizeModel
-			if sm.selected.WorkspaceNode != nil && sm.selected.Path != "" {
-				_ = mgr.RecordProjectAccess(sm.selected.Path)
-				if sm.selected.IsWorktree() && sm.selected.ParentProjectPath != "" {
-					_ = mgr.RecordProjectAccess(sm.selected.ParentProjectPath)
+		if nm.sessionizeModel != nil {
+			if selected := nm.sessionizeModel.Selected(); selected != nil {
+				if selected.WorkspaceNode != nil && selected.Path != "" {
+					_ = mgr.RecordProjectAccess(selected.Path)
+					if selected.IsWorktree() && selected.ParentProjectPath != "" {
+						_ = mgr.RecordProjectAccess(selected.ParentProjectPath)
+					}
+					return sessionizeProject(selected)
 				}
-				return sessionizeProject(sm.selected)
 			}
 		}
 

@@ -2,7 +2,10 @@ package manager
 
 //go:generate sh -c "cd ../.. && go run ./tools/schema-generator/"
 
-import "github.com/grovetools/core/pkg/models"
+import (
+	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/nav/pkg/api"
+)
 
 // Type aliases for the extracted nav binding types now living in core/pkg/models.
 // These preserve backwards compatibility with all existing nav code.
@@ -21,12 +24,9 @@ type NavFeatures struct {
 
 // ResolvedFeatures contains the final boolean values for each feature after
 // evaluating the mode preset and applying any granular overrides.
-type ResolvedFeatures struct {
-	Groups       bool
-	Ecosystems   bool
-	Integrations bool
-	Worktrees    bool
-}
+// It is a type alias for api.Features so the exported sessionizer package
+// can consume the same struct without depending on internal/manager.
+type ResolvedFeatures = api.Features
 
 // TmuxConfig represents the 'nav' section in grove config (legacy name retained for compatibility).
 // For backwards compatibility, the 'tmux' section is also supported.
