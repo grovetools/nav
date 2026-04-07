@@ -451,6 +451,19 @@ func (m *Manager) GetGroupIcon(group string) string {
 	return cfg.Icon
 }
 
+// IsGroupExplicitlyInactive reports whether the group has its 'active' flag
+// explicitly set to false. Returns false for groups that don't exist, that
+// have no active flag set, or that are explicitly active. Used by the
+// extracted groups TUI to render an "(Inactive)" status without having to
+// import the manager.GroupRef struct.
+func (m *Manager) IsGroupExplicitlyInactive(group string) bool {
+	cfg, ok := m.GetGroupConfig(group)
+	if !ok {
+		return false
+	}
+	return cfg.Active != nil && !*cfg.Active
+}
+
 // ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations.
 // Defaults to true if not configured.
 func (m *Manager) ConfirmKeyUpdates() bool {

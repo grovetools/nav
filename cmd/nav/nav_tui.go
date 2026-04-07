@@ -18,7 +18,10 @@ import (
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/api"
 	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tui/groups"
+	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
+	"github.com/grovetools/nav/pkg/tui/windows"
 )
 
 // navView represents which view is currently active
@@ -58,9 +61,9 @@ type navModel struct {
 	activeView      navView
 	sessionizeModel *sessionizer.Model
 	manageModel     *manageModel
-	historyModel    *historyModel
-	windowsModel    *windowsModel
-	groupsModel     *groupsModel
+	historyModel    *history.Model
+	windowsModel    *windows.Model
+	groupsModel     *groups.Model
 	manager         *tmux.Manager
 	client          *tmuxclient.Client // May be nil if not in tmux
 	width, height   int
@@ -83,15 +86,15 @@ func (m *navModel) isTextInputFocused() bool {
 		}
 	case viewHistory:
 		if m.historyModel != nil {
-			return m.historyModel.filterMode
+			return m.historyModel.FilterMode()
 		}
 	case viewWindows:
 		if m.windowsModel != nil {
-			return m.windowsModel.mode == "filter" || m.windowsModel.mode == "rename"
+			return m.windowsModel.Mode() == "filter" || m.windowsModel.Mode() == "rename"
 		}
 	case viewGroups:
 		if m.groupsModel != nil {
-			return m.groupsModel.inputMode != ""
+			return m.groupsModel.InputMode() != ""
 		}
 	}
 	return false
@@ -122,9 +125,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			}
 		case viewGroups:
 			if m.groupsModel != nil {
-				m.groupsModel.groups = m.manager.GetAllGroups()
-				m.groupsModel.cursor = 0
-				m.groupsModel.message = ""
+				m.groupsModel.Reset()
 			}
 		}
 		return nil
@@ -248,8 +249,8 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 	case viewHistory:
 		// Initialize history model lazily
 		if m.historyModel == nil {
-			history, err := m.manager.GetAccessHistory()
-			if err == nil && history != nil && len(history.Projects) > 0 {
+			accessHist, err := m.manager.GetAccessHistory()
+			if err == nil && accessHist != nil && len(accessHist.Projects) > 0 {
 				sessions, _ := m.manager.GetSessions()
 				keyMap := make(map[string]string)
 				for _, s := range sessions {
@@ -260,14 +261,14 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 
 				// Build history items
 				var historyAccesses []*workspace.ProjectAccess
-				for _, access := range history.Projects {
+				for _, access := range accessHist.Projects {
 					historyAccesses = append(historyAccesses, access)
 				}
 				sort.Slice(historyAccesses, func(i, j int) bool {
 					return historyAccesses[i].LastAccessed.After(historyAccesses[j].LastAccessed)
 				})
 
-				var items []historyItem
+				var items []history.Item
 				for _, access := range historyAccesses {
 					if len(items) >= 15 {
 						break
@@ -276,11 +277,10 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 					if err != nil {
 						node = &workspace.WorkspaceNode{Path: access.Path, Name: filepath.Base(access.Path)}
 					}
-					proj := &manager.SessionizeProject{WorkspaceNode: node}
-					items = append(items, historyItem{project: proj, access: access})
+					proj := &api.Project{WorkspaceNode: node}
+					items = append(items, history.Item{Project: proj, Access: access})
 				}
-				hm := newHistoryModel(items, m.manager, keyMap)
-				m.historyModel = hm
+				m.historyModel = history.New(items, keyMap, historyKeys)
 			}
 		}
 		if m.historyModel != nil {
@@ -289,7 +289,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			if m.width > 0 && m.height > 0 {
 				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 				newModel, _ := m.historyModel.Update(childMsg)
-				if hm, ok := newModel.(*historyModel); ok {
+				if hm, ok := newModel.(*history.Model); ok {
 					m.historyModel = hm
 				}
 			}
@@ -304,7 +304,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 				if tmuxCfg, err := loadTmuxConfig(); err == nil && tmuxCfg != nil {
 					showChildProcesses = tmuxCfg.ShowChildProcesses
 				}
-				wm := newWindowsModel(m.client, currentSession, showChildProcesses)
+				wm := windows.New(m.client, currentSession, windowsKeys, showChildProcesses)
 				m.windowsModel = &wm
 			}
 		}
@@ -314,7 +314,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			if m.width > 0 && m.height > 0 {
 				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 				newModel, _ := m.windowsModel.Update(childMsg)
-				if wm, ok := newModel.(windowsModel); ok {
+				if wm, ok := newModel.(windows.Model); ok {
 					m.windowsModel = &wm
 				}
 			}
@@ -323,14 +323,13 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 	case viewGroups:
 		// Initialize groups model lazily
 		if m.groupsModel == nil {
-			gm := newGroupsModel(m.manager)
-			m.groupsModel = &gm
+			m.groupsModel = groups.New(m.manager, groupsKeys, reloadTmuxConfig)
 		}
 		// groupsModel doesn't have an Init that returns commands
 		if m.groupsModel != nil && m.width > 0 && m.height > 0 {
 			childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 			newModel, _ := m.groupsModel.Update(childMsg)
-			if gm, ok := newModel.(*groupsModel); ok {
+			if gm, ok := newModel.(*groups.Model); ok {
 				m.groupsModel = gm
 			}
 		}
@@ -367,19 +366,19 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.historyModel != nil {
 			newModel, _ := m.historyModel.Update(childMsg)
-			if hm, ok := newModel.(*historyModel); ok {
+			if hm, ok := newModel.(*history.Model); ok {
 				m.historyModel = hm
 			}
 		}
 		if m.windowsModel != nil {
 			newModel, _ := m.windowsModel.Update(childMsg)
-			if wm, ok := newModel.(windowsModel); ok {
+			if wm, ok := newModel.(windows.Model); ok {
 				m.windowsModel = &wm
 			}
 		}
 		if m.groupsModel != nil {
 			newModel, _ := m.groupsModel.Update(childMsg)
-			if gm, ok := newModel.(*groupsModel); ok {
+			if gm, ok := newModel.(*groups.Model); ok {
 				m.groupsModel = gm
 			}
 		}
@@ -443,6 +442,16 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd1 := m.switchToView(viewSessionize)
 		if m.sessionizeModel != nil {
 			m.sessionizeModel.JumpToPath(msg.path, msg.applyGroupFilter)
+		}
+		return m, cmd1
+
+	case history.JumpToSessionizeMsg:
+		// Same as jumpToSessionizeMsg but emitted by the extracted history
+		// package (which has its own exported msg type).
+		m.activeView = viewSessionize
+		cmd1 := m.switchToView(viewSessionize)
+		if m.sessionizeModel != nil {
+			m.sessionizeModel.JumpToPath(msg.Path, msg.ApplyGroupFilter)
 		}
 		return m, cmd1
 
@@ -516,7 +525,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.historyModel != nil {
 			newModel, cmd := m.historyModel.Update(msg)
-			if hm, ok := newModel.(*historyModel); ok {
+			if hm, ok := newModel.(*history.Model); ok {
 				m.historyModel = hm
 			}
 			if cmd != nil {
@@ -545,10 +554,10 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case windowsLoadedMsg, previewLoadedMsg:
+	case windows.LoadedMsg, windows.PreviewLoadedMsg:
 		if m.windowsModel != nil {
 			newModel, cmd := m.windowsModel.Update(msg)
-			if wm, ok := newModel.(windowsModel); ok {
+			if wm, ok := newModel.(windows.Model); ok {
 				m.windowsModel = &wm
 			}
 			return m, cmd
@@ -577,7 +586,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case viewHistory:
 			if m.historyModel != nil {
 				newModel, cmd := m.historyModel.Update(msg)
-				if hm, ok := newModel.(*historyModel); ok {
+				if hm, ok := newModel.(*history.Model); ok {
 					m.historyModel = hm
 				}
 				return m, cmd
@@ -665,7 +674,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewHistory:
 		if m.historyModel != nil {
 			newModel, cmd := m.historyModel.Update(msg)
-			if hm, ok := newModel.(*historyModel); ok {
+			if hm, ok := newModel.(*history.Model); ok {
 				m.historyModel = hm
 			}
 			return m, cmd
@@ -674,7 +683,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewWindows:
 		if m.windowsModel != nil {
 			newModel, cmd := m.windowsModel.Update(msg)
-			if wm, ok := newModel.(windowsModel); ok {
+			if wm, ok := newModel.(windows.Model); ok {
 				m.windowsModel = &wm
 			}
 			return m, cmd
@@ -683,11 +692,11 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewGroups:
 		if m.groupsModel != nil {
 			newModel, cmd := m.groupsModel.Update(msg)
-			if gm, ok := newModel.(*groupsModel); ok {
+			if gm, ok := newModel.(*groups.Model); ok {
 				m.groupsModel = gm
 				// Check if groups wants to switch back to manage
-				if gm.nextCommand == "km" {
-					gm.nextCommand = ""
+				if gm.NextCommand() == "km" {
+					gm.ClearNextCommand()
 					return m, func() tea.Msg { return switchViewMsg{to: viewManage} }
 				}
 			}
@@ -872,17 +881,17 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 		}
 
 		// Handle history model exit
-		if nm.historyModel != nil && nm.historyModel.selected != nil {
-			hm := nm.historyModel
-			_ = mgr.RecordProjectAccess(hm.selected.Path)
-			return mgr.Sessionize(hm.selected.Path)
+		if nm.historyModel != nil && nm.historyModel.Selected() != nil {
+			selected := nm.historyModel.Selected()
+			_ = mgr.RecordProjectAccess(selected.Path)
+			return mgr.Sessionize(selected.Path)
 		}
 
 		// Handle windows model exit
-		if nm.windowsModel != nil && nm.windowsModel.selectedWindow != nil {
+		if nm.windowsModel != nil && nm.windowsModel.SelectedWindow() != nil {
 			wm := nm.windowsModel
 			if client != nil {
-				target := fmt.Sprintf("%s:%d", wm.sessionName, wm.selectedWindow.Index)
+				target := fmt.Sprintf("%s:%d", wm.SessionName(), wm.SelectedWindow().Index)
 				if err := client.SwitchClient(context.Background(), target); err != nil {
 					// This might fail if not in a popup, which is fine
 				}

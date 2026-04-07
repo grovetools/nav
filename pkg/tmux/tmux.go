@@ -173,6 +173,12 @@ func (m *Manager) GetGroupIcon(group string) string {
 	return m.mgr.GetGroupIcon(group)
 }
 
+// IsGroupExplicitlyInactive reports whether the group is configured with
+// active=false. Used by the extracted groups TUI.
+func (m *Manager) IsGroupExplicitlyInactive(group string) bool {
+	return m.mgr.IsGroupExplicitlyInactive(group)
+}
+
 // ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations
 func (m *Manager) ConfirmKeyUpdates() bool {
 	return m.mgr.ConfirmKeyUpdates()

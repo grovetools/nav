@@ -3,47 +3,29 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
-	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/key"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/workspace"
-	"github.com/grovetools/core/tui/components/help"
-	"github.com/grovetools/core/tui/components/table"
-	core_theme "github.com/grovetools/core/tui/theme"
-	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
 )
 
-var ulogHistory = grovelogging.NewUnifiedLogger("nav.history")
-
-const mutedThreshold = 7 * 24 * time.Hour // 1 week
-
-// historyItem holds a project and its last access time.
-type historyItem struct {
-	project *manager.SessionizeProject
-	access  *workspace.ProjectAccess
-}
-
+// historyCmd is a thin shim that launches the unified nav TUI focused on
+// the history view. The TUI itself lives in nav/pkg/tui/history.
 var historyCmd = &cobra.Command{
 	Use:     "history",
 	Aliases: []string{"h"},
 	Short:   "View and switch to recently accessed project sessions",
 	Long:    `Shows an interactive TUI listing recently accessed project sessions, sorted from most to least recent.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Use unified nav TUI with lazy initialization
 		return runNavTUIWithView(viewHistory, NavTUIOptions{})
 	},
 }
 
+// historyLastCmd jumps directly to the most recently accessed project
+// without showing the TUI. Doesn't depend on the extracted package.
 var historyLastCmd = &cobra.Command{
 	Use:     "last",
 	Aliases: []string{"l"},
@@ -55,7 +37,6 @@ var historyLastCmd = &cobra.Command{
 			return fmt.Errorf("failed to initialize manager: %w", err)
 		}
 
-		// Fetch all known projects to validate history
 		allProjects, err := mgr.GetAvailableProjects()
 		if err != nil {
 			return fmt.Errorf("failed to get available projects: %w", err)
@@ -65,7 +46,6 @@ var historyLastCmd = &cobra.Command{
 			projectSet[p.Path] = struct{}{}
 		}
 
-		// Load and sort access history
 		history, err := mgr.GetAccessHistory()
 		if err != nil {
 			return fmt.Errorf("failed to load access history: %w", err)
@@ -83,17 +63,14 @@ var historyLastCmd = &cobra.Command{
 			return fmt.Errorf("no session history found")
 		}
 
-		// Get current working directory to exclude it from results
 		cwd, _ := os.Getwd()
 		if cwd != "" {
 			cwd = filepath.Clean(cwd)
 		}
 
-		// Find the most recent, valid project that is NOT the current one
 		var latestProjectPath string
 		for _, access := range historyAccesses {
 			cleanPath := filepath.Clean(access.Path)
-			// Skip if this is the current directory (case-insensitive comparison for macOS)
 			if cwd != "" && strings.EqualFold(cleanPath, cwd) {
 				continue
 			}
@@ -107,412 +84,9 @@ var historyLastCmd = &cobra.Command{
 			return fmt.Errorf("no valid recent sessions found")
 		}
 
-		// Record access again to bump it to the top of the history
 		_ = mgr.RecordProjectAccess(latestProjectPath)
-		// Sessionize will create or switch to the tmux session
 		return mgr.Sessionize(latestProjectPath)
 	},
-}
-
-// TUI Model
-type historyModel struct {
-	items             []historyItem
-	filteredItems     []historyItem
-	cursor            int
-	selected          *manager.SessionizeProject
-	manager           *tmux.Manager
-	keys              historyKeyMap
-	help              help.Model
-	quitting          bool
-	enrichedProjects  map[string]*manager.SessionizeProject
-	enrichmentLoading map[string]bool
-	isLoading         bool
-	spinnerFrame      int
-	commandOnExit     *exec.Cmd
-	keyMap            map[string]string // map[path]key
-	filterMode        bool
-	filterText        string
-	statusMessage     string
-	jumpMode          bool // Mini-leader mode: 'g' pressed, waiting for digit or 'g' for go-to-top
-}
-
-// Key bindings are defined in pkg/keymap/history.go and re-exported via tui_keymap.go
-
-func newHistoryModel(items []historyItem, mgr *tmux.Manager, keyMap map[string]string) *historyModel {
-	helpModel := help.NewBuilder().
-		WithKeys(historyKeys).
-		WithTitle("Session History - Help").
-		Build()
-
-	enrichedProjects := make(map[string]*manager.SessionizeProject)
-	for _, item := range items {
-		enrichedProjects[item.project.Path] = item.project
-	}
-
-	return &historyModel{
-		items:             items,
-		filteredItems:     items, // Initially show all items
-		manager:           mgr,
-		keys:              historyKeys,
-		help:              helpModel,
-		enrichedProjects:  enrichedProjects,
-		enrichmentLoading: make(map[string]bool),
-		isLoading:         true, // Start in loading state for enrichment
-		keyMap:            keyMap,
-	}
-}
-
-// applyFilter filters the items based on the filter text
-func (m *historyModel) applyFilter() {
-	if m.filterText == "" {
-		m.filteredItems = m.items
-		return
-	}
-
-	var filtered []historyItem
-	filterLower := strings.ToLower(m.filterText)
-
-	for _, item := range m.items {
-		// Check if filter matches - prioritize repo name, then branch, then path, then ecosystem
-		if strings.Contains(strings.ToLower(item.project.Name), filterLower) ||
-			(item.project.GitStatus != nil && strings.Contains(strings.ToLower(item.project.GitStatus.StatusInfo.Branch), filterLower)) ||
-			strings.Contains(strings.ToLower(item.project.Path), filterLower) ||
-			(item.project.RootEcosystemPath != "" && strings.Contains(strings.ToLower(filepath.Base(item.project.RootEcosystemPath)), filterLower)) {
-			filtered = append(filtered, item)
-		}
-	}
-
-	m.filteredItems = filtered
-
-	// Reset cursor if it's out of bounds
-	if m.cursor >= len(m.filteredItems) {
-		m.cursor = 0
-	}
-}
-
-func (m *historyModel) Init() tea.Cmd {
-	var projectList []*manager.SessionizeProject
-	for _, item := range m.items {
-		projectList = append(projectList, item.project)
-	}
-
-	m.enrichmentLoading["git"] = true
-
-	return tea.Batch(
-		fetchAllGitStatusesForKeyManageCmd(projectList),
-		spinnerTickCmd(),
-	)
-}
-
-func (m *historyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.help.SetSize(msg.Width, msg.Height)
-
-	case gitStatusMapMsg:
-		for path, status := range msg.statuses {
-			if proj, ok := m.enrichedProjects[path]; ok {
-				proj.GitStatus = status
-			}
-		}
-		m.enrichmentLoading["git"] = false
-		return m, nil
-
-	case spinnerTickMsg:
-		anyLoading := false
-		for _, loading := range m.enrichmentLoading {
-			if loading {
-				anyLoading = true
-				break
-			}
-		}
-		if anyLoading {
-			m.spinnerFrame++
-			return m, spinnerTickCmd()
-		}
-		m.isLoading = false
-		return m, nil
-
-	case tea.KeyMsg:
-		if m.help.ShowAll {
-			switch {
-			case key.Matches(msg, m.keys.Quit), key.Matches(msg, m.keys.Help), msg.Type == tea.KeyEsc:
-				m.help.Toggle()
-				return m, nil
-			default:
-				var cmd tea.Cmd
-				m.help, cmd = m.help.Update(msg)
-				return m, cmd
-			}
-		}
-
-		// Handle filter mode
-		if m.filterMode {
-			switch msg.Type {
-			case tea.KeyEsc:
-				m.filterMode = false
-				m.filterText = ""
-				m.applyFilter()
-				return m, nil
-			case tea.KeyEnter:
-				m.filterMode = false
-				return m, nil
-			case tea.KeyBackspace:
-				if len(m.filterText) > 0 {
-					m.filterText = m.filterText[:len(m.filterText)-1]
-					m.applyFilter()
-				}
-				return m, nil
-			case tea.KeyRunes:
-				m.filterText += string(msg.Runes)
-				m.applyFilter()
-				return m, nil
-			}
-			return m, nil
-		}
-
-		// Handle jumpMode (mini-leader key 'g')
-		if m.jumpMode {
-			m.jumpMode = false // Reset mode immediately
-			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
-				r := msg.Runes[0]
-				if r >= '1' && r <= '9' {
-					// Jump to row and select
-					targetIndex := int(r - '1')
-					if targetIndex < len(m.filteredItems) {
-						m.selected = m.filteredItems[targetIndex].project
-						m.quitting = true
-						return m, tea.Quit
-					}
-					return m, nil
-				} else if r == 'g' {
-					// 'gg' - go to top
-					m.cursor = 0
-					return m, nil
-				}
-			}
-			// Any other key - cancel jumpMode
-			return m, nil
-		}
-
-		// Enter jumpMode when 'g' is pressed (and not in filter mode)
-		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == 'g' {
-			m.jumpMode = true
-			return m, nil
-		}
-
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			m.quitting = true
-			return m, tea.Quit
-
-		case key.Matches(msg, m.keys.Help):
-			m.help.Toggle()
-			return m, nil
-
-		case key.Matches(msg, m.keys.Filter):
-			m.filterMode = true
-			return m, nil
-
-		case key.Matches(msg, m.keys.Up):
-			if m.cursor > 0 {
-				m.cursor--
-			}
-
-		case key.Matches(msg, m.keys.Down):
-			if m.cursor < len(m.filteredItems)-1 {
-				m.cursor++
-			}
-
-		case key.Matches(msg, m.keys.Open):
-			if m.cursor < len(m.filteredItems) {
-				m.selected = m.filteredItems[m.cursor].project
-				m.quitting = true
-				return m, tea.Quit
-			}
-
-		case key.Matches(msg, m.keys.CopyPath):
-			if m.cursor < len(m.filteredItems) {
-				path := m.filteredItems[m.cursor].project.Path
-				if err := clipboard.WriteAll(path); err != nil {
-					m.statusMessage = fmt.Sprintf("Error copying path: %v", err)
-				} else {
-					m.statusMessage = fmt.Sprintf("Copied: %s", path)
-				}
-			}
-			return m, nil
-
-		case key.Matches(msg, m.keys.GoToSessionize):
-			if m.cursor < len(m.filteredItems) {
-				return m, func() tea.Msg { return jumpToSessionizeMsg{path: m.filteredItems[m.cursor].project.Path, applyGroupFilter: true} }
-			}
-			return m, nil
-
-		case key.Matches(msg, m.keys.FocusCurrent):
-			// Focus on the selected history item's ecosystem in sessionize
-			if m.cursor < len(m.filteredItems) {
-				return m, func() tea.Msg { return jumpToSessionizeMsg{path: m.filteredItems[m.cursor].project.Path, applyGroupFilter: false} }
-			}
-			return m, nil
-		}
-	}
-
-	return m, nil
-}
-
-func (m *historyModel) View() string {
-	if m.quitting {
-		return ""
-	}
-	if m.help.ShowAll {
-		return pageStyle.Render(m.help.View())
-	}
-
-	var b strings.Builder
-	b.WriteString(core_theme.DefaultTheme.Header.Render("Session History"))
-	if m.isLoading {
-		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
-		b.WriteString(" " + spinner)
-	}
-
-	// Show filter text if in filter mode
-	if m.filterMode {
-		b.WriteString(" " + core_theme.DefaultTheme.Muted.Render("Filter: ") + m.filterText + "█")
-	} else if m.filterText != "" {
-		b.WriteString(" " + core_theme.DefaultTheme.Muted.Render("Filter: ") + m.filterText)
-	}
-
-	b.WriteString("\n\n")
-
-	headers := []string{"#", "LAST ACCESSED", "Key", "Repository", "Branch/Worktree", "Git", "Ecosystem"}
-	var rows [][]string
-
-	for i, item := range m.filteredItems {
-		var repository, worktree, gitStatus, ecosystem, key string
-
-		projInfo := item.project
-
-		// Look up the key mapping for this project
-		if k, ok := m.keyMap[filepath.Clean(projInfo.Path)]; ok {
-			key = k
-		}
-		if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
-			repository = core_theme.DefaultTheme.Muted.Render(core_theme.IconRepo+" ") + filepath.Base(projInfo.ParentProjectPath)
-			worktreeIcon := core_theme.DefaultTheme.Muted.Render(core_theme.IconWorktree + " ")
-			worktree = worktreeIcon + projInfo.Name
-		} else {
-			icon := core_theme.IconRepo
-			if projInfo.IsEcosystem() {
-				icon = core_theme.IconEcosystem
-			}
-			repository = core_theme.DefaultTheme.Muted.Render(icon+" ") + projInfo.Name
-		}
-
-		// Determine Ecosystem display
-		if projInfo.ParentEcosystemPath != "" {
-			// Project is within an ecosystem - use the root ecosystem name
-			if projInfo.RootEcosystemPath != "" {
-				ecosystem = filepath.Base(projInfo.RootEcosystemPath)
-			} else {
-				ecosystem = filepath.Base(projInfo.ParentEcosystemPath)
-			}
-		} else if projInfo.IsEcosystem() {
-			// It's a root ecosystem
-			ecosystem = projInfo.Name
-		}
-
-		branchWorktreeDisplay := worktree
-		if branchWorktreeDisplay == "" && projInfo.GitStatus != nil && projInfo.GitStatus.StatusInfo.Branch != "" {
-			branchIcon := core_theme.DefaultTheme.Muted.Render(core_theme.IconGitBranch + " ")
-			branchWorktreeDisplay = branchIcon + projInfo.GitStatus.StatusInfo.Branch
-		} else if branchWorktreeDisplay == "" {
-			branchWorktreeDisplay = dimStyle.Render("n/a")
-		}
-
-		if projInfo.GitStatus != nil {
-			gitStatus = formatChanges(projInfo.GitStatus.StatusInfo, projInfo.GitStatus)
-		}
-
-		row := []string{
-			fmt.Sprintf("%d", i+1),
-			formatRelativeTime(item.access.LastAccessed),
-			key,
-			repository,
-			branchWorktreeDisplay,
-			gitStatus,
-			ecosystem,
-		}
-
-		// Apply muted style to old rows
-		if time.Since(item.access.LastAccessed) > mutedThreshold {
-			style := lipgloss.NewStyle().Faint(true)
-			for i, cell := range row {
-				// Don't mute the row number
-				if i > 0 {
-					row[i] = style.Render(cell)
-				}
-			}
-		}
-
-		rows = append(rows, row)
-	}
-
-	tableStr := table.SelectableTableWithOptions(headers, rows, m.cursor, table.SelectableTableOptions{})
-	b.WriteString(tableStr)
-	b.WriteString("\n\n")
-	if m.statusMessage != "" {
-		b.WriteString(core_theme.DefaultTheme.Muted.Render(m.statusMessage) + "\n")
-	}
-	b.WriteString(m.help.View())
-	if m.jumpMode {
-		b.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
-	}
-
-	return pageStyle.Render(b.String())
-}
-
-// formatRelativeTime converts a time.Time to a human-readable string.
-func formatRelativeTime(t time.Time) string {
-	delta := time.Since(t)
-
-	if delta < time.Minute {
-		return fmt.Sprintf("%ds ago", int(delta.Seconds()))
-	}
-	if delta < time.Hour {
-		return fmt.Sprintf("%dm ago", int(delta.Minutes()))
-	}
-	if delta < 24*time.Hour {
-		return fmt.Sprintf("%dh ago", int(delta.Hours()))
-	}
-	if delta < 7*24*time.Hour {
-		days := int(delta.Hours() / 24)
-		return fmt.Sprintf("%dd ago", days)
-	}
-	return t.Format("2006-01-02")
-}
-
-// setParentForClonedProjects modifies a slice of projects in-place, setting the
-// parent ecosystem path for any projects cloned via `cx repo`.
-func setParentForClonedProjects(projects []manager.SessionizeProject) {
-	var clonedProjectIndices []int
-	for i := range projects {
-		if projects[i].Kind == workspace.KindNonGroveRepo {
-			clonedProjectIndices = append(clonedProjectIndices, i)
-		}
-	}
-
-	if len(clonedProjectIndices) == 0 {
-		return
-	}
-
-	firstClonedProject := projects[clonedProjectIndices[0]]
-	clonedRepoRoot := filepath.Dir(firstClonedProject.Path)
-
-	for _, idx := range clonedProjectIndices {
-		projects[idx].ParentEcosystemPath = clonedRepoRoot
-		projects[idx].RootEcosystemPath = clonedRepoRoot
-	}
 }
 
 func init() {
