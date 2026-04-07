@@ -18,6 +18,7 @@ import (
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/groups"
 	"github.com/grovetools/nav/pkg/tui/history"
+	"github.com/grovetools/nav/pkg/tui/keymanage"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
 	"github.com/grovetools/nav/pkg/tui/windows"
 )
@@ -47,7 +48,7 @@ type NavTUIOptions struct {
 type navModel struct {
 	activeView      navView
 	sessionizeModel *sessionizer.Model
-	manageModel     *manageModel
+	manageModel     *keymanage.Model
 	historyModel    *history.Model
 	windowsModel    *windows.Model
 	groupsModel     *groups.Model
@@ -69,7 +70,7 @@ func (m *navModel) isTextInputFocused() bool {
 		}
 	case viewManage:
 		if m.manageModel != nil {
-			return m.manageModel.setKeyMode || m.manageModel.saveToGroupNewMode || m.manageModel.newGroupMode
+			return m.manageModel.IsTextInputFocused()
 		}
 	case viewHistory:
 		if m.historyModel != nil {
@@ -105,10 +106,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			}
 		case viewManage:
 			if m.manageModel != nil {
-				sessions, _ := m.manager.GetSessions()
-				m.manageModel.sessions = sessions
-				m.manageModel.rebuildSessionsOrder()
-				m.manageModel.message = fmt.Sprintf("Switched to group: %s", m.manager.GetActiveGroup())
+				m.manageModel.RefreshAfterGroupSwitch()
 			}
 		case viewGroups:
 			if m.groupsModel != nil {
@@ -208,14 +206,13 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 	case viewManage:
 		// Initialize manage model lazily
 		if m.manageModel == nil {
-			sessions, _ := m.manager.GetSessions()
-			enrichedProjects := make(map[string]*manager.SessionizeProject)
+			enrichedProjects := make(map[string]*api.Project)
 			usedCache := false
 
 			// Try to load enriched projects cache
-			if cache, err := manager.LoadKeyManageCache(m.configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
+			if cache, err := api.LoadKeyManageCache(m.configDir); err == nil && cache != nil && len(cache.EnrichedProjects) > 0 {
 				for path, cached := range cache.EnrichedProjects {
-					enrichedProjects[path] = &manager.SessionizeProject{
+					enrichedProjects[path] = &api.Project{
 						WorkspaceNode: cached.WorkspaceNode,
 						GitStatus:     cached.GitStatus,
 						NoteCounts:    cached.NoteCounts,
@@ -225,8 +222,22 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 				usedCache = len(enrichedProjects) > 0
 			}
 
-			mm := newManageModel(sessions, m.manager, m.cwd, enrichedProjects, usedCache)
-			m.manageModel = &mm
+			var driver keymanage.SessionDriver
+			if m.client != nil {
+				driver = NewTmuxDriver(m.client)
+			}
+
+			m.manageModel = keymanage.New(keymanage.Config{
+				Store:            m.manager,
+				SessionDriver:    driver,
+				ConfigDir:        m.configDir,
+				CwdPath:          m.cwd,
+				Features:         m.manager.GetResolvedFeatures(),
+				EnrichedProjects: enrichedProjects,
+				UsedCache:        usedCache,
+				ReloadConfig:     reloadTmuxConfig,
+				KeyMap:           manageKeys,
+			})
 		}
 		if m.manageModel != nil {
 			cmd = m.manageModel.Init()
@@ -234,7 +245,7 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			if m.width > 0 && m.height > 0 {
 				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 				newModel, _ := m.manageModel.Update(childMsg)
-				if mm, ok := newModel.(*manageModel); ok {
+				if mm, ok := newModel.(*keymanage.Model); ok {
 					m.manageModel = mm
 				}
 			}
@@ -338,7 +349,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.manageModel != nil {
 			newModel, _ := m.manageModel.Update(childMsg)
-			if mm, ok := newModel.(*manageModel); ok {
+			if mm, ok := newModel.(*keymanage.Model); ok {
 				m.manageModel = mm
 			}
 		}
@@ -364,8 +375,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case switchViewMsg:
 		// Clear pending mapping state if we are switching away from manage view
-		if m.manageModel != nil && m.manageModel.pendingMapProject != nil {
-			m.manageModel.pendingMapProject = nil
+		if m.manageModel != nil && m.manageModel.PendingMapProject() != nil {
+			m.manageModel.ClearPendingMapProject()
 		}
 		m.activeView = msg.to
 		// Use lazy initialization - switchToView handles refresh for already-initialized views
@@ -377,8 +388,9 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd1 := m.switchToView(viewManage)
 		var cmd2 tea.Cmd
 		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
+			// Translate the sessionizer msg into the keymanage-local one.
+			newModel, cmd := m.manageModel.Update(keymanage.RequestMapKeyMsg{Project: msg.Project})
+			if mm, ok := newModel.(*keymanage.Model); ok {
 				m.manageModel = mm
 			}
 			cmd2 = cmd
@@ -388,34 +400,40 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionizer.BulkMappingDoneMsg:
 		m.activeView = viewManage
 		cmd1 := m.switchToView(viewManage)
+		var cmd2 tea.Cmd
 		if m.manageModel != nil {
-			// Refresh sessions and set highlights
-			m.manageModel.sessions, _ = m.manager.GetSessions()
-			m.manageModel.rebuildSessionsOrder()
-			m.manageModel.justMappedKeys = make(map[string]bool)
-			for _, k := range msg.MappedKeys {
-				m.manageModel.justMappedKeys[k] = true
+			newModel, cmd := m.manageModel.Update(keymanage.BulkMappingDoneMsg{MappedKeys: msg.MappedKeys})
+			if mm, ok := newModel.(*keymanage.Model); ok {
+				m.manageModel = mm
 			}
-			m.manageModel.message = fmt.Sprintf("Mapped %d projects to keys", len(msg.MappedKeys))
+			cmd2 = cmd
 		}
-		return m, tea.Batch(cmd1, clearHighlightCmd())
+		return m, tea.Batch(cmd1, cmd2)
 
-	case sessionizer.RequestManageGroupsMsg:
+	case sessionizer.RequestManageGroupsMsg, keymanage.RequestManageGroupsMsg:
 		return m, func() tea.Msg { return switchViewMsg{to: viewGroups} }
+
+	case keymanage.CancelMappingMsg:
+		// User cancelled a pending map operation — return to sessionize.
+		return m, func() tea.Msg { return switchViewMsg{to: viewSessionize} }
+
+	case keymanage.JumpToSessionizeMsg:
+		m.activeView = viewSessionize
+		cmd1 := m.switchToView(viewSessionize)
+		if m.sessionizeModel != nil {
+			m.sessionizeModel.JumpToPath(msg.Path, msg.ApplyGroupFilter)
+		}
+		return m, cmd1
 
 	case jumpToMappingMsg:
 		// Switch to manage view and jump to the specified path's mapping
 		m.activeView = viewManage
 		cmd1 := m.switchToView(viewManage)
-		var cmd2 tea.Cmd
 		if m.manageModel != nil {
 			// Find which group and row contains this path
-			found := m.manageModel.jumpToPath(msg.path)
-			if !found {
-				m.manageModel.message = "Workspace not mapped to any group"
-			}
+			_ = m.manageModel.JumpToPath(msg.path)
 		}
-		return m, tea.Batch(cmd1, cmd2)
+		return m, cmd1
 
 	case jumpToSessionizeMsg:
 		// Switch to sessionize view and jump to the specified path
@@ -446,78 +464,6 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd1
 
-	case initialProjectsEnrichedMsg:
-		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
-				m.manageModel = mm
-			}
-			return m, cmd
-		}
-		return m, nil
-
-	case rulesStateMsg:
-		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
-				m.manageModel = mm
-			}
-			return m, cmd
-		}
-		return m, nil
-
-	case gitStatusMapMsg:
-		// Route to both sessionize and manage models
-		var cmds []tea.Cmd
-		if m.sessionizeModel != nil {
-			newModel, cmd := m.sessionizeModel.Update(msg)
-			if sm, ok := newModel.(*sessionizer.Model); ok {
-				m.sessionizeModel = sm
-			}
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
-				m.manageModel = mm
-			}
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		if m.historyModel != nil {
-			newModel, cmd := m.historyModel.Update(msg)
-			if hm, ok := newModel.(*history.Model); ok {
-				m.historyModel = hm
-			}
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-		}
-		return m, tea.Batch(cmds...)
-
-	case noteCountsMapMsg, planStatsMapMsg:
-		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
-				m.manageModel = mm
-			}
-			return m, cmd
-		}
-		return m, nil
-
-	case cwdProjectEnrichedMsg:
-		if m.manageModel != nil {
-			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
-				m.manageModel = mm
-			}
-			return m, cmd
-		}
-		return m, nil
-
 	case windows.LoadedMsg, windows.PreviewLoadedMsg:
 		if m.windowsModel != nil {
 			newModel, cmd := m.windowsModel.Update(msg)
@@ -525,36 +471,6 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.windowsModel = wm
 			}
 			return m, cmd
-		}
-		return m, nil
-
-	case spinnerTickMsg:
-		// Route spinner ticks to the active view
-		switch m.activeView {
-		case viewSessionize:
-			if m.sessionizeModel != nil {
-				newModel, cmd := m.sessionizeModel.Update(msg)
-				if sm, ok := newModel.(*sessionizer.Model); ok {
-					m.sessionizeModel = sm
-				}
-				return m, cmd
-			}
-		case viewManage:
-			if m.manageModel != nil {
-				newModel, cmd := m.manageModel.Update(msg)
-				if mm, ok := newModel.(*manageModel); ok {
-					m.manageModel = mm
-				}
-				return m, cmd
-			}
-		case viewHistory:
-			if m.historyModel != nil {
-				newModel, cmd := m.historyModel.Update(msg)
-				if hm, ok := newModel.(*history.Model); ok {
-					m.historyModel = hm
-				}
-				return m, cmd
-			}
 		}
 		return m, nil
 
@@ -624,11 +540,11 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewManage:
 		if m.manageModel != nil {
 			newModel, cmd := m.manageModel.Update(msg)
-			if mm, ok := newModel.(*manageModel); ok {
+			if mm, ok := newModel.(*keymanage.Model); ok {
 				m.manageModel = mm
 				// Check if manage wants to switch to groups
-				if mm.nextCommand == "groups" {
-					mm.nextCommand = ""
+				if mm.NextCommand() == "groups" {
+					mm.ClearNextCommand()
 					return m, func() tea.Msg { return switchViewMsg{to: viewGroups} }
 				}
 			}
@@ -820,8 +736,8 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 		// Handle manage model exit
 		if nm.manageModel != nil {
 			mm := nm.manageModel
-			if mm.changesMade {
-				if err := mgr.UpdateSessionsAndLocks(mm.sessions, mm.getLockedKeysSlice()); err != nil {
+			if mm.ChangesMade() {
+				if err := mgr.UpdateSessionsAndLocks(mm.Sessions(), mm.LockedKeysSlice()); err != nil {
 					return fmt.Errorf("failed to save sessions: %w", err)
 				}
 				if err := mgr.RegenerateBindings(); err != nil {
@@ -830,11 +746,11 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 				_ = reloadTmuxConfig()
 			}
 
-			if mm.commandOnExit != nil {
-				mm.commandOnExit.Stdin = os.Stdin
-				mm.commandOnExit.Stdout = os.Stdout
-				mm.commandOnExit.Stderr = os.Stderr
-				_ = mm.commandOnExit.Run()
+			if cmdOnExit := mm.CommandOnExit(); cmdOnExit != nil {
+				cmdOnExit.Stdin = os.Stdin
+				cmdOnExit.Stdout = os.Stdout
+				cmdOnExit.Stderr = os.Stderr
+				_ = cmdOnExit.Run()
 			}
 		}
 

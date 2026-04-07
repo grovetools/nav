@@ -5,14 +5,19 @@ import (
 
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tui/keymanage"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
 	"github.com/grovetools/nav/pkg/tui/windows"
 )
 
-// Compile-time check that the nav/pkg/tmux Manager satisfies the
-// sessionizer.Store interface. If this ever fails, the sessionizer TUI
-// and its Store contract have drifted — update one side or the other.
-var _ sessionizer.Store = (*tmux.Manager)(nil)
+// Compile-time checks that the nav/pkg/tmux Manager satisfies the
+// Store interfaces of every TUI package it backs. If any of these ever
+// fails, the corresponding TUI and its Store contract have drifted —
+// update one side or the other.
+var (
+	_ sessionizer.Store = (*tmux.Manager)(nil)
+	_ keymanage.Store   = (*tmux.Manager)(nil)
+)
 
 // TmuxDriver wraps a *tmuxclient.Client and satisfies both
 // sessionizer.SessionDriver and sessionizer.SessionStateProvider. It is
@@ -27,10 +32,14 @@ func NewTmuxDriver(client *tmuxclient.Client) *TmuxDriver {
 	return &TmuxDriver{client: client}
 }
 
-// Compile-time checks that TmuxDriver satisfies the sessionizer ports.
+// Compile-time checks that TmuxDriver satisfies the sessionizer +
+// keymanage driver ports. Both interfaces have the same Launch /
+// SwitchTo / Exists / ClosePopup surface; sessionizer additionally
+// requires Kill and ListActive, which TmuxDriver also exposes.
 var (
 	_ sessionizer.SessionDriver        = (*TmuxDriver)(nil)
 	_ sessionizer.SessionStateProvider = (*TmuxDriver)(nil)
+	_ keymanage.SessionDriver          = (*TmuxDriver)(nil)
 )
 
 // Launch starts a new tmux session with the given name and working directory.
