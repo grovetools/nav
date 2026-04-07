@@ -168,6 +168,11 @@ func (m *Manager) GetGroupConfig(group string) (manager.GroupRef, bool) {
 	return m.mgr.GetGroupConfig(group)
 }
 
+// GetGroupIcon returns the configured icon for a specific group.
+func (m *Manager) GetGroupIcon(group string) string {
+	return m.mgr.GetGroupIcon(group)
+}
+
 // ConfirmKeyUpdates returns whether to show confirmation prompts for bulk key update operations
 func (m *Manager) ConfirmKeyUpdates() bool {
 	return m.mgr.ConfirmKeyUpdates()
