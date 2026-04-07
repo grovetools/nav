@@ -2,6 +2,14 @@ package manager
 
 //go:generate sh -c "cd ../.. && go run ./tools/schema-generator/"
 
+import "github.com/grovetools/core/pkg/models"
+
+// Type aliases for the extracted nav binding types now living in core/pkg/models.
+// These preserve backwards compatibility with all existing nav code.
+type TmuxSessionConfig = models.NavSessionConfig
+type GroupState = models.NavGroupState
+type TmuxSessionsFile = models.NavSessionsFile
+
 // NavFeatures contains granular feature toggles that can override mode presets.
 // Use pointers so we can distinguish between "not set" and "explicitly false".
 type NavFeatures struct {
@@ -45,55 +53,6 @@ type GroupRef struct {
 	Order    int                          `yaml:"order,omitempty" toml:"order,omitempty"` // Display order in group list
 }
 
-// GroupState holds the dynamic session state for a workspace group.
-type GroupState struct {
-	Sessions   map[string]TmuxSessionConfig `yaml:"sessions"`
-	LockedKeys []string                     `yaml:"locked_keys,omitempty"`
-}
-
-// TmuxSessionsFile represents the sessions file stored in ~/.config/grove/nav/sessions.yml
-// This is separate from grove.yml to avoid polluting version control with dynamic state
-type TmuxSessionsFile struct {
-	Sessions   map[string]TmuxSessionConfig `yaml:"sessions"`
-	LockedKeys []string                     `yaml:"locked_keys,omitempty"`
-	Groups            map[string]GroupState `yaml:"groups,omitempty"`
-	LastAccessedGroup string                `yaml:"last_accessed_group,omitempty"`
-}
-
-// TmuxSessionConfig defines the configuration for a single session mapped to a key.
-// Supports both shorthand (o = "/path") and full table (o = { path = "/path" }) formats.
-type TmuxSessionConfig struct {
-	Path string `yaml:"path" toml:"path"`
-}
-
-// UnmarshalTOML implements custom unmarshaling to support shorthand string format.
-// Accepts both: o = "/path" and o = { path = "/path" }
-func (t *TmuxSessionConfig) UnmarshalTOML(data interface{}) error {
-	switch v := data.(type) {
-	case string:
-		t.Path = v
-		return nil
-	case map[string]interface{}:
-		if path, ok := v["path"].(string); ok {
-			t.Path = path
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
-// UnmarshalYAML implements custom unmarshaling to support shorthand string format.
-// Accepts both: o: "/path" and o: { path: "/path" }
-func (t *TmuxSessionConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// Try string first (shorthand)
-	var path string
-	if err := unmarshal(&path); err == nil {
-		t.Path = path
-		return nil
-	}
-
-	// Fall back to struct (full format)
-	type plain TmuxSessionConfig
-	return unmarshal((*plain)(t))
-}
+// Note: GroupState, TmuxSessionsFile, and TmuxSessionConfig are now type aliases
+// for models.NavGroupState, models.NavSessionsFile, and models.NavSessionConfig
+// defined at the top of this file. The canonical types live in core/pkg/models/nav.go.
