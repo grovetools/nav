@@ -6,6 +6,7 @@ import (
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
+	"github.com/grovetools/nav/pkg/tui/windows"
 )
 
 // Compile-time check that the nav/pkg/tmux Manager satisfies the
@@ -66,4 +67,48 @@ func (d *TmuxDriver) ListActive(ctx context.Context) ([]string, error) {
 // Exists reports whether a session with the given name exists.
 func (d *TmuxDriver) Exists(ctx context.Context, sessionName string) (bool, error) {
 	return d.client.SessionExists(ctx, sessionName)
+}
+
+// WindowsDriver adapts a *tmuxclient.Client to the windows.SessionDriver
+// interface used by the extracted windows TUI. The move-window operation
+// dispatches via the package-level tmuxclient.Command() helper so the
+// GROVE_TMUX_SOCKET env var is still honored.
+type WindowsDriver struct {
+	client *tmuxclient.Client
+}
+
+// newWindowsDriver constructs a WindowsDriver.
+func newWindowsDriver(client *tmuxclient.Client) *WindowsDriver {
+	return &WindowsDriver{client: client}
+}
+
+// Compile-time check that WindowsDriver satisfies the windows port.
+var _ windows.SessionDriver = (*WindowsDriver)(nil)
+
+// ListWindows enumerates the windows of the given session.
+func (d *WindowsDriver) ListWindows(ctx context.Context, sessionName string) ([]tmuxclient.Window, error) {
+	return d.client.ListWindowsDetailed(ctx, sessionName)
+}
+
+// CapturePane captures a preview of the given target (session:window).
+func (d *WindowsDriver) CapturePane(ctx context.Context, target string) (string, error) {
+	return d.client.CapturePane(ctx, target)
+}
+
+// KillWindow destroys the given target.
+func (d *WindowsDriver) KillWindow(ctx context.Context, target string) error {
+	return d.client.KillWindow(ctx, target)
+}
+
+// RenameWindow renames the given target.
+func (d *WindowsDriver) RenameWindow(ctx context.Context, target string, newName string) error {
+	return d.client.RenameWindow(ctx, target, newName)
+}
+
+// MoveWindow shells out to `tmux move-window -s SRC -t DST` via the
+// package-level Command helper so GROVE_TMUX_SOCKET is honored. Matches
+// the pre-extraction behavior.
+func (d *WindowsDriver) MoveWindow(_ context.Context, srcTarget, dstTarget string) error {
+	cmd := tmuxclient.Command("move-window", "-s", srcTarget, "-t", dstTarget)
+	return cmd.Run()
 }

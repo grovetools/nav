@@ -274,8 +274,12 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 				if tmuxCfg, err := loadTmuxConfig(); err == nil && tmuxCfg != nil {
 					showChildProcesses = tmuxCfg.ShowChildProcesses
 				}
-				wm := windows.New(m.client, currentSession, windowsKeys, showChildProcesses)
-				m.windowsModel = &wm
+				m.windowsModel = windows.New(windows.Config{
+					Driver:             newWindowsDriver(m.client),
+					SessionName:        currentSession,
+					ShowChildProcesses: showChildProcesses,
+					KeyMap:             windowsKeys,
+				})
 			}
 		}
 		if m.windowsModel != nil {
@@ -284,8 +288,8 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 			if m.width > 0 && m.height > 0 {
 				childMsg := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
 				newModel, _ := m.windowsModel.Update(childMsg)
-				if wm, ok := newModel.(windows.Model); ok {
-					m.windowsModel = &wm
+				if wm, ok := newModel.(*windows.Model); ok {
+					m.windowsModel = wm
 				}
 			}
 		}
@@ -342,8 +346,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.windowsModel != nil {
 			newModel, _ := m.windowsModel.Update(childMsg)
-			if wm, ok := newModel.(windows.Model); ok {
-				m.windowsModel = &wm
+			if wm, ok := newModel.(*windows.Model); ok {
+				m.windowsModel = wm
 			}
 		}
 		if m.groupsModel != nil {
@@ -513,8 +517,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case windows.LoadedMsg, windows.PreviewLoadedMsg:
 		if m.windowsModel != nil {
 			newModel, cmd := m.windowsModel.Update(msg)
-			if wm, ok := newModel.(windows.Model); ok {
-				m.windowsModel = &wm
+			if wm, ok := newModel.(*windows.Model); ok {
+				m.windowsModel = wm
 			}
 			return m, cmd
 		}
@@ -639,8 +643,8 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case viewWindows:
 		if m.windowsModel != nil {
 			newModel, cmd := m.windowsModel.Update(msg)
-			if wm, ok := newModel.(windows.Model); ok {
-				m.windowsModel = &wm
+			if wm, ok := newModel.(*windows.Model); ok {
+				m.windowsModel = wm
 			}
 			return m, cmd
 		}
