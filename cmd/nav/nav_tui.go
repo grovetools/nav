@@ -40,17 +40,6 @@ type switchViewMsg struct {
 	to navView
 }
 
-// initiateMappingMsg is sent from sessionize view to start mapping a project in the manage view
-type initiateMappingMsg struct {
-	project  *manager.SessionizeProject
-	returnTo navView
-}
-
-// bulkMappingDoneMsg is sent from sessionize view after bulk mapping to switch to manage view with highlights
-type bulkMappingDoneMsg struct {
-	mappedKeys []string
-}
-
 // NavTUIOptions contains options for initializing the nav TUI
 type NavTUIOptions struct {
 	CwdFocusPath string // Path to focus on in sessionize view
@@ -401,7 +390,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.switchToView(msg.to)
 		return m, cmd
 
-	case initiateMappingMsg:
+	case sessionizer.RequestMapKeyMsg:
 		m.activeView = viewManage
 		cmd1 := m.switchToView(viewManage)
 		var cmd2 tea.Cmd
@@ -414,7 +403,7 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmd1, cmd2)
 
-	case bulkMappingDoneMsg:
+	case sessionizer.BulkMappingDoneMsg:
 		m.activeView = viewManage
 		cmd1 := m.switchToView(viewManage)
 		if m.manageModel != nil {
@@ -422,12 +411,15 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.manageModel.sessions, _ = m.manager.GetSessions()
 			m.manageModel.rebuildSessionsOrder()
 			m.manageModel.justMappedKeys = make(map[string]bool)
-			for _, k := range msg.mappedKeys {
+			for _, k := range msg.MappedKeys {
 				m.manageModel.justMappedKeys[k] = true
 			}
-			m.manageModel.message = fmt.Sprintf("Mapped %d projects to keys", len(msg.mappedKeys))
+			m.manageModel.message = fmt.Sprintf("Mapped %d projects to keys", len(msg.MappedKeys))
 		}
 		return m, tea.Batch(cmd1, clearHighlightCmd())
+
+	case sessionizer.RequestManageGroupsMsg:
+		return m, func() tea.Msg { return switchViewMsg{to: viewGroups} }
 
 	case jumpToMappingMsg:
 		// Switch to manage view and jump to the specified path's mapping

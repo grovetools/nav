@@ -25,6 +25,7 @@ import (
 	"github.com/grovetools/core/util/pathutil"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tui/sessionizer"
 	"github.com/spf13/cobra"
 )
 
@@ -407,11 +408,23 @@ func (m *manageModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case initiateMappingMsg:
-		m.pendingMapProject = msg.project
-		m.returnView = msg.returnTo
+	case sessionizer.RequestMapKeyMsg:
+		m.pendingMapProject = msg.Project
+		m.returnView = viewSessionize
 		m.message = "" // Clear any previous message; the View renders a prominent prompt
 		return m, nil
+
+	case sessionizer.BulkMappingDoneMsg:
+		// Refresh and highlight the bulk-mapped keys when nav_tui forwards
+		// the message to the manage model.
+		m.sessions, _ = m.manager.GetSessions()
+		m.rebuildSessionsOrder()
+		m.justMappedKeys = make(map[string]bool)
+		for _, k := range msg.MappedKeys {
+			m.justMappedKeys[k] = true
+		}
+		m.message = fmt.Sprintf("Mapped %d projects to keys", len(msg.MappedKeys))
+		return m, clearHighlightCmd()
 
 	case delayedReturnMsg:
 		m.justMappedKeys = make(map[string]bool) // Clear highlight before switching

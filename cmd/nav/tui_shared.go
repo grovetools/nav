@@ -426,7 +426,3 @@ func formatChanges(status *git.StatusInfo, extStatus *git.ExtendedGitStatus) str
 	return changesStr
 }
 
-// Avoid unused-import warnings if only some symbols end up referenced.
-var (
-	_ = sessionizer.RequestManageGroupsMsg{}
-)
