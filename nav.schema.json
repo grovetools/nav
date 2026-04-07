@@ -13,7 +13,7 @@
         "persist": true,
         "sessions": {
           "additionalProperties": {
-            "$ref": "#/$defs/TmuxSessionConfig"
+            "$ref": "#/$defs/NavSessionConfig"
           },
           "type": "object"
         },
@@ -50,7 +50,7 @@
       },
       "type": "object"
     },
-    "TmuxSessionConfig": {
+    "NavSessionConfig": {
       "properties": {
         "path": {
           "type": "string"

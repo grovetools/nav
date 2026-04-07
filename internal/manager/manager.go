@@ -37,6 +37,7 @@ type Manager struct {
 	sessionsFile  TmuxSessionsFile
 	undoStack     [][]byte
 	redoStack     [][]byte
+	daemonClient  daemon.Client // Daemon client for persisting bindings (uses LocalClient fallback when daemon is not running)
 }
 
 // managerState captures the full state for undo/redo operations
@@ -118,34 +119,34 @@ func NewManager(configDir string) (*Manager, error) {
 		navConfigPath = findNavGroupsSource(layered, configPath)
 	}
 
-	// Load sessions from separate file in nav state directory
+	// Load sessions via the daemon client (LocalClient falls back to direct file I/O when daemon not running).
 	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
+	daemonClient := daemon.New()
 	sessions := make(map[string]TmuxSessionConfig)
 	var lockedKeys []string
 	var sessionsFile TmuxSessionsFile
 
-	if data, err := os.ReadFile(sessionsPath); err == nil {
-		if err := yaml.Unmarshal(data, &sessionsFile); err == nil {
-			if sessionsFile.Sessions != nil {
-				sessions = sessionsFile.Sessions
-			}
+	if loaded, err := daemonClient.GetNavBindings(context.Background()); err == nil && loaded != nil {
+		sessionsFile = *loaded
+		if sessionsFile.Sessions != nil {
+			sessions = sessionsFile.Sessions
+		}
 
-			// Migrate local locked keys to global locked keys
-			lockedMap := make(map[string]bool)
-			lockedKeys = sessionsFile.LockedKeys
-			for _, k := range lockedKeys {
-				lockedMap[k] = true
-			}
-			for _, gState := range sessionsFile.Groups {
-				for _, k := range gState.LockedKeys {
-					if !lockedMap[k] {
-						lockedKeys = append(lockedKeys, k)
-						lockedMap[k] = true
-					}
+		// Migrate local locked keys to global locked keys
+		lockedMap := make(map[string]bool)
+		lockedKeys = sessionsFile.LockedKeys
+		for _, k := range lockedKeys {
+			lockedMap[k] = true
+		}
+		for _, gState := range sessionsFile.Groups {
+			for _, k := range gState.LockedKeys {
+				if !lockedMap[k] {
+					lockedKeys = append(lockedKeys, k)
+					lockedMap[k] = true
 				}
 			}
-			sessionsFile.LockedKeys = lockedKeys
 		}
+		sessionsFile.LockedKeys = lockedKeys
 	}
 	// If file doesn't exist or is empty, sessions will be an empty map
 	if sessions == nil {
@@ -178,6 +179,7 @@ func NewManager(configDir string) (*Manager, error) {
 		sessionsFile:  sessionsFile,
 		undoStack:     make([][]byte, 0),
 		redoStack:     make([][]byte, 0),
+		daemonClient:  daemonClient,
 	}, nil
 }
 
@@ -1003,8 +1005,13 @@ func (m *Manager) saveStaticConfigFull() error {
 	return os.WriteFile(targetPath, newData, 0o644)
 }
 
-// saveSessions saves the session mappings to nav/sessions.yml
+// saveSessions persists the in-memory session state via the daemon client.
+// The daemon (or LocalClient fallback) owns the sessions.yml file and broadcasts SSE updates.
+// External persistence modes (persist="filename") still write directly because they touch
+// user-owned config files outside the daemon's state directory.
 func (m *Manager) saveSessions() error {
+	ctx := context.Background()
+
 	// Global locked keys
 	m.sessionsFile.LockedKeys = m.lockedKeys
 
@@ -1040,6 +1047,7 @@ func (m *Manager) saveSessions() error {
 						filteredSessions[key] = sess
 					}
 				}
+				// External persist mode: write to user-owned file directly (not daemon-managed).
 				if err := m.saveSessionsToFile(targetPath, filteredSessions); err != nil {
 					return err
 				}
@@ -1070,16 +1078,45 @@ func (m *Manager) saveSessions() error {
 		}
 	}
 
-	// Marshal to YAML for state file
+	// Push the active group to the daemon. The daemon persists sessions.yml and
+	// broadcasts an SSE update; LocalClient fallback writes the file directly.
+	if m.daemonClient != nil {
+		groupName := m.activeGroup
+		if groupName == "" {
+			groupName = "default"
+		}
+
+		var groupState GroupState
+		if groupName == "default" {
+			groupState = GroupState{Sessions: m.sessionsFile.Sessions}
+		} else if existing, ok := m.sessionsFile.Groups[groupName]; ok {
+			groupState = existing
+		}
+
+		if err := m.daemonClient.UpdateNavGroup(ctx, groupName, groupState); err != nil {
+			return fmt.Errorf("failed to update nav group via daemon: %w", err)
+		}
+
+		if err := m.daemonClient.UpdateNavLockedKeys(ctx, m.lockedKeys); err != nil {
+			return fmt.Errorf("failed to update nav locked keys via daemon: %w", err)
+		}
+
+		if m.sessionsFile.LastAccessedGroup != "" {
+			if err := m.daemonClient.SetNavLastAccessedGroup(ctx, m.sessionsFile.LastAccessedGroup); err != nil {
+				return fmt.Errorf("failed to update nav last-accessed group via daemon: %w", err)
+			}
+		}
+		return nil
+	}
+
+	// Fallback: no daemon client (should not happen — daemon.New() always returns one).
 	data, err := yaml.Marshal(m.sessionsFile)
 	if err != nil {
 		return fmt.Errorf("failed to marshal sessions: %w", err)
 	}
-
 	if err := os.MkdirAll(filepath.Dir(m.sessionsPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
-
 	return os.WriteFile(m.sessionsPath, data, 0o644)
 }
 
