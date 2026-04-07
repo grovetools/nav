@@ -84,7 +84,14 @@ type daemonStreamErrorMsg struct {
 	err error
 }
 
-type daemonStreamStartedMsg struct{}
+// daemonStreamConnectedMsg is dispatched once subscribeToDaemonCmd has
+// successfully opened an SSE stream. The channel and cancel func are stored
+// on the Model so the stream can be torn down when the host closes the
+// sessionizer (multiple embedded instances must not share state).
+type daemonStreamConnectedMsg struct {
+	ch     <-chan daemon.StateUpdate
+	cancel context.CancelFunc
+}
 
 // statusMsg is a transient status line update.
 type statusMsg struct {
@@ -496,23 +503,11 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 	}
 }
 
-// daemonStreamState holds the state for the daemon SSE stream subscription.
-var daemonStreamState struct {
-	mu      sync.Mutex
-	ch      <-chan daemon.StateUpdate
-	cancel  context.CancelFunc
-	started bool
-}
-
+// subscribeToDaemonCmd opens an SSE stream to the daemon and returns the
+// channel + cancel function as a daemonStreamConnectedMsg. The host model
+// owns the lifecycle and tears it down via Close().
 func subscribeToDaemonCmd() tea.Cmd {
 	return func() tea.Msg {
-		daemonStreamState.mu.Lock()
-		defer daemonStreamState.mu.Unlock()
-
-		if daemonStreamState.started {
-			return daemonStreamStartedMsg{}
-		}
-
 		client := daemon.New()
 
 		if !client.IsRunning() {
@@ -528,22 +523,13 @@ func subscribeToDaemonCmd() tea.Cmd {
 			return daemonStreamErrorMsg{err: err}
 		}
 
-		daemonStreamState.ch = ch
-		daemonStreamState.cancel = cancel
-		daemonStreamState.started = true
-
-		return daemonStreamStartedMsg{}
+		return daemonStreamConnectedMsg{ch: ch, cancel: cancel}
 	}
 }
 
-func listenToDaemonCmd() tea.Cmd {
+func listenToDaemonCmd(ch <-chan daemon.StateUpdate) tea.Cmd {
 	return func() tea.Msg {
-		daemonStreamState.mu.Lock()
-		ch := daemonStreamState.ch
-		started := daemonStreamState.started
-		daemonStreamState.mu.Unlock()
-
-		if !started || ch == nil {
+		if ch == nil {
 			return nil
 		}
 

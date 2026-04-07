@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
@@ -143,6 +144,25 @@ type Model struct {
 
 	jumpList []jumpState
 	jumpIdx  int
+
+	// Daemon SSE stream — owned per-Model so multiple sessionizer instances
+	// can be embedded without sharing state. Set when daemonStreamConnectedMsg
+	// is delivered; cleared by Close().
+	streamCh     <-chan daemon.StateUpdate
+	streamCancel context.CancelFunc
+}
+
+// Close releases resources owned by the Model. Today this only tears down
+// the daemon SSE stream subscription, but hosts that embed the sessionizer
+// (e.g. grove terminal) should call it on shutdown so background goroutines
+// don't leak between Model lifetimes.
+func (m *Model) Close() error {
+	if m.streamCancel != nil {
+		m.streamCancel()
+		m.streamCancel = nil
+		m.streamCh = nil
+	}
+	return nil
 }
 
 // Selected returns the project the user chose with the Confirm key, or nil

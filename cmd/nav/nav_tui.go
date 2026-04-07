@@ -830,6 +830,13 @@ func runNavTUIWithView(startView navView, opts NavTUIOptions) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
 
+	// Tear down the sessionizer's daemon stream subscription if one was
+	// opened. The OS will reap the socket on exit anyway, but calling Close
+	// keeps shutdown deterministic and avoids stray "stream closed" errors.
+	if nm, ok := finalModel.(*navModel); ok && nm.sessionizeModel != nil {
+		_ = nm.sessionizeModel.Close()
+	}
+
 	// Clear daemon focus so it stops high-frequency scanning after TUI exit
 	clientDaemon := daemon.New()
 	if clientDaemon.IsRunning() {

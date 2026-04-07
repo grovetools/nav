@@ -316,7 +316,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			(source == "workspace" || source == "workspace_watcher") {
 			// The workspace collector or watcher detected a structural change
 			// (new clone, worktree add/remove). Reload the full project list.
-			return m, tea.Batch(reloadProjectsCmd(m.cfg.LoadProjects), listenToDaemonCmd())
+			return m, tea.Batch(reloadProjectsCmd(m.cfg.LoadProjects), listenToDaemonCmd(m.streamCh))
 		}
 
 		// Process partial workspace updates (deltas) — only changed fields on changed workspaces
@@ -338,7 +338,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			return m, listenToDaemonCmd()
+			return m, listenToDaemonCmd(m.streamCh)
 		}
 
 		// Only process enrichment updates from sources that produce data
@@ -374,11 +374,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Other unknown sources are ignored to avoid wasteful re-renders.
 		}
 		// Continue listening for more updates
-		return m, listenToDaemonCmd()
+		return m, listenToDaemonCmd(m.streamCh)
 
-	case daemonStreamStartedMsg:
-		// Daemon stream is ready, start listening for updates
-		return m, listenToDaemonCmd()
+	case daemonStreamConnectedMsg:
+		// Daemon stream is ready: bind it to the model and start listening.
+		m.streamCh = msg.ch
+		m.streamCancel = msg.cancel
+		return m, listenToDaemonCmd(m.streamCh)
 
 	case daemonStreamErrorMsg:
 		// Stream closed or errored - don't restart, just continue without streaming
@@ -416,7 +418,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only refresh fast/dynamic data on tick.
 		// Expensive/static data (release, binary, link, cxstats) only refresh on toggle or manual refresh.
 		// Skip enrichment fetches if daemon is streaming updates (it pushes all enrichment data)
-		if !daemonStreamState.started {
+		if m.streamCh == nil {
 			if m.showGitStatus {
 				m.enrichmentLoading["git"] = true
 				startedEnrichment = true
