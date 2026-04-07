@@ -161,11 +161,18 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 				usedCache = true
 			}
 
-			// If no cache, fetch projects
+			// If no cache, run the full project loader so the cold-start path
+			// gets the same sorting and virtual ecosystem grouping as cache
+			// rebuilds. Falling back to a raw GetAvailableProjects fetch
+			// here would skip SortProjectsByAccess and
+			// groupClonedProjectsAsEcosystem.
 			if len(projects) == 0 {
-				fetchedProjects, err := m.manager.GetAvailableProjects()
-				if err == nil && len(fetchedProjects) > 0 {
-					projects = fetchedProjects
+				loader := buildProjectLoader(m.manager, m.configDir)
+				if ptrs, err := loader(); err == nil && len(ptrs) > 0 {
+					projects = make([]manager.SessionizeProject, len(ptrs))
+					for i, p := range ptrs {
+						projects[i] = *p
+					}
 				}
 			}
 
