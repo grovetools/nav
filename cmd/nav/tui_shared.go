@@ -102,16 +102,6 @@ type keyMapUpdateMsg struct {
 	sessions []models.TmuxSession
 }
 
-type daemonStateUpdateMsg struct {
-	update daemon.StateUpdate
-}
-
-type daemonStreamErrorMsg struct {
-	err error
-}
-
-type daemonStreamStartedMsg struct{}
-
 type statusMsg struct {
 	message string
 }
@@ -277,66 +267,6 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 			enrichedProjects: enrichedProjects,
 			projectList:      projectList,
 		}
-	}
-}
-
-// ----- Daemon streaming shared state ----------------------------------------
-
-var daemonStreamState struct {
-	mu      sync.Mutex
-	ch      <-chan daemon.StateUpdate
-	cancel  context.CancelFunc
-	started bool
-}
-
-func subscribeToDaemonCmd() tea.Cmd {
-	return func() tea.Msg {
-		daemonStreamState.mu.Lock()
-		defer daemonStreamState.mu.Unlock()
-
-		if daemonStreamState.started {
-			return daemonStreamStartedMsg{}
-		}
-
-		client := daemon.New()
-		if !client.IsRunning() {
-			client.Close()
-			return nil
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		ch, err := client.StreamState(ctx)
-		if err != nil {
-			cancel()
-			client.Close()
-			return daemonStreamErrorMsg{err: err}
-		}
-
-		daemonStreamState.ch = ch
-		daemonStreamState.cancel = cancel
-		daemonStreamState.started = true
-
-		return daemonStreamStartedMsg{}
-	}
-}
-
-func listenToDaemonCmd() tea.Cmd {
-	return func() tea.Msg {
-		daemonStreamState.mu.Lock()
-		ch := daemonStreamState.ch
-		started := daemonStreamState.started
-		daemonStreamState.mu.Unlock()
-
-		if !started || ch == nil {
-			return nil
-		}
-
-		update, ok := <-ch
-		if !ok {
-			return daemonStreamErrorMsg{err: nil}
-		}
-
-		return daemonStateUpdateMsg{update: update}
 	}
 }
 

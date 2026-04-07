@@ -464,23 +464,6 @@ func (m *navModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd1
 
-	// Route background data messages to their owners regardless of active view
-	case daemonStateUpdateMsg, daemonStreamStartedMsg, daemonStreamErrorMsg:
-		// Always route daemon stream messages to the sessionize model to maintain the listening loop,
-		// regardless of the currently active view tab.
-		if m.sessionizeModel != nil {
-			newModel, cmd := m.sessionizeModel.Update(msg)
-			if sm, ok := newModel.(*sessionizer.Model); ok {
-				m.sessionizeModel = sm
-			}
-			return m, cmd
-		}
-		// If sessionizeModel isn't available but stream started, ensure we keep listening
-		if _, isError := msg.(daemonStreamErrorMsg); !isError {
-			return m, listenToDaemonCmd()
-		}
-		return m, nil
-
 	case initialProjectsEnrichedMsg:
 		if m.manageModel != nil {
 			newModel, cmd := m.manageModel.Update(msg)
