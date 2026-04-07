@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -245,39 +243,15 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 	case viewHistory:
 		// Initialize history model lazily
 		if m.historyModel == nil {
-			accessHist, err := m.manager.GetAccessHistory()
-			if err == nil && accessHist != nil && len(accessHist.Projects) > 0 {
-				sessions, _ := m.manager.GetSessions()
-				keyMap := make(map[string]string)
-				for _, s := range sessions {
-					if s.Path != "" {
-						keyMap[s.Path] = s.Key
-					}
-				}
-
-				// Build history items
-				var historyAccesses []*workspace.ProjectAccess
-				for _, access := range accessHist.Projects {
-					historyAccesses = append(historyAccesses, access)
-				}
-				sort.Slice(historyAccesses, func(i, j int) bool {
-					return historyAccesses[i].LastAccessed.After(historyAccesses[j].LastAccessed)
-				})
-
-				var items []history.Item
-				for _, access := range historyAccesses {
-					if len(items) >= 15 {
-						break
-					}
-					node, err := workspace.GetProjectByPath(access.Path)
-					if err != nil {
-						node = &workspace.WorkspaceNode{Path: access.Path, Name: filepath.Base(access.Path)}
-					}
-					proj := &api.Project{WorkspaceNode: node}
-					items = append(items, history.Item{Project: proj, Access: access})
-				}
-				m.historyModel = history.New(items, keyMap, historyKeys)
-			}
+			loader := buildHistoryLoader(m.manager)
+			initialItems, _ := loader()
+			keyMap := buildHistoryKeyMap(m.manager)
+			m.historyModel = history.New(history.Config{
+				LoadHistory:  loader,
+				InitialItems: initialItems,
+				KeyMapView:   keyMap,
+				KeyMap:       historyKeys,
+			})
 		}
 		if m.historyModel != nil {
 			cmd = m.historyModel.Init()
