@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -150,19 +151,47 @@ type Model struct {
 	// is delivered; cleared by Close().
 	streamCh     <-chan daemon.StateUpdate
 	streamCancel context.CancelFunc
+	// streamWg tracks in-flight listenToDaemonCmd goroutines so Close() can
+	// wait for them to exit before returning. Hosts that rapidly create and
+	// destroy sessionizer instances must not leak SSE listener goroutines.
+	streamWg sync.WaitGroup
 }
 
 // Close releases resources owned by the Model. Today this only tears down
 // the daemon SSE stream subscription, but hosts that embed the sessionizer
 // (e.g. grove terminal) should call it on shutdown so background goroutines
 // don't leak between Model lifetimes.
+//
+// Close cancels the SSE stream context (which makes the daemon close the
+// channel) and then waits for any in-flight listener goroutine to actually
+// exit before returning. Without the wait, an embedded host that rapidly
+// creates and destroys sessionizer instances could briefly leak a listener
+// goroutine per instance.
 func (m *Model) Close() error {
 	if m.streamCancel != nil {
 		m.streamCancel()
 		m.streamCancel = nil
 		m.streamCh = nil
 	}
+	m.streamWg.Wait()
 	return nil
+}
+
+// listenToDaemon wraps listenToDaemonCmd so the Model's WaitGroup tracks
+// the in-flight listener goroutine. Add() runs synchronously when the cmd
+// is constructed (in Update); Done() runs when bubbletea executes the cmd
+// and the goroutine exits. This guarantees Close() can wait for the
+// listener to actually return.
+func (m *Model) listenToDaemon() tea.Cmd {
+	if m.streamCh == nil {
+		return nil
+	}
+	m.streamWg.Add(1)
+	inner := listenToDaemonCmd(m.streamCh)
+	return func() tea.Msg {
+		defer m.streamWg.Done()
+		return inner()
+	}
 }
 
 // Selected returns the project the user chose with the Confirm key, or nil
@@ -450,7 +479,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 }
 
 // buildState captures the current UI state for persistence.
-func (m Model) buildState() *api.SessionizerState {
+func (m *Model) buildState() *api.SessionizerState {
 	state := &api.SessionizerState{
 		FocusedEcosystemPath: "",
 		WorktreesFolded:      m.worktreesFolded,

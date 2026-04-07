@@ -316,7 +316,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			(source == "workspace" || source == "workspace_watcher") {
 			// The workspace collector or watcher detected a structural change
 			// (new clone, worktree add/remove). Reload the full project list.
-			return m, tea.Batch(reloadProjectsCmd(m.cfg.LoadProjects), listenToDaemonCmd(m.streamCh))
+			return m, tea.Batch(reloadProjectsCmd(m.cfg.LoadProjects), m.listenToDaemon())
 		}
 
 		// Process partial workspace updates (deltas) — only changed fields on changed workspaces
@@ -338,7 +338,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			return m, listenToDaemonCmd(m.streamCh)
+			return m, m.listenToDaemon()
 		}
 
 		// Only process enrichment updates from sources that produce data
@@ -374,13 +374,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Other unknown sources are ignored to avoid wasteful re-renders.
 		}
 		// Continue listening for more updates
-		return m, listenToDaemonCmd(m.streamCh)
+		return m, m.listenToDaemon()
 
 	case daemonStreamConnectedMsg:
 		// Daemon stream is ready: bind it to the model and start listening.
 		m.streamCh = msg.ch
 		m.streamCancel = msg.cancel
-		return m, listenToDaemonCmd(m.streamCh)
+		return m, m.listenToDaemon()
 
 	case daemonStreamErrorMsg:
 		// Stream closed or errored - don't restart, just continue without streaming
