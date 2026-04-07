@@ -297,7 +297,11 @@ func (m *navModel) switchToView(view navView) tea.Cmd {
 	case viewGroups:
 		// Initialize groups model lazily
 		if m.groupsModel == nil {
-			m.groupsModel = groups.New(m.manager, groupsKeys, reloadTmuxConfig)
+			m.groupsModel = groups.New(groups.Config{
+				Store:        m.manager,
+				ReloadConfig: reloadTmuxConfig,
+				KeyMap:       groupsKeys,
+			})
 		}
 		// groupsModel doesn't have an Init that returns commands
 		if m.groupsModel != nil && m.width > 0 && m.height > 0 {
