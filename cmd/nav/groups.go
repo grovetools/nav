@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/grovetools/nav/pkg/tui/navapp"
 	"github.com/spf13/cobra"
 )
 
@@ -11,7 +12,7 @@ var groupsCmd = &cobra.Command{
 	Short: "Interactively manage workspace groups",
 	Long:  `Open an interactive table to manage workspace groups. Create, rename, reorder, and delete groups.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runNavTUIWithView(viewGroups, NavTUIOptions{})
+		return runNavTUIWithTab(navapp.TabGroups, NavTUIOptions{})
 	},
 }
 

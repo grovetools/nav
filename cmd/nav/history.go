@@ -11,6 +11,7 @@ import (
 	"github.com/grovetools/nav/pkg/api"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/history"
+	"github.com/grovetools/nav/pkg/tui/navapp"
 	"github.com/spf13/cobra"
 )
 
@@ -71,7 +72,7 @@ var historyCmd = &cobra.Command{
 	Short:   "View and switch to recently accessed project sessions",
 	Long:    `Shows an interactive TUI listing recently accessed project sessions, sorted from most to least recent.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runNavTUIWithView(viewHistory, NavTUIOptions{})
+		return runNavTUIWithTab(navapp.TabHistory, NavTUIOptions{})
 	},
 }
 

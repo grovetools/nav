@@ -4,6 +4,7 @@ import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/paths"
 	"github.com/grovetools/nav/internal/manager"
+	"github.com/grovetools/nav/pkg/tui/navapp"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +15,7 @@ var windowsCmd = &cobra.Command{
 	Short: "Interactively manage windows in the current tmux session",
 	Long:  `Launches a TUI to list, filter, and manage windows in the current tmux session.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runNavTUIWithView(viewWindows, NavTUIOptions{})
+		return runNavTUIWithTab(navapp.TabWindows, NavTUIOptions{})
 	},
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
+	"github.com/grovetools/nav/pkg/tui/navapp"
 	"github.com/spf13/cobra"
 )
 
@@ -114,7 +115,7 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		// Use unified nav TUI with lazy initialization
-		return runNavTUIWithView(viewSessionize, NavTUIOptions{CwdFocusPath: cwdFocusPath})
+		return runNavTUIWithTab(navapp.TabSessionize, NavTUIOptions{CwdFocusPath: cwdFocusPath})
 	},
 }
 
