@@ -573,6 +573,11 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []stri
 			// Compact: replace home with ~
 			pathDisplay = strings.Replace(pathDisplay, os.Getenv("HOME"), "~", 1)
 		}
+		// Truncate to fit available width so long paths don't push columns
+		// off-screen or wrap to the next line.
+		if budget := m.pathColumnBudget(); budget > 0 {
+			pathDisplay = truncatePath(pathDisplay, budget)
+		}
 		// Apply muted styling
 		pathDisplay = core_theme.DefaultTheme.Muted.Render(pathDisplay)
 	}
@@ -609,6 +614,61 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []stri
 	}
 
 	return row
+}
+
+// pathColumnBudget estimates the remaining terminal width available for the
+// PATH column after accounting for the other visible columns and table chrome.
+func (m *Model) pathColumnBudget() int {
+	if m.width == 0 {
+		return 0
+	}
+	// Base: workspace column (~35) + table borders/padding (~10) + selection arrow (2)
+	used := 47
+	if m.showCx {
+		used += 10
+	}
+	if m.showBranch {
+		used += 18
+	}
+	if m.showGitStatus {
+		used += 26 // GIT + CHANGES columns
+	}
+	if m.showNoteCounts {
+		used += 14
+	}
+	if m.showPlanStats {
+		used += 14
+	}
+	if m.showRelease {
+		used += 14
+	}
+	if m.showBinary {
+		used += 24 // TOOL + CURRENT columns
+	}
+	if m.showLink {
+		used += 22
+	}
+	budget := m.width - used
+	if budget < 20 {
+		budget = 20
+	}
+	return budget
+}
+
+// truncatePath shortens s to maxWidth visible characters, appending "…" if
+// truncation occurs. Uses lipgloss.Width for accurate ANSI-aware measurement.
+func truncatePath(s string, maxWidth int) string {
+	if maxWidth <= 0 || lipgloss.Width(s) <= maxWidth {
+		return s
+	}
+	runes := []rune(s)
+	for i := len(runes) - 1; i >= 0; i-- {
+		candidate := string(runes[:i]) + "…"
+		if lipgloss.Width(candidate) <= maxWidth {
+			return candidate
+		}
+	}
+	return "…"
 }
 
 // Helper function to check if an ExtendedGitStatus has any git status
