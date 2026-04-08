@@ -146,6 +146,11 @@ type Model struct {
 	jumpList []jumpState
 	jumpIdx  int
 
+	// panelFocused tracks whether this panel currently has embed focus.
+	// When false, the periodic tick skips enrichment and daemon focus
+	// updates to avoid unnecessary work while the panel is hidden.
+	panelFocused bool
+
 	// Daemon SSE stream — owned per-Model so multiple sessionizer instances
 	// can be embedded without sharing state. Set when daemonStreamConnectedMsg
 	// is delivered; cleared by Close().
@@ -426,6 +431,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 		selectedPaths:     make(map[string]bool),
 		jumpList:          make([]jumpState, 0),
 		jumpIdx:           0,
+		panelFocused:      true, // assume focused until BlurMsg says otherwise
 	}
 
 	if !features.Groups {

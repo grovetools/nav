@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/workspace"
+	"github.com/grovetools/core/tui/embed"
 	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
@@ -146,6 +147,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.SetSize(msg.Width, msg.Height)
+		return m, nil
+
+	case embed.FocusMsg:
+		// Panel gained focus — refresh sessions, key map, and enrichment
+		// so the user sees fresh data when switching to the nav panel.
+		m.panelFocused = true
+		cmds := []tea.Cmd{
+			fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
+			fetchKeyMapCmd(m.store),
+			updateDaemonFocusCmd(m.getVisiblePaths()),
+		}
+		if m.streamCh == nil {
+			cmds = append(cmds, m.enrichVisibleProjects())
+		}
+		return m, tea.Batch(cmds...)
+
+	case embed.BlurMsg:
+		m.panelFocused = false
 		return m, nil
 
 	case gitStatusMsg:
@@ -405,6 +424,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// Periodically refresh enrichment data, but NOT the project list itself.
 		// The project list is only updated on manual refresh (ctrl+r).
+		// When the panel is blurred (hidden), only reschedule the tick —
+		// skip all network/disk I/O until the panel regains focus.
+		if !m.panelFocused {
+			return m, tickCmd()
+		}
+
 		cmds := []tea.Cmd{
 			fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
 			fetchKeyMapCmd(m.store),
