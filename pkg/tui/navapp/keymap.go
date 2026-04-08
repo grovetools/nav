@@ -16,8 +16,10 @@ type KeyMap struct {
 }
 
 // DefaultKeyMap returns the standalone nav CLI's historical bindings:
-// '1'..'4' jump to sessionize / keymanage / history / windows, and
-// '[' / ']' cycle through the tabs.
+// '1'..'5' jump to sessionize / keymanage / history / windows / groups,
+// and '[' / ']' cycle through the tabs. Tabs whose factory is nil are
+// hidden in the available-tab list, so a jump to an unavailable tab is
+// silently ignored.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		JumpTabs: map[rune]Tab{
@@ -25,6 +27,7 @@ func DefaultKeyMap() KeyMap {
 			'2': TabKeymanage,
 			'3': TabHistory,
 			'4': TabWindows,
+			'5': TabGroups,
 		},
 		Next: ']',
 		Prev: '[',

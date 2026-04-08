@@ -385,10 +385,25 @@ func (m *Model) handleGlobalKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	if m.isTextInputFocused() {
 		return nil, false
 	}
-	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
-		return nil, false
+	// Resolve the printable character from the key. Most keystrokes
+	// reach us as KeyRunes with a one-rune Runes slice, but some
+	// builds of bubbletea / some terminal emulators report ASCII
+	// punctuation like '[' and ']' with an empty Runes slice and
+	// rely on msg.String() instead. Fall back to String() so the
+	// '[' / ']' page-cycle bindings work across both paths — pass-2
+	// testing showed the meta-panel silently dropping these keys.
+	var r rune
+	switch {
+	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1:
+		r = msg.Runes[0]
+	default:
+		s := msg.String()
+		if len(s) == 1 {
+			r = rune(s[0])
+		} else {
+			return nil, false
+		}
 	}
-	r := msg.Runes[0]
 
 	if target, ok := m.keys.JumpTabs[r]; ok {
 		if !m.tabAvailable(target) || target == m.activeTab {

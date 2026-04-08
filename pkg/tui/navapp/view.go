@@ -20,6 +20,7 @@ var tabEntries = []tabEntry{
 	{core_theme.IconNumeric2CircleOutline, "Key Manage", TabKeymanage},
 	{core_theme.IconNumeric3CircleOutline, "History", TabHistory},
 	{core_theme.IconNumeric4CircleOutline, "Windows", TabWindows},
+	{core_theme.IconNumeric5CircleOutline, "Groups", TabGroups},
 }
 
 // View renders the tab bar followed by the active sub-model's view,
