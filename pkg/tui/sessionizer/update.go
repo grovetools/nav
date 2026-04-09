@@ -183,7 +183,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.enrichmentLoading["git"] = false
 		// Re-fetch rules state now that we have accurate branch info from git status
-		return m, fetchRulesStateCmd(m.projects)
+		if m.showCx {
+			return m, fetchRulesStateCmd(m.projects)
+		}
+		return m, nil
 
 	case noteCountsMapMsg:
 		// Update note counts - only update projects that have counts
@@ -285,13 +288,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Re-fetch CX stats after project refresh
-		m.enrichmentLoading["cxstats"] = true
-		return m, tea.Batch(
-			m.enrichVisibleProjects(),
-			fetchRulesStateCmd(m.projects),
-			fetchCxPerLineStatsCmd(m.projects),
-			spinnerTickCmd(),
-		)
+		cmds := []tea.Cmd{m.enrichVisibleProjects(), spinnerTickCmd()}
+		if m.showCx {
+			m.enrichmentLoading["cxstats"] = true
+			cmds = append(cmds,
+				fetchRulesStateCmd(m.projects),
+				fetchCxPerLineStatsCmd(m.projects),
+			)
+		}
+		return m, tea.Batch(cmds...)
 
 	case rulesStateUpdateMsg:
 		m.rulesState = msg.rulesState
@@ -306,13 +311,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Context rule updated!"
 		m.statusTimeout = time.Now().Add(2 * time.Second)
 		// Refresh rules state and CX stats (rules file changed)
-		m.enrichmentLoading["cxstats"] = true
-		return m, tea.Batch(
-			clearStatusCmd(2*time.Second),
-			fetchRulesStateCmd(m.projects),
-			fetchCxPerLineStatsCmd(m.projects),
-			spinnerTickCmd(),
-		)
+		cmds := []tea.Cmd{clearStatusCmd(2 * time.Second), spinnerTickCmd()}
+		if m.showCx {
+			m.enrichmentLoading["cxstats"] = true
+			cmds = append(cmds,
+				fetchRulesStateCmd(m.projects),
+				fetchCxPerLineStatsCmd(m.projects),
+			)
+		}
+		return m, tea.Batch(cmds...)
 
 	case runningSessionsUpdateMsg:
 		// Replace the running sessions map
@@ -1072,6 +1079,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.ToggleCx):
 			m.showCx = !m.showCx
 			_ = m.buildState().Save(m.configDir)
+			// Turning CX back on needs a fresh fetch since we skip the
+			// rules/cxstats pipeline entirely while it's off.
+			if m.showCx {
+				m.enrichmentLoading["cxstats"] = true
+				return m, tea.Batch(
+					spinnerTickCmd(),
+					fetchRulesStateCmd(m.projects),
+					fetchCxPerLineStatsCmd(m.projects),
+				)
+			}
 			return m, nil
 
 		case key.Matches(msg, m.keys.ManageGroups):

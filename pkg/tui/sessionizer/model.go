@@ -56,6 +56,13 @@ type Config struct {
 	// KeyMap lets the host override the default sessionizer keymap. Zero
 	// value uses DefaultKeyMap().
 	KeyMap KeyMap
+
+	// DisableCx forces the CX column off regardless of persisted user
+	// state. Hosts that embed the sessionizer in long-lived processes
+	// (e.g. the terminal) use this to opt out of the cx.Manager rules
+	// pipeline entirely — it recompiles the grove.toml JSONSchema
+	// validator per project per tick and pegs CPU at 400%+.
+	DisableCx bool
 }
 
 // jumpState captures the view state for the jump list (C-o/C-i navigation).
@@ -386,6 +393,13 @@ func New(cfg Config, projects []*api.Project) *Model {
 		}
 	}
 
+	// Host opt-out wins over persisted state: embedders that set
+	// DisableCx in Config never get the cx rules pipeline, no matter
+	// what the user's nav state file says.
+	if cfg.DisableCx {
+		showCx = false
+	}
+
 	m := &Model{
 		cfg:              cfg,
 		rulesState:       make(map[string]grovecontext.RuleStatus),
@@ -524,7 +538,7 @@ func (m *Model) Init() tea.Cmd {
 
 	if !m.usedCache {
 		cmds = append(cmds, fetchProjectsCmd(m.cfg.LoadProjects))
-	} else {
+	} else if m.showCx {
 		cmds = append(cmds, fetchRulesStateCmd(m.projects))
 	}
 
@@ -565,8 +579,10 @@ func (m *Model) Init() tea.Cmd {
 		m.enrichmentLoading["link"] = true
 		cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
 	}
-	m.enrichmentLoading["cxstats"] = true
-	cmds = append(cmds, fetchCxPerLineStatsCmd(m.projects))
+	if m.showCx {
+		m.enrichmentLoading["cxstats"] = true
+		cmds = append(cmds, fetchCxPerLineStatsCmd(m.projects))
+	}
 
 	anyEnrichmentLoading := m.isLoading
 	for _, loading := range m.enrichmentLoading {
