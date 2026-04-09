@@ -613,8 +613,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Process standard vim sequences (folding, dd)
+		// Process standard vim sequences (gg, folding, dd)
 		res, idx := m.sequence.Process(msg,
+			m.keys.Top,
 			m.keys.FoldOpen,
 			m.keys.FoldClose,
 			m.keys.FoldToggle,
@@ -626,13 +627,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keymap.SequenceMatch:
 			m.sequence.Clear()
 			switch idx {
-			case 0: // FoldOpen (zo)
+			case 0: // Top (gg)
+				m.saveJumpState()
+				m.cursor = 0
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			case 1: // FoldOpen (zo)
 				if m.cursor < len(m.filtered) {
 					delete(m.foldedPaths, m.filtered[m.cursor].Path)
 					_ = m.buildState().Save(m.configDir)
 					m.updateFiltered()
 				}
-			case 1: // FoldClose (zc)
+			case 2: // FoldClose (zc)
 				if m.cursor < len(m.filtered) {
 					p := m.filtered[m.cursor]
 					if m.hasChildren[p.Path] {
@@ -641,7 +646,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.updateFiltered()
 					}
 				}
-			case 2: // FoldToggle (za)
+			case 3: // FoldToggle (za)
 				if m.cursor < len(m.filtered) {
 					p := m.filtered[m.cursor]
 					if m.hasChildren[p.Path] {
@@ -654,17 +659,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.updateFiltered()
 					}
 				}
-			case 3: // FoldOpenAll (zR)
+			case 4: // FoldOpenAll (zR)
 				m.foldedPaths = make(map[string]bool)
 				_ = m.buildState().Save(m.configDir)
 				m.updateFiltered()
-			case 4: // FoldCloseAll (zM)
+			case 5: // FoldCloseAll (zM)
 				for path := range m.hasChildren {
 					m.foldedPaths[path] = true
 				}
 				_ = m.buildState().Save(m.configDir)
 				m.updateFiltered()
-			case 5: // Delete (dd) - clear filter
+			case 6: // Delete (dd) - clear filter
 				m.filterInput.SetValue("")
 				m.updateFiltered()
 				m.cursor = 0
@@ -876,11 +881,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-
-		case key.Matches(msg, m.keys.Top):
-			m.saveJumpState()
-			m.cursor = 0
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.Bottom):
