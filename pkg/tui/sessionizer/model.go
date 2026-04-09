@@ -565,7 +565,18 @@ func (m *Model) Init() tea.Cmd {
 	}
 	if m.showGitStatus && !hasGitStatus {
 		m.enrichmentLoading["git"] = true
-		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+		// Only fork git locally when the daemon isn't available.
+		// When the daemon is running it already has (or will have within
+		// ~1s of its initial fullScan) the authoritative git status, and
+		// it pushes workspaces_delta updates over SSE. Forking locally
+		// here would race ~150+ git subprocesses against the daemon's
+		// collector for no benefit — the cold-boot nav sluggishness.
+		// m.streamCh can't be used as the gate at this point in Init()
+		// because subscribeToDaemonCmd was dispatched moments ago and
+		// hasn't connected yet; use a synchronous IsRunning() check.
+		if !daemon.New().IsRunning() {
+			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+		}
 	}
 	if m.showRelease {
 		m.enrichmentLoading["release"] = true

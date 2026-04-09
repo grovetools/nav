@@ -2247,8 +2247,23 @@ func (m *Model) View() string {
 }
 
 // enrichVisibleProjects creates commands to fetch git status for visible projects.
+//
+// Early-returns when the daemon SSE stream is connected because the daemon
+// already owns git status and pushes workspaces_delta updates over the
+// stream. Forking git locally from every call site here would race the
+// daemon for no gain — this function is invoked from ~18 sites across the
+// update loop (panel focus, scroll, selection, reload), so gating inside
+// the function rather than at each call site is the single-point fix.
+//
+// The existing m.streamCh == nil check at the FocusMsg handler and the
+// tick handler stays in place but is now redundant with this internal
+// gate; it's kept to avoid a separate change.
 func (m *Model) enrichVisibleProjects() tea.Cmd {
 	if !m.showGitStatus && !m.showBranch {
+		return nil
+	}
+
+	if m.streamCh != nil {
 		return nil
 	}
 
