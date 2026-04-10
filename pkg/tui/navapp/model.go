@@ -13,13 +13,14 @@
 package navapp
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/grovetools/core/tui/components/pager"
 	"github.com/grovetools/nav/pkg/tui/groups"
 	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/keymanage"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
 	"github.com/grovetools/nav/pkg/tui/windows"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Tab identifies one of the five sub-TUIs the meta-panel can display.
@@ -81,172 +82,107 @@ type Config struct {
 	// OnReenterGroups is invoked every time the user switches back to an
 	// already-initialized groups tab. May be nil.
 	OnReenterGroups func()
-
-	// KeyMap overrides the default tab-navigation keymap. Zero value
-	// uses DefaultKeyMap().
-	KeyMap KeyMap
 }
 
-// Model is the meta-panel tea.Model. It owns the five sub-model pointers
-// and the active-tab state.
+// Model is the meta-panel tea.Model. It delegates tab navigation and
+// rendering to the pager component and holds a shared navState for
+// cross-tab message routing.
 type Model struct {
-	cfg Config
-
-	activeTab Tab
-
-	sessionize *sessionizer.Model
-	keymanage  *keymanage.Model
-	history    *history.Model
-	windows    *windows.Model
-	groups     *groups.Model
-
-	// initialized tracks which tabs have had their factory called. A tab
-	// may be "initialized" with a nil sub-model if its factory returned
-	// nil (e.g. windows with no tmux client); re-entry then skips it.
-	initialized map[Tab]bool
-
-	width, height int
-	keys          KeyMap
+	pager pager.Model
+	state *navState
 }
 
 // New constructs a Model from the given Config. Sub-models are not built
 // eagerly — they come up the first time their tab is selected.
 func New(cfg Config) *Model {
-	keys := cfg.KeyMap
-	if keys.isZero() {
-		keys = DefaultKeyMap()
-	}
-	return &Model{
+	st := &navState{
 		cfg:         cfg,
-		activeTab:   cfg.InitialTab,
 		initialized: make(map[Tab]bool),
-		keys:        keys,
+	}
+	pages := []pager.Page{
+		&sessionizePage{s: st},
+		&keymanagePage{s: st},
+		&historyPage{s: st},
+		&windowsPage{s: st},
+		&groupsPage{s: st},
+	}
+	pg := pager.NewAt(pages, pager.DefaultKeyMap(), int(cfg.InitialTab))
+	pg.SetConfig(pager.Config{
+		OuterPadding: [4]int{1, 2, 1, 2},
+		ShowTitleRow: true,
+	})
+	return &Model{
+		pager: pg,
+		state: st,
 	}
 }
 
 // ActiveTab reports which tab the meta-panel is currently displaying.
 // Callers use this after the program exits to decide which sub-model's
 // result to inspect.
-func (m *Model) ActiveTab() Tab { return m.activeTab }
+func (m *Model) ActiveTab() Tab { return Tab(m.pager.ActiveIndex()) }
 
 // Sessionize returns the sessionizer sub-model, or nil if the tab was
 // never opened. Used by hosts to extract the user's selection on exit.
-func (m *Model) Sessionize() *sessionizer.Model { return m.sessionize }
+func (m *Model) Sessionize() *sessionizer.Model { return m.state.sessionize }
 
 // Keymanage returns the keymanage sub-model, or nil if never opened.
-func (m *Model) Keymanage() *keymanage.Model { return m.keymanage }
+func (m *Model) Keymanage() *keymanage.Model { return m.state.keymanage }
 
 // History returns the history sub-model, or nil if never opened.
-func (m *Model) History() *history.Model { return m.history }
+func (m *Model) History() *history.Model { return m.state.history }
 
 // Windows returns the windows sub-model, or nil if never opened (or if
 // the host supplied a nil WindowsFactory).
-func (m *Model) Windows() *windows.Model { return m.windows }
+func (m *Model) Windows() *windows.Model { return m.state.windows }
 
 // Groups returns the groups sub-model, or nil if never opened.
-func (m *Model) Groups() *groups.Model { return m.groups }
+func (m *Model) Groups() *groups.Model { return m.state.groups }
 
 // Close releases resources owned by every initialized sub-model. Hosts
 // must call it on shutdown so background goroutines (e.g. the
 // sessionizer's daemon SSE listener) don't leak between Model lifetimes.
 func (m *Model) Close() error {
 	var firstErr error
-	if m.sessionize != nil {
-		if err := m.sessionize.Close(); err != nil && firstErr == nil {
+	if m.state.sessionize != nil {
+		if err := m.state.sessionize.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if m.keymanage != nil {
-		if err := m.keymanage.Close(); err != nil && firstErr == nil {
+	if m.state.keymanage != nil {
+		if err := m.state.keymanage.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if m.history != nil {
-		if err := m.history.Close(); err != nil && firstErr == nil {
+	if m.state.history != nil {
+		if err := m.state.history.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if m.windows != nil {
-		if err := m.windows.Close(); err != nil && firstErr == nil {
+	if m.state.windows != nil {
+		if err := m.state.windows.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
-	if m.groups != nil {
-		if err := m.groups.Close(); err != nil && firstErr == nil {
+	if m.state.groups != nil {
+		if err := m.state.groups.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
 	return firstErr
 }
 
-// tabAvailable reports whether a given tab can be shown — i.e. the host
-// supplied a factory (or, for an already-initialized tab, a non-nil
-// sub-model came out of it).
-func (m *Model) tabAvailable(t Tab) bool {
-	if m.initialized[t] {
-		switch t {
-		case TabSessionize:
-			return m.sessionize != nil
-		case TabKeymanage:
-			return m.keymanage != nil
-		case TabHistory:
-			return m.history != nil
-		case TabWindows:
-			return m.windows != nil
-		case TabGroups:
-			return m.groups != nil
-		}
-		return false
-	}
-	switch t {
-	case TabSessionize:
-		return m.cfg.NewSessionize != nil
-	case TabKeymanage:
-		return m.cfg.NewKeymanage != nil
-	case TabHistory:
-		return m.cfg.NewHistory != nil
-	case TabWindows:
-		return m.cfg.NewWindows != nil
-	case TabGroups:
-		return m.cfg.NewGroups != nil
+// IsTextInputFocused reports whether the active sub-model has a focused
+// text input. Hosts use this to decide whether a global key stroke
+// should be intercepted or forwarded as text.
+func (m *Model) IsTextInputFocused() bool {
+	if p, ok := m.pager.Active().(pager.PageWithTextInput); ok {
+		return p.IsTextEntryActive()
 	}
 	return false
 }
-
-// isTextInputFocused reports whether any text input in the active sub-tui
-// is currently focused. Hosts use it to decide whether a global key
-// stroke should be intercepted for tab navigation or forwarded as text.
-func (m *Model) isTextInputFocused() bool {
-	switch m.activeTab {
-	case TabSessionize:
-		if m.sessionize != nil {
-			return m.sessionize.IsTextInputFocused()
-		}
-	case TabKeymanage:
-		if m.keymanage != nil {
-			return m.keymanage.IsTextInputFocused()
-		}
-	case TabHistory:
-		if m.history != nil {
-			return m.history.FilterMode()
-		}
-	case TabWindows:
-		if m.windows != nil {
-			mode := m.windows.Mode()
-			return mode == "filter" || mode == "rename"
-		}
-	case TabGroups:
-		if m.groups != nil {
-			return m.groups.InputMode() != ""
-		}
-	}
-	return false
-}
-
-// IsTextInputFocused is the host-facing wrapper around isTextInputFocused.
-func (m *Model) IsTextInputFocused() bool { return m.isTextInputFocused() }
 
 // Init initializes the starting tab and returns its init cmd.
 func (m *Model) Init() tea.Cmd {
-	return m.switchToTab(m.activeTab)
+	return m.pager.Init()
 }

@@ -69,6 +69,10 @@ var (
 type Model struct {
 	cfg Config
 
+	// EmbedMode suppresses the header in View() when the model is
+	// hosted inside a pager that renders its own title row.
+	EmbedMode bool
+
 	items             []historyItem
 	filteredItems     []historyItem
 	cursor            int

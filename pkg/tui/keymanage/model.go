@@ -74,7 +74,10 @@ type Config struct {
 // Model is the interactive session key manager. It implements tea.Model.
 type Model struct {
 	cfg     Config
-	store   Store
+	// EmbedMode suppresses the header in View() when the model is
+	// hosted inside a pager that renders its own title row.
+	EmbedMode bool
+	store     Store
 	driver  SessionDriver
 	keys    KeyMap
 	help    help.Model

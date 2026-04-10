@@ -11,231 +11,73 @@ import (
 	"github.com/grovetools/nav/pkg/tui/windows"
 )
 
-// switchToTab lazily initializes the target tab (invoking its factory
-// the first time) and returns the sub-model's Init cmd. When the target
-// tab was already initialized, switchToTab fires the configured on-reentry
-// refresh hook instead.
-func (m *Model) switchToTab(t Tab) tea.Cmd {
-	if m.initialized[t] {
-		switch t {
-		case TabSessionize:
-			if m.sessionize != nil && m.cfg.OnReenterSessionize != nil {
-				return m.cfg.OnReenterSessionize()
-			}
-		case TabKeymanage:
-			if m.keymanage != nil && m.cfg.OnReenterKeymanage != nil {
-				m.cfg.OnReenterKeymanage()
-			}
-		case TabGroups:
-			if m.groups != nil && m.cfg.OnReenterGroups != nil {
-				m.cfg.OnReenterGroups()
-			}
-		}
-		return nil
-	}
-
-	m.initialized[t] = true
-
-	var cmd tea.Cmd
-	switch t {
-	case TabSessionize:
-		if m.cfg.NewSessionize != nil {
-			m.sessionize = m.cfg.NewSessionize()
-		}
-		if m.sessionize != nil {
-			cmd = m.sessionize.Init()
-			m.forwardSizeTo(TabSessionize)
-		}
-	case TabKeymanage:
-		if m.cfg.NewKeymanage != nil {
-			m.keymanage = m.cfg.NewKeymanage()
-		}
-		if m.keymanage != nil {
-			cmd = m.keymanage.Init()
-			m.forwardSizeTo(TabKeymanage)
-		}
-	case TabHistory:
-		if m.cfg.NewHistory != nil {
-			m.history = m.cfg.NewHistory()
-		}
-		if m.history != nil {
-			cmd = m.history.Init()
-			m.forwardSizeTo(TabHistory)
-		}
-	case TabWindows:
-		if m.cfg.NewWindows != nil {
-			m.windows = m.cfg.NewWindows()
-		}
-		if m.windows != nil {
-			cmd = m.windows.Init()
-			m.forwardSizeTo(TabWindows)
-		}
-	case TabGroups:
-		if m.cfg.NewGroups != nil {
-			m.groups = m.cfg.NewGroups()
-		}
-		// groups.Model has no Init cmd — just forward size.
-		if m.groups != nil {
-			m.forwardSizeTo(TabGroups)
-		}
-	}
-	return cmd
+// requestSwitchTab returns a tea.Cmd that emits an embed.SwitchTabMsg
+// targeting the given tab. Using a cmd lets the current Update call
+// finish processing before the new tab is focused.
+func requestSwitchTab(to Tab) tea.Cmd {
+	return func() tea.Msg { return embed.SwitchTabMsg{TabIndex: int(to)} }
 }
 
-// forwardSizeTo pushes the current tea.WindowSizeMsg down to a single
-// sub-model after it was freshly initialized. The outer Update handler
-// already fans size messages to every live sub-model.
-func (m *Model) forwardSizeTo(t Tab) {
-	if m.width <= 0 || m.height <= 0 {
-		return
-	}
-	child := tea.WindowSizeMsg{Width: m.width, Height: m.height - 2}
-	switch t {
-	case TabSessionize:
-		if m.sessionize != nil {
-			updated, _ := m.sessionize.Update(child)
-			if sm, ok := updated.(*sessionizer.Model); ok {
-				m.sessionize = sm
-			}
-		}
-	case TabKeymanage:
-		if m.keymanage != nil {
-			updated, _ := m.keymanage.Update(child)
-			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
-			}
-		}
-	case TabHistory:
-		if m.history != nil {
-			updated, _ := m.history.Update(child)
-			if hm, ok := updated.(*history.Model); ok {
-				m.history = hm
-			}
-		}
-	case TabWindows:
-		if m.windows != nil {
-			updated, _ := m.windows.Update(child)
-			if wm, ok := updated.(*windows.Model); ok {
-				m.windows = wm
-			}
-		}
-	case TabGroups:
-		if m.groups != nil {
-			updated, _ := m.groups.Update(child)
-			if gm, ok := updated.(*groups.Model); ok {
-				m.groups = gm
-			}
-		}
-	}
-}
-
-// availableTabs returns the tab order used by Prev/Next rotation. A tab
-// is included only if the host supplied a factory for it (or an already-
-// initialized sub-model is non-nil).
-func (m *Model) availableTabs() []Tab {
-	order := []Tab{TabSessionize, TabKeymanage, TabHistory, TabWindows, TabGroups}
-	out := make([]Tab, 0, len(order))
-	for _, t := range order {
-		if m.tabAvailable(t) {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// Update is the meta-panel's main event loop. It handles window-size
-// fan-out, cross-TUI message routing, tab navigation, and forwarding
-// everything else to the active sub-model.
+// Update is the meta-panel's main event loop. It handles cross-TUI
+// message routing above the pager and delegates everything else
+// (window sizing, tab navigation keys, active-page forwarding) to
+// the pager.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		// Subtract 4/4 for the outer padding + tab bar (matches the
-		// pre-extraction behavior from cmd/nav/nav_tui.go).
-		child := tea.WindowSizeMsg{Width: msg.Width - 4, Height: msg.Height - 4}
-		if m.sessionize != nil {
-			updated, _ := m.sessionize.Update(child)
-			if sm, ok := updated.(*sessionizer.Model); ok {
-				m.sessionize = sm
-			}
-		}
-		if m.keymanage != nil {
-			updated, _ := m.keymanage.Update(child)
-			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
-			}
-		}
-		if m.history != nil {
-			updated, _ := m.history.Update(child)
-			if hm, ok := updated.(*history.Model); ok {
-				m.history = hm
-			}
-		}
-		if m.windows != nil {
-			updated, _ := m.windows.Update(child)
-			if wm, ok := updated.(*windows.Model); ok {
-				m.windows = wm
-			}
-		}
-		if m.groups != nil {
-			updated, _ := m.groups.Update(child)
-			if gm, ok := updated.(*groups.Model); ok {
-				m.groups = gm
-			}
-		}
-		return m, nil
+		var cmd tea.Cmd
+		m.pager, cmd = m.pager.Update(msg)
+		return m, cmd
 
-	case switchTabMsg:
-		return m, m.doSwitchTab(msg.to)
+	case embed.SwitchTabMsg:
+		return m, m.doSwitchTab(Tab(msg.TabIndex))
 
 	case embed.SetWorkspaceMsg:
 		// Workspace changes must reach every initialized sub-model, not
 		// just the active one — otherwise tabs the user hasn't opened
 		// yet operate on a stale workspace pointer when they're later
-		// focused. Fan out to each live sub-model the same way
-		// tea.WindowSizeMsg does.
+		// focused.
 		var cmds []tea.Cmd
-		if m.sessionize != nil {
-			updated, cmd := m.sessionize.Update(msg)
+		if m.state.sessionize != nil {
+			updated, cmd := m.state.sessionize.Update(msg)
 			if sm, ok := updated.(*sessionizer.Model); ok {
-				m.sessionize = sm
+				m.state.sessionize = sm
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.keymanage != nil {
-			updated, cmd := m.keymanage.Update(msg)
+		if m.state.keymanage != nil {
+			updated, cmd := m.state.keymanage.Update(msg)
 			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
+				m.state.keymanage = km
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.history != nil {
-			updated, cmd := m.history.Update(msg)
+		if m.state.history != nil {
+			updated, cmd := m.state.history.Update(msg)
 			if hm, ok := updated.(*history.Model); ok {
-				m.history = hm
+				m.state.history = hm
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.windows != nil {
-			updated, cmd := m.windows.Update(msg)
+		if m.state.windows != nil {
+			updated, cmd := m.state.windows.Update(msg)
 			if wm, ok := updated.(*windows.Model); ok {
-				m.windows = wm
+				m.state.windows = wm
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
 		}
-		if m.groups != nil {
-			updated, cmd := m.groups.Update(msg)
+		if m.state.groups != nil {
+			updated, cmd := m.state.groups.Update(msg)
 			if gm, ok := updated.(*groups.Model); ok {
-				m.groups = gm
+				m.state.groups = gm
 			}
 			if cmd != nil {
 				cmds = append(cmds, cmd)
@@ -248,10 +90,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionizer.RequestMapKeyMsg:
 		cmd1 := m.doSwitchTab(TabKeymanage)
 		var cmd2 tea.Cmd
-		if m.keymanage != nil {
-			updated, cmd := m.keymanage.Update(keymanage.RequestMapKeyMsg{Project: msg.Project})
+		if m.state.keymanage != nil {
+			updated, cmd := m.state.keymanage.Update(keymanage.RequestMapKeyMsg{Project: msg.Project})
 			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
+				m.state.keymanage = km
 			}
 			cmd2 = cmd
 		}
@@ -260,10 +102,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionizer.BulkMappingDoneMsg:
 		cmd1 := m.doSwitchTab(TabKeymanage)
 		var cmd2 tea.Cmd
-		if m.keymanage != nil {
-			updated, cmd := m.keymanage.Update(keymanage.BulkMappingDoneMsg{MappedKeys: msg.MappedKeys})
+		if m.state.keymanage != nil {
+			updated, cmd := m.state.keymanage.Update(keymanage.BulkMappingDoneMsg{MappedKeys: msg.MappedKeys})
 			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
+				m.state.keymanage = km
 			}
 			cmd2 = cmd
 		}
@@ -277,169 +119,62 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case keymanage.JumpToSessionizeMsg:
 		cmd := m.doSwitchTab(TabSessionize)
-		if m.sessionize != nil {
-			m.sessionize.JumpToPath(msg.Path, msg.ApplyGroupFilter)
+		if m.state.sessionize != nil {
+			m.state.sessionize.JumpToPath(msg.Path, msg.ApplyGroupFilter)
 		}
 		return m, cmd
 
 	case history.JumpToSessionizeMsg:
 		cmd := m.doSwitchTab(TabSessionize)
-		if m.sessionize != nil {
-			m.sessionize.JumpToPath(msg.Path, msg.ApplyGroupFilter)
+		if m.state.sessionize != nil {
+			m.state.sessionize.JumpToPath(msg.Path, msg.ApplyGroupFilter)
 		}
 		return m, cmd
 
 	case windows.LoadedMsg, windows.PreviewLoadedMsg:
 		// These land on the windows sub-model regardless of which tab
 		// is currently focused (they're async results from the driver).
-		if m.windows != nil {
-			updated, cmd := m.windows.Update(msg)
+		if m.state.windows != nil {
+			updated, cmd := m.state.windows.Update(msg)
 			if wm, ok := updated.(*windows.Model); ok {
-				m.windows = wm
+				m.state.windows = wm
 			}
 			return m, cmd
 		}
 		return m, nil
-
-	case tea.KeyMsg:
-		if cmd, handled := m.handleGlobalKey(msg); handled {
-			return m, cmd
-		}
 	}
 
-	// Route everything else to the active sub-model.
-	switch m.activeTab {
-	case TabSessionize:
-		if m.sessionize != nil {
-			updated, cmd := m.sessionize.Update(msg)
-			if sm, ok := updated.(*sessionizer.Model); ok {
-				m.sessionize = sm
-			}
-			return m, cmd
-		}
+	// Default: delegate to pager (handles key navigation + active page routing).
+	var cmd tea.Cmd
+	m.pager, cmd = m.pager.Update(msg)
+
+	// Post-pager NextCommand checks — sub-models signal cross-tab
+	// transitions via a string field inspected after every Update.
+	switch Tab(m.pager.ActiveIndex()) {
 	case TabKeymanage:
-		if m.keymanage != nil {
-			updated, cmd := m.keymanage.Update(msg)
-			if km, ok := updated.(*keymanage.Model); ok {
-				m.keymanage = km
-				// keymanage signals "open groups next" via NextCommand.
-				if km.NextCommand() == "groups" {
-					km.ClearNextCommand()
-					return m, requestSwitchTab(TabGroups)
-				}
-			}
-			return m, cmd
-		}
-	case TabHistory:
-		if m.history != nil {
-			updated, cmd := m.history.Update(msg)
-			if hm, ok := updated.(*history.Model); ok {
-				m.history = hm
-			}
-			return m, cmd
-		}
-	case TabWindows:
-		if m.windows != nil {
-			updated, cmd := m.windows.Update(msg)
-			if wm, ok := updated.(*windows.Model); ok {
-				m.windows = wm
-			}
-			return m, cmd
+		if m.state.keymanage != nil && m.state.keymanage.NextCommand() == "groups" {
+			m.state.keymanage.ClearNextCommand()
+			return m, tea.Batch(cmd, requestSwitchTab(TabGroups))
 		}
 	case TabGroups:
-		if m.groups != nil {
-			updated, cmd := m.groups.Update(msg)
-			if gm, ok := updated.(*groups.Model); ok {
-				m.groups = gm
-				// groups signals "return to keymanage" via NextCommand.
-				if gm.NextCommand() == "km" {
-					gm.ClearNextCommand()
-					return m, requestSwitchTab(TabKeymanage)
-				}
-			}
-			return m, cmd
+		if m.state.groups != nil && m.state.groups.NextCommand() == "km" {
+			m.state.groups.ClearNextCommand()
+			return m, tea.Batch(cmd, requestSwitchTab(TabKeymanage))
 		}
 	}
 
-	return m, nil
+	return m, cmd
 }
 
 // doSwitchTab handles the pre-switch bookkeeping (clearing keymanage's
 // pending map state if we're switching away from it) and then delegates
-// to switchToTab. Mirrors the behavior of the pre-extraction
-// switchViewMsg handler.
+// to the pager via embed.SwitchTabMsg.
 func (m *Model) doSwitchTab(to Tab) tea.Cmd {
-	if m.activeTab == TabKeymanage && to != TabKeymanage &&
-		m.keymanage != nil && m.keymanage.PendingMapProject() != nil {
-		m.keymanage.ClearPendingMapProject()
+	if Tab(m.pager.ActiveIndex()) == TabKeymanage && to != TabKeymanage &&
+		m.state.keymanage != nil && m.state.keymanage.PendingMapProject() != nil {
+		m.state.keymanage.ClearPendingMapProject()
 	}
-	m.activeTab = to
-	return m.switchToTab(to)
-}
-
-// handleGlobalKey inspects a tea.KeyMsg for the meta-panel's tab
-// navigation bindings ('1'..'5', '['/']'). If the key is handled,
-// returns (cmd, true); otherwise (nil, false) and the caller forwards
-// the key to the active sub-model.
-func (m *Model) handleGlobalKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	if m.isTextInputFocused() {
-		return nil, false
-	}
-	// Resolve the printable character from the key. Most keystrokes
-	// reach us as KeyRunes with a one-rune Runes slice, but some
-	// builds of bubbletea / some terminal emulators report ASCII
-	// punctuation like '[' and ']' with an empty Runes slice and
-	// rely on msg.String() instead. Fall back to String() so the
-	// '[' / ']' page-cycle bindings work across both paths — pass-2
-	// testing showed the meta-panel silently dropping these keys.
-	var r rune
-	switch {
-	case msg.Type == tea.KeyRunes && len(msg.Runes) == 1:
-		r = msg.Runes[0]
-	default:
-		s := msg.String()
-		if len(s) == 1 {
-			r = rune(s[0])
-		} else {
-			return nil, false
-		}
-	}
-
-	if target, ok := m.keys.JumpTabs[r]; ok {
-		if !m.tabAvailable(target) || target == m.activeTab {
-			return nil, true
-		}
-		return requestSwitchTab(target), true
-	}
-
-	if m.keys.Next != 0 && r == m.keys.Next {
-		return m.cycleTab(+1), true
-	}
-	if m.keys.Prev != 0 && r == m.keys.Prev {
-		return m.cycleTab(-1), true
-	}
-	return nil, false
-}
-
-// cycleTab rotates to the neighbour of the active tab within the set of
-// currently-available tabs.
-func (m *Model) cycleTab(dir int) tea.Cmd {
-	order := m.availableTabs()
-	if len(order) == 0 {
-		return nil
-	}
-	currIdx := 0
-	for i, t := range order {
-		if t == m.activeTab {
-			currIdx = i
-			break
-		}
-	}
-	n := len(order)
-	nextIdx := (currIdx + dir + n) % n
-	next := order[nextIdx]
-	if next == m.activeTab {
-		return nil
-	}
-	return requestSwitchTab(next)
+	var cmd tea.Cmd
+	m.pager, cmd = m.pager.Update(embed.SwitchTabMsg{TabIndex: int(to)})
+	return cmd
 }

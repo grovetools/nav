@@ -16,15 +16,16 @@ func (m *Model) View() string {
 
 	var b strings.Builder
 
-	// Title
-	title := fmt.Sprintf("%s Group Management", core_theme.IconKeyboard)
-	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
-
-	// Mode indicator
-	if m.moveMode {
-		b.WriteString(" " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]"))
+	if !m.EmbedMode {
+		title := fmt.Sprintf("%s Group Management", core_theme.IconKeyboard)
+		b.WriteString(core_theme.DefaultTheme.Header.Render(title))
+		if m.moveMode {
+			b.WriteString(" " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]"))
+		}
+		b.WriteString("\n\n")
+	} else if m.moveMode {
+		b.WriteString(core_theme.DefaultTheme.Warning.Render("[MOVE MODE]") + "\n\n")
 	}
-	b.WriteString("\n\n")
 
 	// Build table
 	headers := []string{"#", "Name", "Prefix Key", "Sessions", "Status"}

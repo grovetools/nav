@@ -23,11 +23,17 @@ func (m *Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(core_theme.DefaultTheme.Header.Render("Session History"))
-	if m.isLoading {
+	if !m.EmbedMode {
+		b.WriteString(core_theme.DefaultTheme.Header.Render("Session History"))
+		if m.isLoading {
+			spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+			spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
+			b.WriteString(" " + spinner)
+		}
+	} else if m.isLoading {
 		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinner := spinnerFrames[m.spinnerFrame%len(spinnerFrames)]
-		b.WriteString(" " + spinner)
+		b.WriteString(spinner)
 	}
 
 	if m.filterMode {

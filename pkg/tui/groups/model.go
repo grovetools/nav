@@ -29,6 +29,10 @@ type Config struct {
 type Model struct {
 	cfg Config
 
+	// EmbedMode suppresses the header in View() when the model is
+	// hosted inside a pager that renders its own title row.
+	EmbedMode bool
+
 	manager      Store
 	reloadConfig func() error
 	groups       []string

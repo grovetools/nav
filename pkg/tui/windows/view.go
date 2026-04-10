@@ -26,12 +26,16 @@ func (m *Model) View() string {
 
 func (m *Model) renderNarrow() string {
 	var b strings.Builder
-	header := "Window Selector"
-	if m.mode == "move" {
-		header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+	if !m.EmbedMode {
+		header := "Window Selector"
+		if m.mode == "move" {
+			header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+		}
+		b.WriteString(core_theme.DefaultTheme.Header.Render(header))
+		b.WriteString("\n\n")
+	} else if m.mode == "move" {
+		b.WriteString(core_theme.DefaultTheme.Warning.Render("[MOVE MODE]") + "\n\n")
 	}
-	b.WriteString(core_theme.DefaultTheme.Header.Render(header))
-	b.WriteString("\n\n")
 
 	start, end := visibleRange(m.cursor, len(m.filteredWindows), m.height)
 
@@ -94,12 +98,16 @@ func (m *Model) renderWide() string {
 	}
 
 	var listBuilder strings.Builder
-	header := "Window Selector"
-	if m.mode == "move" {
-		header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+	if !m.EmbedMode {
+		header := "Window Selector"
+		if m.mode == "move" {
+			header += " " + core_theme.DefaultTheme.Warning.Render("[MOVE MODE]")
+		}
+		listBuilder.WriteString(core_theme.DefaultTheme.Header.Render(header))
+		listBuilder.WriteString("\n\n")
+	} else if m.mode == "move" {
+		listBuilder.WriteString(core_theme.DefaultTheme.Warning.Render("[MOVE MODE]") + "\n\n")
 	}
-	listBuilder.WriteString(core_theme.DefaultTheme.Header.Render(header))
-	listBuilder.WriteString("\n\n")
 
 	start, end := visibleRange(m.cursor, len(m.filteredWindows), m.height)
 

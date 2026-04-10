@@ -34,6 +34,10 @@ type Config struct {
 type Model struct {
 	cfg Config
 
+	// EmbedMode suppresses the header in View() when the model is
+	// hosted inside a pager that renders its own title row.
+	EmbedMode bool
+
 	driver             SessionDriver
 	sessionName        string
 	windows            []tmuxclient.Window

@@ -27,32 +27,34 @@ func (m *Model) View() string {
 	var b strings.Builder
 
 	// Title with key mapping.
-	prefix := m.store.GetPrefix()
-	var hotkey string
-	switch prefix {
-	case "<prefix>":
-		hotkey = "C-b → key"
-	case "<grove>":
-		hotkey = "C-g → key"
-	case "":
-		hotkey = "no prefix"
-	default:
-		if strings.HasPrefix(prefix, "<prefix> ") {
-			key := strings.TrimPrefix(prefix, "<prefix> ")
-			hotkey = fmt.Sprintf("C-b %s → key", key)
-		} else if strings.HasPrefix(prefix, "<grove> ") {
-			key := strings.TrimPrefix(prefix, "<grove> ")
-			hotkey = fmt.Sprintf("C-g %s → key", key)
-		} else {
-			hotkey = fmt.Sprintf("%s → key", prefix)
+	if !m.EmbedMode {
+		prefix := m.store.GetPrefix()
+		var hotkey string
+		switch prefix {
+		case "<prefix>":
+			hotkey = "C-b → key"
+		case "<grove>":
+			hotkey = "C-g → key"
+		case "":
+			hotkey = "no prefix"
+		default:
+			if strings.HasPrefix(prefix, "<prefix> ") {
+				key := strings.TrimPrefix(prefix, "<prefix> ")
+				hotkey = fmt.Sprintf("C-b %s → key", key)
+			} else if strings.HasPrefix(prefix, "<grove> ") {
+				key := strings.TrimPrefix(prefix, "<grove> ")
+				hotkey = fmt.Sprintf("C-g %s → key", key)
+			} else {
+				hotkey = fmt.Sprintf("%s → key", prefix)
+			}
 		}
-	}
 
-	title := fmt.Sprintf("%s Session Hotkeys (%s)", core_theme.IconKeyboard, hotkey)
-	if m.pendingMapProject != nil {
-		title += " - Map: " + m.pendingMapProject.Name
+		title := fmt.Sprintf("%s Session Hotkeys (%s)", core_theme.IconKeyboard, hotkey)
+		if m.pendingMapProject != nil {
+			title += " - Map: " + m.pendingMapProject.Name
+		}
+		b.WriteString(core_theme.DefaultTheme.Header.Render(title))
 	}
-	b.WriteString(core_theme.DefaultTheme.Header.Render(title))
 
 	// Render group tabs if groups feature is enabled and multiple groups exist.
 	groups := m.store.GetGroups()
