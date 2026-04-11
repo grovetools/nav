@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/grovetools/compositor"
 	"github.com/grovetools/core/pkg/daemon"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
@@ -100,8 +101,16 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 
 	model = navapp.New(cfg)
 
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	compModel := compositor.NewModel(model)
+	p := tea.NewProgram(compModel, tea.WithAltScreen())
 	finalModel, runErr := p.Run()
+
+	// Free compositor resources and unwrap to recover the navapp.Model
+	// so post-exit type assertions succeed.
+	if cm, ok := finalModel.(*compositor.Model); ok {
+		cm.Free()
+		finalModel = cm.Unwrap()
+	}
 
 	// Tear down any SSE / background listeners held by sub-models.
 	// Navapp fans Close() out to every initialized sub-model.
