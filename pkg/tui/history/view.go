@@ -117,12 +117,29 @@ func (m *Model) View() string {
 	if m.statusMessage != "" {
 		b.WriteString(core_theme.DefaultTheme.Muted.Render(m.statusMessage) + "\n")
 	}
-	b.WriteString(m.help.View())
-	if m.jumpMode {
-		b.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
+	// Help + mode indicator — only rendered inline when not in embed mode.
+	// In embed mode the pager pins it as a footer via Footer().
+	if !m.EmbedMode {
+		b.WriteString(m.footerLine())
 	}
 
 	return pageStyle.Render(b.String())
+}
+
+// footerLine builds the help/mode-indicator line rendered at the bottom
+// of the view.
+func (m *Model) footerLine() string {
+	line := m.help.View()
+	if m.jumpMode {
+		line += core_theme.DefaultTheme.Warning.Render(" [GOTO: _]")
+	}
+	return line
+}
+
+// Footer returns the help/mode-indicator line for use as a pinned
+// pager footer.
+func (m *Model) Footer() string {
+	return m.footerLine()
 }
 
 // formatRelativeTime converts a time.Time to a human-readable string.

@@ -153,6 +153,11 @@ type Model struct {
 	jumpList []jumpState
 	jumpIdx  int
 
+	// embedMode suppresses the inline help footer in View() when the
+	// model is hosted inside a pager that renders its own pinned
+	// footer via Footer().
+	embedMode bool
+
 	// panelFocused tracks whether this panel currently has embed focus.
 	// When false, the periodic tick skips enrichment and daemon focus
 	// updates to avoid unnecessary work while the panel is hidden.
@@ -205,6 +210,11 @@ func (m *Model) listenToDaemon() tea.Cmd {
 		return inner()
 	}
 }
+
+// SetEmbedMode enables or disables embed mode. When enabled, View()
+// omits the inline help footer — the host is expected to call Footer()
+// and render it separately (e.g. via the pager's pinned footer slot).
+func (m *Model) SetEmbedMode(on bool) { m.embedMode = on }
 
 // Selected returns the project the user chose with the Confirm key, or nil
 // if the user quit without selecting anything.

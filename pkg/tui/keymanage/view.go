@@ -253,6 +253,19 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
+	// Help + mode indicator — only rendered inline when not in embed mode.
+	// In embed mode the pager pins it as a footer via Footer().
+	if !m.EmbedMode {
+		b.WriteString(m.footerLine())
+	}
+
+	return pageStyle.Render(b.String())
+}
+
+// footerLine builds the help/mode-indicator line rendered at the bottom
+// of the view. Exported indirectly via Footer() for the pager's
+// pinned-footer slot.
+func (m *Model) footerLine() string {
 	var modeIndicator string
 	switch {
 	case m.jumpMode:
@@ -272,9 +285,14 @@ func (m *Model) View() string {
 	case m.confirmMode != "":
 		modeIndicator = core_theme.DefaultTheme.Warning.Render(" [CONFIRM]")
 	}
-	b.WriteString(m.help.View() + modeIndicator)
+	return m.help.View() + modeIndicator
+}
 
-	return pageStyle.Render(b.String())
+// Footer returns the help/mode-indicator line for use as a pinned
+// pager footer. Only meaningful when the model is hosted inside a
+// pager (EmbedMode).
+func (m *Model) Footer() string {
+	return m.footerLine()
 }
 
 // buildRows assembles the table row slices for either the unlocked or

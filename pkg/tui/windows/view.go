@@ -69,16 +69,9 @@ func (m *Model) renderNarrow() string {
 		b.WriteString("\n")
 	}
 
-	switch m.mode {
-	case "filter":
-		b.WriteString("Filter: " + m.filterInput.View())
-	case "rename":
-		b.WriteString("Rename: " + m.renameInput.View())
-	default:
-		b.WriteString(m.help.View())
-		if m.jumpMode {
-			b.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
-		}
+	// Help/mode line — only rendered inline when not in embed mode.
+	if !m.EmbedMode {
+		b.WriteString(m.footerLine())
 	}
 
 	return b.String()
@@ -151,18 +144,9 @@ func (m *Model) renderWide() string {
 		listBuilder.WriteString("\n")
 	}
 
-	switch m.mode {
-	case "filter":
-		listBuilder.WriteString("Filter: " + m.filterInput.View())
-	case "rename":
-		listBuilder.WriteString("Rename: " + m.renameInput.View())
-	case "move":
-		listBuilder.WriteString(core_theme.DefaultTheme.Muted.Render("Use j/k to reorder • Enter/Esc/m to apply"))
-	default:
-		listBuilder.WriteString(m.help.View())
-		if m.jumpMode {
-			listBuilder.WriteString(core_theme.DefaultTheme.Warning.Render(" [GOTO: _]"))
-		}
+	// Help/mode line — only rendered inline when not in embed mode.
+	if !m.EmbedMode {
+		listBuilder.WriteString(m.footerLine())
 	}
 
 	var previewBuilder strings.Builder
@@ -199,6 +183,31 @@ func (m *Model) renderWide() string {
 	)
 
 	return pageStyle.Render(content)
+}
+
+// footerLine builds the help/mode-indicator line rendered at the bottom
+// of the view.
+func (m *Model) footerLine() string {
+	switch m.mode {
+	case "filter":
+		return "Filter: " + m.filterInput.View()
+	case "rename":
+		return "Rename: " + m.renameInput.View()
+	case "move":
+		return core_theme.DefaultTheme.Muted.Render("Use j/k to reorder • Enter/Esc/m to apply")
+	default:
+		line := m.help.View()
+		if m.jumpMode {
+			line += core_theme.DefaultTheme.Warning.Render(" [GOTO: _]")
+		}
+		return line
+	}
+}
+
+// Footer returns the help/mode-indicator line for use as a pinned
+// pager footer.
+func (m *Model) Footer() string {
+	return m.footerLine()
 }
 
 // visibleRange computes the visible slice (start, end) given a cursor,

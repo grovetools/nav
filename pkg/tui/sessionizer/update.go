@@ -2236,16 +2236,37 @@ func (m *Model) View() string {
 		b.WriteString("  " + strings.Join(indicators, helpStyle.Render("  •  ")) + "\n")
 	}
 
-	// Help line
-	if m.ecosystemPickerMode {
-		b.WriteString("  " + helpStyle.Render("Enter to select • Esc to cancel"))
-	} else if m.focusedProject != nil {
-		b.WriteString("  " + helpStyle.Render("? • help • 0 • clear focus • q • quit"))
-	} else {
-		b.WriteString("  " + helpStyle.Render("? • help • q • quit"))
+	// Help line — only rendered inline when not in embed mode.
+	// In embed mode the pager pins it as a footer via Footer().
+	if !m.embedMode {
+		b.WriteString(m.footerLine())
 	}
 
 	return pageStyle.Render(b.String())
+}
+
+// footerLine builds the help/mode-indicator line rendered at the
+// bottom of the view. Exported indirectly via Footer() for the
+// pager's pinned-footer slot.
+func (m *Model) footerLine() string {
+	helpStyle := core_theme.DefaultTheme.Muted
+
+	var line string
+	if m.ecosystemPickerMode {
+		line = "  " + helpStyle.Render("Enter to select • Esc to cancel")
+	} else if m.focusedProject != nil {
+		line = "  " + helpStyle.Render("? • help • 0 • clear focus • q • quit")
+	} else {
+		line = "  " + helpStyle.Render("? • help • q • quit")
+	}
+	return line
+}
+
+// Footer returns the help/mode-indicator line for use as a pinned
+// pager footer. Only meaningful when the model is hosted inside
+// a pager (embed mode).
+func (m *Model) Footer() string {
+	return m.footerLine()
 }
 
 // enrichVisibleProjects creates commands to fetch git status for visible projects.

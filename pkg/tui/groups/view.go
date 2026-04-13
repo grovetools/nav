@@ -91,8 +91,16 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
-	// Help
-	b.WriteString(m.help.View())
+	// Help — only rendered inline when not in embed mode.
+	// In embed mode the pager pins it as a footer via Footer().
+	if !m.EmbedMode {
+		b.WriteString(m.help.View())
+	}
 
 	return pageStyle.Render(b.String())
+}
+
+// Footer returns the help line for use as a pinned pager footer.
+func (m *Model) Footer() string {
+	return m.help.View()
 }

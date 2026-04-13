@@ -63,6 +63,7 @@ func (p *sessionizePage) Focus() tea.Cmd {
 		if p.s.sessionize == nil {
 			return nil
 		}
+		p.s.sessionize.SetEmbedMode(true)
 		var cmds []tea.Cmd
 		cmds = append(cmds, p.s.sessionize.Init())
 		if p.width > 0 && p.height > 0 {
@@ -94,10 +95,18 @@ func (p *sessionizePage) IsTextEntryActive() bool {
 	return p.s.sessionize != nil && p.s.sessionize.IsTextInputFocused()
 }
 
+func (p *sessionizePage) Footer() string {
+	if p.s.sessionize == nil {
+		return ""
+	}
+	return p.s.sessionize.Footer()
+}
+
 var _ pager.Page = (*sessionizePage)(nil)
 var _ pager.PageWithTitle = (*sessionizePage)(nil)
 var _ pager.PageWithEnabled = (*sessionizePage)(nil)
 var _ pager.PageWithTextInput = (*sessionizePage)(nil)
+var _ pager.PageWithFooter = (*sessionizePage)(nil)
 
 // ---------- keymanagePage (tab 1: Key Manage) ----------
 
@@ -169,10 +178,18 @@ func (p *keymanagePage) IsTextEntryActive() bool {
 	return p.s.keymanage != nil && p.s.keymanage.IsTextInputFocused()
 }
 
+func (p *keymanagePage) Footer() string {
+	if p.s.keymanage == nil {
+		return ""
+	}
+	return p.s.keymanage.Footer()
+}
+
 var _ pager.Page = (*keymanagePage)(nil)
 var _ pager.PageWithTitle = (*keymanagePage)(nil)
 var _ pager.PageWithEnabled = (*keymanagePage)(nil)
 var _ pager.PageWithTextInput = (*keymanagePage)(nil)
+var _ pager.PageWithFooter = (*keymanagePage)(nil)
 
 // ---------- historyPage (tab 2: History) ----------
 
@@ -241,10 +258,18 @@ func (p *historyPage) IsTextEntryActive() bool {
 	return p.s.history != nil && p.s.history.FilterMode()
 }
 
+func (p *historyPage) Footer() string {
+	if p.s.history == nil {
+		return ""
+	}
+	return p.s.history.Footer()
+}
+
 var _ pager.Page = (*historyPage)(nil)
 var _ pager.PageWithTitle = (*historyPage)(nil)
 var _ pager.PageWithEnabled = (*historyPage)(nil)
 var _ pager.PageWithTextInput = (*historyPage)(nil)
+var _ pager.PageWithFooter = (*historyPage)(nil)
 
 // ---------- windowsPage (tab 3: Windows) ----------
 
@@ -317,10 +342,18 @@ func (p *windowsPage) IsTextEntryActive() bool {
 	return mode == "filter" || mode == "rename"
 }
 
+func (p *windowsPage) Footer() string {
+	if p.s.windows == nil {
+		return ""
+	}
+	return p.s.windows.Footer()
+}
+
 var _ pager.Page = (*windowsPage)(nil)
 var _ pager.PageWithTitle = (*windowsPage)(nil)
 var _ pager.PageWithEnabled = (*windowsPage)(nil)
 var _ pager.PageWithTextInput = (*windowsPage)(nil)
+var _ pager.PageWithFooter = (*windowsPage)(nil)
 
 // ---------- groupsPage (tab 4: Groups) ----------
 
@@ -388,7 +421,15 @@ func (p *groupsPage) IsTextEntryActive() bool {
 	return p.s.groups != nil && p.s.groups.InputMode() != ""
 }
 
+func (p *groupsPage) Footer() string {
+	if p.s.groups == nil {
+		return ""
+	}
+	return p.s.groups.Footer()
+}
+
 var _ pager.Page = (*groupsPage)(nil)
 var _ pager.PageWithTitle = (*groupsPage)(nil)
 var _ pager.PageWithEnabled = (*groupsPage)(nil)
 var _ pager.PageWithTextInput = (*groupsPage)(nil)
+var _ pager.PageWithFooter = (*groupsPage)(nil)
