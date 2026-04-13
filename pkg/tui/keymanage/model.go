@@ -90,8 +90,9 @@ type Model struct {
 
 	features Features
 
-	quitting bool
-	message  string
+	quitting     bool
+	message      string
+	selectedPath string
 
 	// CWD state
 	cwdProject *api.Project
@@ -242,8 +243,25 @@ func New(cfg Config) *Model {
 // for symmetry with the other extracted TUIs.
 func (m *Model) Close() error { return nil }
 
+// SelectedPath returns the path of the session the user jumped to via
+// openSessionForPath, or "" if no jump occurred. Used by the terminal
+// host's wrapInnerCmd to translate a keymanage tea.Quit into a
+// SwitchWorkspaceMsg.
+func (m *Model) SelectedPath() string { return m.selectedPath }
+
+// ResetJumpState clears the quit/jump state left behind by
+// openSessionForPath so the model renders the full session list
+// again. Called on tab re-entry (OnReenterKeymanage) because the
+// navapp keeps sub-models alive across blurs.
+func (m *Model) ResetJumpState() {
+	m.quitting = false
+	m.selectedPath = ""
+	m.message = ""
+}
+
 // Init implements tea.Model. Fires the initial enrichment commands.
 func (m *Model) Init() tea.Cmd {
+	m.ResetJumpState()
 	m.rebuildSessionsOrder()
 
 	cmds := []tea.Cmd{
@@ -847,6 +865,7 @@ func (m *Model) openSessionForPath(ctx context.Context, path string) tea.Cmd {
 	}
 	_ = m.store.RecordProjectAccess(path)
 	m.message = fmt.Sprintf("Switching to %s...", sessionName)
+	m.selectedPath = path
 	m.quitting = true
 	return tea.Quit
 }
