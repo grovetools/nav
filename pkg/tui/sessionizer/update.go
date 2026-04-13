@@ -613,6 +613,69 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// When filter input is focused (search mode), consume all keys there
+		// BEFORE vim sequence processing — otherwise letters like 'd', 'g', 'z'
+		// get intercepted as vim command prefixes instead of typed into search.
+		if m.filterInput.Focused() {
+			switch msg.Type {
+			case tea.KeyEsc:
+				// Vim-style: Escape exits search but preserves filter value
+				// Stay in ecosystem picker mode if active - second Escape will cancel it
+				m.filterInput.Blur()
+				return m, nil
+			case tea.KeyEnter:
+				// Handle ecosystem picker mode
+				if m.ecosystemPickerMode {
+					if m.cursor < len(m.filtered) {
+						// Set focused project (already a pointer)
+						selected := m.filtered[m.cursor]
+						m.focusedProject = selected
+						m.ecosystemPickerMode = false
+						m.updateFiltered() // Now filter to focused ecosystem
+						m.cursor = 0
+
+						// Save state
+						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/nav/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
+						if err := m.buildState().Save(m.configDir); err != nil {
+							// Log error but don't fail the operation
+							fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
+						} else {
+							fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
+						}
+					}
+					return m, updateDaemonFocusCmd(m.getVisiblePaths())
+				}
+				// Vim-style: Enter confirms filter and blurs (keeps value), press Enter again to select
+				m.filterInput.Blur()
+				return m, nil
+			case tea.KeyUp:
+				// Navigate up while filtering
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			case tea.KeyDown:
+				// Navigate down while filtering
+				if m.cursor < len(m.filtered)-1 {
+					m.cursor++
+				}
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			default:
+				// Let filter input handle all other keys when focused
+				prevValue := m.filterInput.Value()
+				m.filterInput, cmd = m.filterInput.Update(msg)
+
+				// If the filter changed, update filtered list
+				if m.filterInput.Value() != prevValue {
+					m.updateFiltered()
+					m.cursor = 0
+					m.moveCursorToFirstSelectable()
+					return m, tea.Batch(cmd, updateDaemonFocusCmd(m.getVisiblePaths()))
+				}
+				return m, cmd
+			}
+		}
+
 		// Process standard vim sequences (gg, folding, dd)
 		res, idx := m.sequence.Process(msg,
 			m.keys.Top,
@@ -788,67 +851,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.SelectNone):
 			m.selectedPaths = make(map[string]bool)
 			return m, nil
-		}
-
-		// Check if filter input is focused and handle special keys
-		if m.filterInput.Focused() {
-			switch msg.Type {
-			case tea.KeyEsc:
-				// Vim-style: Escape exits search but preserves filter value
-				// Stay in ecosystem picker mode if active - second Escape will cancel it
-				m.filterInput.Blur()
-				return m, nil
-			case tea.KeyEnter:
-				// Handle ecosystem picker mode
-				if m.ecosystemPickerMode {
-					if m.cursor < len(m.filtered) {
-						// Set focused project (already a pointer)
-						selected := m.filtered[m.cursor]
-						m.focusedProject = selected
-						m.ecosystemPickerMode = false
-						m.updateFiltered() // Now filter to focused ecosystem
-						m.cursor = 0
-
-						// Save state
-						fmt.Fprintf(os.Stderr, "DEBUG: Saving state to %s/nav/state.yml, focused path: %s\n", m.configDir, m.focusedProject.Path)
-						if err := m.buildState().Save(m.configDir); err != nil {
-							// Log error but don't fail the operation
-							fmt.Fprintf(os.Stderr, "ERROR: failed to save state: %v\n", err)
-						} else {
-							fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
-						}
-					}
-					return m, updateDaemonFocusCmd(m.getVisiblePaths())
-				}
-				// Vim-style: Enter confirms filter and blurs (keeps value), press Enter again to select
-				m.filterInput.Blur()
-				return m, nil
-			case tea.KeyUp:
-				// Navigate up while filtering
-				if m.cursor > 0 {
-					m.cursor--
-				}
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			case tea.KeyDown:
-				// Navigate down while filtering
-				if m.cursor < len(m.filtered)-1 {
-					m.cursor++
-				}
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
-			default:
-				// Let filter input handle all other keys when focused
-				prevValue := m.filterInput.Value()
-				m.filterInput, cmd = m.filterInput.Update(msg)
-
-				// If the filter changed, update filtered list
-				if m.filterInput.Value() != prevValue {
-					m.updateFiltered()
-					m.cursor = 0
-					m.moveCursorToFirstSelectable()
-					return m, tea.Batch(cmd, updateDaemonFocusCmd(m.getVisiblePaths()))
-				}
-				return m, cmd
-			}
 		}
 
 		// Normal mode (when filter is not focused)
