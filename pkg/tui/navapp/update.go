@@ -11,6 +11,25 @@ import (
 	"github.com/grovetools/nav/pkg/tui/windows"
 )
 
+// tabFromID maps a human-readable tab ID string (matching the PageWithID
+// values in pages.go) to the corresponding Tab constant.
+func tabFromID(id string) Tab {
+	switch id {
+	case "sessionize":
+		return TabSessionize
+	case "keymanage":
+		return TabKeymanage
+	case "history":
+		return TabHistory
+	case "windows":
+		return TabWindows
+	case "groups":
+		return TabGroups
+	default:
+		return TabSessionize
+	}
+}
+
 // requestSwitchTab returns a tea.Cmd that emits an embed.SwitchTabMsg
 // targeting the given tab. Using a cmd lets the current Update call
 // finish processing before the new tab is focused.
@@ -30,7 +49,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case embed.SwitchTabMsg:
-		return m, m.doSwitchTab(Tab(msg.TabIndex))
+		tab := Tab(msg.TabIndex)
+		if msg.TabID != "" {
+			tab = tabFromID(msg.TabID)
+		}
+		return m, m.doSwitchTab(tab)
 
 	case embed.SetWorkspaceMsg:
 		// Workspace changes must reach every initialized sub-model, not

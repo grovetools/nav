@@ -102,7 +102,10 @@ func (p *sessionizePage) Footer() string {
 	return p.s.sessionize.Footer()
 }
 
+func (p *sessionizePage) TabID() string { return "sessionize" }
+
 var _ pager.Page = (*sessionizePage)(nil)
+var _ pager.PageWithID = (*sessionizePage)(nil)
 var _ pager.PageWithTitle = (*sessionizePage)(nil)
 var _ pager.PageWithEnabled = (*sessionizePage)(nil)
 var _ pager.PageWithTextInput = (*sessionizePage)(nil)
@@ -185,7 +188,10 @@ func (p *keymanagePage) Footer() string {
 	return p.s.keymanage.Footer()
 }
 
+func (p *keymanagePage) TabID() string { return "keymanage" }
+
 var _ pager.Page = (*keymanagePage)(nil)
+var _ pager.PageWithID = (*keymanagePage)(nil)
 var _ pager.PageWithTitle = (*keymanagePage)(nil)
 var _ pager.PageWithEnabled = (*keymanagePage)(nil)
 var _ pager.PageWithTextInput = (*keymanagePage)(nil)
@@ -265,7 +271,10 @@ func (p *historyPage) Footer() string {
 	return p.s.history.Footer()
 }
 
+func (p *historyPage) TabID() string { return "history" }
+
 var _ pager.Page = (*historyPage)(nil)
+var _ pager.PageWithID = (*historyPage)(nil)
 var _ pager.PageWithTitle = (*historyPage)(nil)
 var _ pager.PageWithEnabled = (*historyPage)(nil)
 var _ pager.PageWithTextInput = (*historyPage)(nil)
@@ -349,7 +358,10 @@ func (p *windowsPage) Footer() string {
 	return p.s.windows.Footer()
 }
 
+func (p *windowsPage) TabID() string { return "windows" }
+
 var _ pager.Page = (*windowsPage)(nil)
+var _ pager.PageWithID = (*windowsPage)(nil)
 var _ pager.PageWithTitle = (*windowsPage)(nil)
 var _ pager.PageWithEnabled = (*windowsPage)(nil)
 var _ pager.PageWithTextInput = (*windowsPage)(nil)
@@ -428,7 +440,10 @@ func (p *groupsPage) Footer() string {
 	return p.s.groups.Footer()
 }
 
+func (p *groupsPage) TabID() string { return "groups" }
+
 var _ pager.Page = (*groupsPage)(nil)
+var _ pager.PageWithID = (*groupsPage)(nil)
 var _ pager.PageWithTitle = (*groupsPage)(nil)
 var _ pager.PageWithEnabled = (*groupsPage)(nil)
 var _ pager.PageWithTextInput = (*groupsPage)(nil)
