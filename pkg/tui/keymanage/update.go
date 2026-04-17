@@ -61,8 +61,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		var cmds []tea.Cmd
 		cmds = append(cmds, fetchAllGitStatusesCmd(msg.projectList))
-		cmds = append(cmds, fetchAllNoteCountsCmd())
-		cmds = append(cmds, fetchAllPlanStatsCmd())
+		cmds = append(cmds, fetchAllNoteCountsCmd(m.cwdPath))
+		cmds = append(cmds, fetchAllPlanStatsCmd(m.cwdPath))
 		cmds = append(cmds, fetchRulesStateCmd(msg.projectList))
 
 		m.enrichmentLoading["git"] = true

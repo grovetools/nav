@@ -119,7 +119,7 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 	}
 
 	// Clear daemon focus so it stops high-frequency scanning post-TUI.
-	clientDaemon := daemon.New()
+	clientDaemon := daemon.NewWithAutoStart(cwd)
 	if clientDaemon.IsRunning() {
 		ctxDaemon, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		_ = clientDaemon.SetFocus(ctxDaemon, []string{})

@@ -557,12 +557,12 @@ func (m *Model) Init() tea.Cmd {
 		fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
 		fetchKeyMapCmd(m.store),
 		tickCmd(),
-		subscribeToDaemonCmd(),
-		updateDaemonFocusCmd(m.getVisiblePaths()),
+		subscribeToDaemonCmd(m.activeWorkspacePath),
+		updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()),
 	}
 
 	if !m.usedCache {
-		cmds = append(cmds, fetchProjectsCmd(m.cfg.LoadProjects))
+		cmds = append(cmds, fetchProjectsCmd(m.activeWorkspacePath, m.cfg.LoadProjects))
 	} else if m.showCx {
 		cmds = append(cmds, fetchRulesStateCmd(m.projects))
 	}
@@ -582,11 +582,11 @@ func (m *Model) Init() tea.Cmd {
 
 	if m.showNoteCounts && !hasNoteCounts {
 		m.enrichmentLoading["notes"] = true
-		cmds = append(cmds, fetchAllNoteCountsCmd())
+		cmds = append(cmds, fetchAllNoteCountsCmd(m.activeWorkspacePath))
 	}
 	if m.showPlanStats && !hasPlanStats {
 		m.enrichmentLoading["plans"] = true
-		cmds = append(cmds, fetchAllPlanStatsCmd())
+		cmds = append(cmds, fetchAllPlanStatsCmd(m.activeWorkspacePath))
 	}
 	if m.showGitStatus && !hasGitStatus {
 		m.enrichmentLoading["git"] = true
@@ -599,25 +599,25 @@ func (m *Model) Init() tea.Cmd {
 		// m.streamCh can't be used as the gate at this point in Init()
 		// because subscribeToDaemonCmd was dispatched moments ago and
 		// hasn't connected yet; use a synchronous IsRunning() check.
-		if !daemon.New().IsRunning() {
+		if !daemon.NewWithAutoStart(m.activeWorkspacePath).IsRunning() {
 			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
 		}
 	}
 	if m.showRelease {
 		m.enrichmentLoading["release"] = true
-		cmds = append(cmds, fetchAllReleaseInfoCmd(m.projects))
+		cmds = append(cmds, fetchAllReleaseInfoCmd(m.activeWorkspacePath, m.projects))
 	}
 	if m.showBinary {
 		m.enrichmentLoading["binary"] = true
-		cmds = append(cmds, fetchAllBinaryStatusCmd(m.projects))
+		cmds = append(cmds, fetchAllBinaryStatusCmd(m.activeWorkspacePath, m.projects))
 	}
 	if m.showLink {
 		m.enrichmentLoading["link"] = true
-		cmds = append(cmds, fetchAllRemoteURLsCmd(m.projects))
+		cmds = append(cmds, fetchAllRemoteURLsCmd(m.activeWorkspacePath, m.projects))
 	}
 	if m.showCx {
 		m.enrichmentLoading["cxstats"] = true
-		cmds = append(cmds, fetchCxPerLineStatsCmd(m.projects))
+		cmds = append(cmds, fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects))
 	}
 
 	anyEnrichmentLoading := m.isLoading

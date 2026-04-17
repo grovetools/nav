@@ -183,9 +183,9 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 
 // fetchAllNoteCountsCmd fetches note counts via the daemon client.
 // Returns an empty map if the daemon is not running.
-func fetchAllNoteCountsCmd() tea.Cmd {
+func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -198,9 +198,9 @@ func fetchAllNoteCountsCmd() tea.Cmd {
 
 // fetchAllPlanStatsCmd fetches plan statistics via the daemon client.
 // Returns an empty map if the daemon is not running.
-func fetchAllPlanStatsCmd() tea.Cmd {
+func fetchAllPlanStatsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

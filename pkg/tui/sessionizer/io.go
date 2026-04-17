@@ -247,9 +247,9 @@ func spinnerTickCmd() tea.Cmd {
 // fetchProjectsCmd reloads the project list via the loader supplied on Config.
 // If the daemon is running, it also triggers a daemon refresh first so the
 // daemon re-discovers workspaces and broadcasts the update via SSE.
-func fetchProjectsCmd(loader ProjectLoader) tea.Cmd {
+func fetchProjectsCmd(dir string, loader ProjectLoader) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		if client.IsRunning() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = client.Refresh(ctx)
@@ -318,9 +318,9 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 	}
 }
 
-func fetchAllNoteCountsCmd() tea.Cmd {
+func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -329,9 +329,9 @@ func fetchAllNoteCountsCmd() tea.Cmd {
 	}
 }
 
-func fetchAllPlanStatsCmd() tea.Cmd {
+func fetchAllPlanStatsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -340,9 +340,9 @@ func fetchAllPlanStatsCmd() tea.Cmd {
 	}
 }
 
-func fetchAllReleaseInfoCmd(projects []*api.Project) tea.Cmd {
+func fetchAllReleaseInfoCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -359,9 +359,9 @@ func fetchAllReleaseInfoCmd(projects []*api.Project) tea.Cmd {
 	}
 }
 
-func fetchAllBinaryStatusCmd(projects []*api.Project) tea.Cmd {
+func fetchAllBinaryStatusCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -378,9 +378,9 @@ func fetchAllBinaryStatusCmd(projects []*api.Project) tea.Cmd {
 	}
 }
 
-func fetchCxPerLineStatsCmd(projects []*api.Project) tea.Cmd {
+func fetchCxPerLineStatsCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -397,9 +397,9 @@ func fetchCxPerLineStatsCmd(projects []*api.Project) tea.Cmd {
 	}
 }
 
-func fetchAllRemoteURLsCmd(projects []*api.Project) tea.Cmd {
+func fetchAllRemoteURLsCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -506,9 +506,9 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 // subscribeToDaemonCmd opens an SSE stream to the daemon and returns the
 // channel + cancel function as a daemonStreamConnectedMsg. The host model
 // owns the lifecycle and tears it down via Close().
-func subscribeToDaemonCmd() tea.Cmd {
+func subscribeToDaemonCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 
 		if !client.IsRunning() {
 			client.Close()
@@ -544,7 +544,7 @@ func listenToDaemonCmd(ch <-chan daemon.StateUpdate) tea.Cmd {
 
 var lastFocusPaths string
 
-func updateDaemonFocusCmd(paths []string) tea.Cmd {
+func updateDaemonFocusCmd(dir string, paths []string) tea.Cmd {
 	sort.Strings(paths)
 	key := strings.Join(paths, "\x00")
 	if key == lastFocusPaths {
@@ -553,7 +553,7 @@ func updateDaemonFocusCmd(paths []string) tea.Cmd {
 	lastFocusPaths = key
 
 	return func() tea.Msg {
-		client := daemon.New()
+		client := daemon.NewWithAutoStart(dir)
 		defer client.Close()
 
 		if !client.IsRunning() {

@@ -122,7 +122,7 @@ func NewManager(configDir string) (*Manager, error) {
 
 	// Load sessions via the daemon client (LocalClient falls back to direct file I/O when daemon not running).
 	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
-	daemonClient := daemon.New()
+	daemonClient := daemon.NewWithAutoStart(configDir)
 	sessions := make(map[string]TmuxSessionConfig)
 	var lockedKeys []string
 	var sessionsFile TmuxSessionsFile
@@ -1205,7 +1205,7 @@ func isGitRepository(path string) bool {
 // If not, it falls back to direct discovery via LocalClient.
 func (m *Manager) GetAvailableProjects() ([]api.Project, error) {
 	// Create daemon client (automatically falls back to local if daemon not running)
-	client := daemon.New()
+	client := daemon.NewWithAutoStart(m.configDir)
 	defer client.Close()
 
 	// Fetch enriched workspaces via the client interface

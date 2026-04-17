@@ -156,7 +156,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := []tea.Cmd{
 			fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
 			fetchKeyMapCmd(m.store),
-			updateDaemonFocusCmd(m.getVisiblePaths()),
+			updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()),
 		}
 		if m.streamCh == nil {
 			cmds = append(cmds, m.enrichVisibleProjects())
@@ -299,7 +299,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enrichmentLoading["cxstats"] = true
 			cmds = append(cmds,
 				fetchRulesStateCmd(m.projects),
-				fetchCxPerLineStatsCmd(m.projects),
+				fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects),
 			)
 		}
 		return m, tea.Batch(cmds...)
@@ -322,7 +322,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enrichmentLoading["cxstats"] = true
 			cmds = append(cmds,
 				fetchRulesStateCmd(m.projects),
-				fetchCxPerLineStatsCmd(m.projects),
+				fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects),
 			)
 		}
 		return m, tea.Batch(cmds...)
@@ -447,7 +447,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
 			fetchKeyMapCmd(m.store),
 			tickCmd(), // This reschedules the tick
-			updateDaemonFocusCmd(m.getVisiblePaths()), // Keep daemon focus in sync
+			updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()), // Keep daemon focus in sync
 		}
 
 		// Track if we're starting any enrichment
@@ -465,12 +465,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.showNoteCounts {
 				m.enrichmentLoading["notes"] = true
 				startedEnrichment = true
-				cmds = append(cmds, fetchAllNoteCountsCmd())
+				cmds = append(cmds, fetchAllNoteCountsCmd(m.activeWorkspacePath))
 			}
 			if m.showPlanStats {
 				m.enrichmentLoading["plans"] = true
 				startedEnrichment = true
-				cmds = append(cmds, fetchAllPlanStatsCmd())
+				cmds = append(cmds, fetchAllPlanStatsCmd(m.activeWorkspacePath))
 			}
 		}
 		// NOTE: release, binary, link, and cxstats are NOT refreshed on tick.
@@ -649,7 +649,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
 						}
 					}
-					return m, updateDaemonFocusCmd(m.getVisiblePaths())
+					return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 				}
 				// Vim-style: Enter confirms filter and blurs (keeps value), press Enter again to select
 				m.filterInput.Blur()
@@ -659,13 +659,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 				}
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 			case tea.KeyDown:
 				// Navigate down while filtering
 				if m.cursor < len(m.filtered)-1 {
 					m.cursor++
 				}
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 			default:
 				// Let filter input handle all other keys when focused
 				prevValue := m.filterInput.Value()
@@ -676,7 +676,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateFiltered()
 					m.cursor = 0
 					m.moveCursorToFirstSelectable()
-					return m, tea.Batch(cmd, updateDaemonFocusCmd(m.getVisiblePaths()))
+					return m, tea.Batch(cmd, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 				}
 				return m, cmd
 			}
@@ -699,7 +699,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 0: // Top (gg)
 				m.saveJumpState()
 				m.cursor = 0
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 			case 1: // FoldOpen (zo)
 				if m.cursor < len(m.filtered) {
 					delete(m.foldedPaths, m.filtered[m.cursor].Path)
@@ -754,7 +754,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.RefreshProjects):
 			m.isLoading = true
-			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.cfg.LoadProjects))
+			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.activeWorkspacePath, m.cfg.LoadProjects))
 
 		case key.Matches(msg, m.keys.ClearFocus):
 			m.saveJumpState()
@@ -764,7 +764,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateFiltered()
 				m.cursor = 0
 				m.moveCursorToFirstSelectable()
-				return m, updateDaemonFocusCmd(m.getVisiblePaths())
+				return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 			}
 			// Clear ecosystem picker mode if active
 			if m.ecosystemPickerMode {
@@ -772,7 +772,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateFiltered()
 				m.cursor = 0
 				m.moveCursorToFirstSelectable()
-				return m, updateDaemonFocusCmd(m.getVisiblePaths())
+				return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 			}
 			// Clear focused project if set
 			if m.focusedProject != nil {
@@ -784,7 +784,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Clear the focused ecosystem from state
 				_ = m.buildState().Save(m.configDir)
 			}
-			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+			return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 
 		case key.Matches(msg, m.keys.FilterDirty):
 			m.saveJumpState()
@@ -820,12 +820,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keys.NextGroup):
 			m.saveJumpState()
 			m.cycleGroup(1)
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.PrevGroup):
 			m.saveJumpState()
 			m.cycleGroup(-1)
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.ToggleHold):
 			// Toggle on-hold plans visibility
@@ -864,11 +864,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.Up):
 			m.moveCursorUp()
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.Down):
 			m.moveCursorDown()
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.PageUp):
 			// Page up (vim-style)
@@ -877,7 +877,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.PageDown):
 			// Page down (vim-style)
@@ -889,7 +889,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.Bottom):
 			m.saveJumpState()
@@ -897,7 +897,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < 0 {
 				m.cursor = 0
 			}
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.CloseSession):
 			// Close session via the configured driver + state provider.
@@ -979,7 +979,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateFiltered()
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
-			return m, updateDaemonFocusCmd(m.getVisiblePaths())
+			return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 
 		case key.Matches(msg, m.keys.FocusEcosystemCwd):
 			m.saveJumpState()
@@ -1011,7 +1011,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor = 0
 					m.moveCursorToFirstSelectable()
 					_ = m.buildState().Save(m.configDir)
-					return m, updateDaemonFocusCmd(m.getVisiblePaths())
+					return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 				}
 			}
 			return m, nil
@@ -1039,7 +1039,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			// Refetch note counts if toggled on
 			if m.showNoteCounts {
-				return m, fetchAllNoteCountsCmd()
+				return m, fetchAllNoteCountsCmd(m.activeWorkspacePath)
 			}
 			return m, nil
 
@@ -1048,7 +1048,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			// Refetch plan stats if toggled on
 			if m.showPlanStats {
-				return m, fetchAllPlanStatsCmd()
+				return m, fetchAllPlanStatsCmd(m.activeWorkspacePath)
 			}
 			return m, nil
 
@@ -1062,7 +1062,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			if m.showRelease {
 				m.enrichmentLoading["release"] = true
-				return m, tea.Batch(spinnerTickCmd(), fetchAllReleaseInfoCmd(m.projects))
+				return m, tea.Batch(spinnerTickCmd(), fetchAllReleaseInfoCmd(m.activeWorkspacePath, m.projects))
 			}
 			return m, nil
 
@@ -1071,7 +1071,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			if m.showBinary {
 				m.enrichmentLoading["binary"] = true
-				return m, tea.Batch(spinnerTickCmd(), fetchAllBinaryStatusCmd(m.projects))
+				return m, tea.Batch(spinnerTickCmd(), fetchAllBinaryStatusCmd(m.activeWorkspacePath, m.projects))
 			}
 			return m, nil
 
@@ -1080,7 +1080,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			if m.showLink {
 				m.enrichmentLoading["link"] = true
-				return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.projects))
+				return m, tea.Batch(spinnerTickCmd(), fetchAllRemoteURLsCmd(m.activeWorkspacePath, m.projects))
 			}
 			return m, nil
 
@@ -1094,7 +1094,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(
 					spinnerTickCmd(),
 					fetchRulesStateCmd(m.projects),
-					fetchCxPerLineStatsCmd(m.projects),
+					fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects),
 				)
 			}
 			return m, nil
@@ -1219,7 +1219,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.worktreesFolded = !m.worktreesFolded
 			m.updateFiltered()
 			_ = m.buildState().Save(m.configDir)
-			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.EditKey):
 			// Map selected project(s) to available keys in current group
@@ -1369,7 +1369,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						fmt.Fprintf(os.Stderr, "DEBUG: State saved successfully\n")
 					}
 				}
-				return m, updateDaemonFocusCmd(m.getVisiblePaths())
+				return m, updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 			}
 			// Normal mode - select project and quit
 			if m.cursor < len(m.filtered) {
@@ -1411,7 +1411,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.jumpIdx > 0 {
 				m.jumpIdx--
 				m.restoreJumpState(m.jumpList[m.jumpIdx])
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 			}
 			return m, nil
 
@@ -1419,7 +1419,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.jumpIdx < len(m.jumpList)-1 {
 				m.jumpIdx++
 				m.restoreJumpState(m.jumpList[m.jumpIdx])
-				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.getVisiblePaths()))
+				return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 			}
 			return m, nil
 
@@ -2534,7 +2534,7 @@ func (m *Model) focusEcosystemForPath(targetPath string) tea.Cmd {
 	}
 
 	_ = m.buildState().Save(m.configDir)
-	return updateDaemonFocusCmd(m.getVisiblePaths())
+	return updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths())
 }
 
 // goToMappingForPath switches to the group containing the path's mapping and applies group filter.

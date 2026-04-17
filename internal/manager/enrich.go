@@ -40,7 +40,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 
 	var noteCountsMap map[string]*models.NoteCounts
 	if opts.FetchNoteCounts {
-		noteCountsByName, _ := FetchNoteCountsMap()
+		noteCountsByName, _ := FetchNoteCountsMap("")
 		// Map by project name to project path
 		noteCountsMap = make(map[string]*models.NoteCounts)
 		for _, proj := range projects {
@@ -52,7 +52,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 
 	var planStatsMap map[string]*models.PlanStats
 	if opts.FetchPlanStats {
-		planStatsMap, _ = FetchPlanStatsMap()
+		planStatsMap, _ = FetchPlanStatsMap("")
 	}
 
 	var wg sync.WaitGroup
@@ -92,8 +92,9 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 
 // FetchNoteCountsMap fetches note counts via the daemon client.
 // Returns empty map if daemon is not running (graceful degradation).
-func FetchNoteCountsMap() (map[string]*models.NoteCounts, error) {
-	client := daemon.New()
+// dir is passed to NewWithAutoStart to scope the daemon connection; empty string falls back to GROVE_SCOPE/cwd.
+func FetchNoteCountsMap(dir string) (map[string]*models.NoteCounts, error) {
+	client := daemon.NewWithAutoStart(dir)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -104,8 +105,9 @@ func FetchNoteCountsMap() (map[string]*models.NoteCounts, error) {
 
 // FetchPlanStatsMap fetches plan statistics via the daemon client.
 // Returns empty map if daemon is not running (graceful degradation).
-func FetchPlanStatsMap() (map[string]*models.PlanStats, error) {
-	client := daemon.New()
+// dir is passed to NewWithAutoStart to scope the daemon connection; empty string falls back to GROVE_SCOPE/cwd.
+func FetchPlanStatsMap(dir string) (map[string]*models.PlanStats, error) {
+	client := daemon.NewWithAutoStart(dir)
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
