@@ -37,6 +37,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Workspace changed — re-read from the Store.
 		m.sessions, _ = m.store.GetSessions()
 		m.rebuildSessionsOrder()
+		// Re-point the CWD-aware "map to CWD" helper at the new workspace so
+		// keymanage honours the host's notion of "current" instead of the
+		// stale process launch directory.
+		if msg.Node != nil {
+			m.cwdPath = msg.Node.Path
+			return m, enrichCwdProjectCmd(m.cwdPath)
+		}
 		return m, nil
 
 	case RequestMapKeyMsg:

@@ -249,6 +249,7 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocus
 			}
 		}
 		driver := NewTmuxDriver(client)
+		cwd, _ := os.Getwd()
 		cfg := sessionizer.Config{
 			Store:                mgr,
 			SessionDriver:        driver,
@@ -257,6 +258,7 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocus
 			SearchPaths:          searchPaths,
 			Features:             mgr.GetResolvedFeatures(),
 			CwdFocusPath:         cwdFocusPath,
+			ActiveWorkspacePath:  cwd,
 			UsedCache:            usedCache,
 			CurrentSession:       currentSession,
 			LoadProjects:         buildProjectLoader(mgr, configDir),

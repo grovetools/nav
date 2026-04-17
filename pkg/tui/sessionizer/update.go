@@ -167,6 +167,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panelFocused = false
 		return m, nil
 
+	case embed.SetWorkspaceMsg:
+		if msg.Node != nil {
+			m.activeWorkspacePath = msg.Node.Path
+		}
+		return m, nil
+
 	case gitStatusMsg:
 		if proj, ok := m.projectMap[msg.path]; ok {
 			proj.GitStatus = msg.status
@@ -1170,12 +1176,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, m.keys.GoToMappingCwd):
-			// Switch to the group containing CWD's mapping and apply group filter
-			cwd, err := os.Getwd()
-			if err != nil {
-				m.statusMessage = "Could not get current directory"
-				m.statusTimeout = time.Now().Add(2 * time.Second)
-				return m, clearStatusCmd(2 * time.Second)
+			// Switch to the group containing CWD's mapping and apply group filter.
+			// Prefer the host-supplied active workspace path (treemux) over
+			// os.Getwd(), which is frozen at the host process launch directory.
+			cwd := m.activeWorkspacePath
+			if cwd == "" {
+				got, err := os.Getwd()
+				if err != nil {
+					m.statusMessage = "Could not get current directory"
+					m.statusTimeout = time.Now().Add(2 * time.Second)
+					return m, clearStatusCmd(2 * time.Second)
+				}
+				cwd = got
 			}
 			// Find the project for CWD
 			cwdNormalized, _ := pathutil.NormalizeForLookup(cwd)
@@ -2449,8 +2461,12 @@ func (m *Model) jumpToPath(targetPath string, applyGroupFilter bool) {
 }
 
 // focusEcosystemForPath applies focus to the ecosystem containing the given path.
-// If targetPath is empty, uses the current working directory.
+// If targetPath is empty, uses the host-supplied active workspace path (set via
+// cfg.ActiveWorkspacePath / embed.SetWorkspaceMsg) or falls back to os.Getwd().
 func (m *Model) focusEcosystemForPath(targetPath string) tea.Cmd {
+	if targetPath == "" {
+		targetPath = m.activeWorkspacePath
+	}
 	if targetPath == "" {
 		cwd, err := os.Getwd()
 		if err != nil {

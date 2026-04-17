@@ -63,6 +63,15 @@ type Config struct {
 	// pipeline entirely — it recompiles the grove.toml JSONSchema
 	// validator per project per tick and pegs CPU at 400%+.
 	DisableCx bool
+
+	// ActiveWorkspacePath is the host's notion of "where the user is"
+	// for CWD-aware key bindings (FocusEcosystemCwd, GoToMappingCwd).
+	// When embedded in treemux, process-level os.Getwd() is stuck at
+	// the terminal's launch directory while the user moves between
+	// workspaces in-process; the host feeds the live workspace path
+	// here (and via embed.SetWorkspaceMsg for subsequent switches).
+	// Empty falls back to os.Getwd().
+	ActiveWorkspacePath string
 }
 
 // jumpState captures the view state for the jump list (C-o/C-i navigation).
@@ -172,6 +181,11 @@ type Model struct {
 	// wait for them to exit before returning. Hosts that rapidly create and
 	// destroy sessionizer instances must not leak SSE listener goroutines.
 	streamWg sync.WaitGroup
+
+	// activeWorkspacePath is the host-supplied "current workspace" used by
+	// CWD-aware keys. Seeded from cfg.ActiveWorkspacePath and refreshed on
+	// embed.SetWorkspaceMsg. Empty means "fall back to os.Getwd()".
+	activeWorkspacePath string
 }
 
 // Close releases resources owned by the Model. Today this only tears down
@@ -456,6 +470,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 		jumpList:          make([]jumpState, 0),
 		jumpIdx:           0,
 		panelFocused:      true, // assume focused until BlurMsg says otherwise
+		activeWorkspacePath: cfg.ActiveWorkspacePath,
 	}
 
 	if !features.Groups {
