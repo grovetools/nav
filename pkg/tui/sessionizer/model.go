@@ -599,7 +599,7 @@ func (m *Model) Init() tea.Cmd {
 		// m.streamCh can't be used as the gate at this point in Init()
 		// because subscribeToDaemonCmd was dispatched moments ago and
 		// hasn't connected yet; use a synchronous IsRunning() check.
-		if !daemon.NewWithAutoStart(m.activeWorkspacePath).IsRunning() {
+		if !daemon.NewWithAutoStart().IsRunning() {
 			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
 		}
 	}

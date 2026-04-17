@@ -249,7 +249,7 @@ func spinnerTickCmd() tea.Cmd {
 // daemon re-discovers workspaces and broadcasts the update via SSE.
 func fetchProjectsCmd(dir string, loader ProjectLoader) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		if client.IsRunning() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = client.Refresh(ctx)
@@ -320,7 +320,7 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 
 func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -331,7 +331,7 @@ func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 
 func fetchAllPlanStatsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -342,7 +342,7 @@ func fetchAllPlanStatsCmd(dir string) tea.Cmd {
 
 func fetchAllReleaseInfoCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -361,7 +361,7 @@ func fetchAllReleaseInfoCmd(dir string, projects []*api.Project) tea.Cmd {
 
 func fetchAllBinaryStatusCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -380,7 +380,7 @@ func fetchAllBinaryStatusCmd(dir string, projects []*api.Project) tea.Cmd {
 
 func fetchCxPerLineStatsCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -399,7 +399,7 @@ func fetchCxPerLineStatsCmd(dir string, projects []*api.Project) tea.Cmd {
 
 func fetchAllRemoteURLsCmd(dir string, projects []*api.Project) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -508,7 +508,7 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[
 // owns the lifecycle and tears it down via Close().
 func subscribeToDaemonCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 
 		if !client.IsRunning() {
 			client.Close()
@@ -553,7 +553,7 @@ func updateDaemonFocusCmd(dir string, paths []string) tea.Cmd {
 	lastFocusPaths = key
 
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 
 		if !client.IsRunning() {

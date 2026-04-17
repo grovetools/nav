@@ -185,7 +185,7 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 // Returns an empty map if the daemon is not running.
 func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -200,7 +200,7 @@ func fetchAllNoteCountsCmd(dir string) tea.Cmd {
 // Returns an empty map if the daemon is not running.
 func fetchAllPlanStatsCmd(dir string) tea.Cmd {
 	return func() tea.Msg {
-		client := daemon.NewWithAutoStart(dir)
+		client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 		defer client.Close()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -121,8 +121,11 @@ func NewManager(configDir string) (*Manager, error) {
 	}
 
 	// Load sessions via the daemon client (LocalClient falls back to direct file I/O when daemon not running).
+	// Use zero-arg: when embedded in treemux we inherit GROVE_SCOPE so the
+	// nav manager shares the same daemon as its host instead of spawning
+	// a new one keyed to configDir (which isn't a workspace anyway).
 	sessionsPath := filepath.Join(paths.StateDir(), "nav", "sessions.yml")
-	daemonClient := daemon.NewWithAutoStart(configDir)
+	daemonClient := daemon.NewWithAutoStart()
 	sessions := make(map[string]TmuxSessionConfig)
 	var lockedKeys []string
 	var sessionsFile TmuxSessionsFile
@@ -1204,8 +1207,10 @@ func isGitRepository(path string) bool {
 // If the daemon is running, it uses cached/pre-computed data including git status.
 // If not, it falls back to direct discovery via LocalClient.
 func (m *Manager) GetAvailableProjects() ([]api.Project, error) {
-	// Create daemon client (automatically falls back to local if daemon not running)
-	client := daemon.NewWithAutoStart(m.configDir)
+	// Create daemon client — inherit GROVE_SCOPE from parent (e.g. treemux)
+	// so embedded navs share the host's daemon instead of spawning one
+	// keyed to configDir (which isn't a workspace).
+	client := daemon.NewWithAutoStart()
 	defer client.Close()
 
 	// Fetch enriched workspaces via the client interface

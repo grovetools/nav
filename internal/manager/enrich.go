@@ -94,7 +94,7 @@ func EnrichProjects(ctx context.Context, projects []*SessionizeProject, opts *En
 // Returns empty map if daemon is not running (graceful degradation).
 // dir is passed to NewWithAutoStart to scope the daemon connection; empty string falls back to GROVE_SCOPE/cwd.
 func FetchNoteCountsMap(dir string) (map[string]*models.NoteCounts, error) {
-	client := daemon.NewWithAutoStart(dir)
+	client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -107,7 +107,7 @@ func FetchNoteCountsMap(dir string) (map[string]*models.NoteCounts, error) {
 // Returns empty map if daemon is not running (graceful degradation).
 // dir is passed to NewWithAutoStart to scope the daemon connection; empty string falls back to GROVE_SCOPE/cwd.
 func FetchPlanStatsMap(dir string) (map[string]*models.PlanStats, error) {
-	client := daemon.NewWithAutoStart(dir)
+	client := daemon.NewWithAutoStart() // inherit GROVE_SCOPE from treemux host
 	defer client.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
