@@ -119,7 +119,10 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 	}
 
 	// Clear daemon focus so it stops high-frequency scanning post-TUI.
-	clientDaemon := daemon.NewWithAutoStart(cwd)
+	// Use zero-arg so the client inherits GROVE_SCOPE from env — nav
+	// run ad-hoc from a shell goes to the global daemon, nav run
+	// inside a treemux pane scopes to treemux's daemon.
+	clientDaemon := daemon.NewWithAutoStart()
 	if clientDaemon.IsRunning() {
 		ctxDaemon, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 		_ = clientDaemon.SetFocus(ctxDaemon, []string{})
