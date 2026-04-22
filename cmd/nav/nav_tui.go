@@ -251,22 +251,24 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocus
 				currentSession = cur
 			}
 		}
-		driver := NewTmuxDriver(client)
 		cwd, _ := os.Getwd()
 		cfg := sessionizer.Config{
-			Store:                mgr,
-			SessionDriver:        driver,
-			SessionStateProvider: driver,
-			ConfigDir:            configDir,
-			SearchPaths:          searchPaths,
-			Features:             mgr.GetResolvedFeatures(),
-			CwdFocusPath:         cwdFocusPath,
-			ActiveWorkspacePath:  cwd,
-			UsedCache:            usedCache,
-			CurrentSession:       currentSession,
-			LoadProjects:         buildProjectLoader(mgr, configDir),
-			ReloadConfig:         reloadTmuxConfig,
-			KeyMap:               sessionizeKeys,
+			Store:               mgr,
+			ConfigDir:           configDir,
+			SearchPaths:         searchPaths,
+			Features:            mgr.GetResolvedFeatures(),
+			CwdFocusPath:        cwdFocusPath,
+			ActiveWorkspacePath: cwd,
+			UsedCache:           usedCache,
+			CurrentSession:      currentSession,
+			LoadProjects:        buildProjectLoader(mgr, configDir),
+			ReloadConfig:        reloadTmuxConfig,
+			KeyMap:              sessionizeKeys,
+		}
+		if client != nil {
+			driver := NewTmuxDriver(client)
+			cfg.SessionDriver = driver
+			cfg.SessionStateProvider = driver
 		}
 		return sessionizer.New(cfg, projectPtrs)
 	}
