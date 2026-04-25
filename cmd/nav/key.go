@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
-	tablecomponent "github.com/grovetools/core/tui/components/table"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/workspace"
+	tablecomponent "github.com/grovetools/core/tui/components/table"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
@@ -53,6 +53,8 @@ func displaySessionsTable(sessions []models.TmuxSession) bool {
 		var repo string
 		if s.Repository != "" {
 			repo = repoStyle.Render(s.Repository)
+		} else if s.Path != "" {
+			repo = repoStyle.Render(filepath.Base(s.Path))
 		}
 
 		if path != "" {
