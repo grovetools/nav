@@ -153,7 +153,7 @@ func (m *Model) renderWide() string {
 	previewBuilder.WriteString(core_theme.DefaultTheme.Header.Render("Preview"))
 	previewBuilder.WriteString("\n\n")
 
-	maxPreviewHeight := m.height - 15
+	maxPreviewHeight := m.height - 5
 	if maxPreviewHeight < 5 {
 		maxPreviewHeight = 5
 	}
@@ -211,15 +211,12 @@ func (m *Model) Footer() string {
 }
 
 // visibleRange computes the visible slice (start, end) given a cursor,
-// total count, and viewport height. Matches the original packed layout:
-// leaves room for the tab bar and caps at 15 lines.
+// total count, and viewport height. Leaves room for the tab bar/footer
+// in the chat-4 layout.
 func visibleRange(cursor, total, viewportHeight int) (int, int) {
-	visibleHeight := viewportHeight - 15
+	visibleHeight := viewportHeight - 5
 	if visibleHeight < 5 {
 		visibleHeight = 5
-	}
-	if visibleHeight > 15 {
-		visibleHeight = 15
 	}
 	start := 0
 	end := total
