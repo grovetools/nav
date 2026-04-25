@@ -37,11 +37,11 @@ type Config struct {
 	SessionDriver        SessionDriver
 	SessionStateProvider SessionStateProvider
 
-	ConfigDir     string
-	SearchPaths   []string
-	Features      Features
-	CwdFocusPath  string
-	UsedCache     bool
+	ConfigDir      string
+	SearchPaths    []string
+	Features       Features
+	CwdFocusPath   string
+	UsedCache      bool
 	CurrentSession string // name of the current session (empty if not inside one)
 
 	// LoadProjects is called on manual refresh to reload the project list.
@@ -96,11 +96,11 @@ type Model struct {
 	selected   *api.Project
 	projectMap map[string]*api.Project
 
-	cursor       int
-	filterInput  textinput.Model
-	store        Store
-	features     Features
-	configDir    string
+	cursor      int
+	filterInput textinput.Model
+	store       Store
+	features    Features
+	configDir   string
 
 	keyMap          map[string]string
 	runningSessions map[string]bool
@@ -425,51 +425,51 @@ func New(cfg Config, projects []*api.Project) *Model {
 	}
 
 	m := &Model{
-		cfg:              cfg,
-		rulesState:       make(map[string]grovecontext.RuleStatus),
-		projects:         projects,
-		filtered:         projects,
-		projectMap:       projectMap,
-		filterInput:      ti,
-		store:            store,
-		features:         features,
-		configDir:        cfg.ConfigDir,
-		keyMap:           keyMap,
-		runningSessions:  runningSessions,
-		currentSession:   currentSession,
-		keys:             cfg.KeyMap,
-		availableKeys:    availableKeys,
-		sessions:         sessions,
-		help:             helpModel,
-		worktreesFolded:  worktreesFolded,
-		showGitStatus:    showGitStatus,
-		showBranch:       showBranch,
-		showNoteCounts:   showNoteCounts,
-		showPlanStats:    showPlanStats,
-		showOnHold:       false,
-		pathDisplayMode:  pathDisplayMode,
-		showRelease:      showRelease,
-		showBinary:       showBinary,
-		showLink:         showLink,
-		showCx:           showCx,
-		filterGroup:      autoEnableGroupFilter,
+		cfg:             cfg,
+		rulesState:      make(map[string]grovecontext.RuleStatus),
+		projects:        projects,
+		filtered:        projects,
+		projectMap:      projectMap,
+		filterInput:     ti,
+		store:           store,
+		features:        features,
+		configDir:       cfg.ConfigDir,
+		keyMap:          keyMap,
+		runningSessions: runningSessions,
+		currentSession:  currentSession,
+		keys:            cfg.KeyMap,
+		availableKeys:   availableKeys,
+		sessions:        sessions,
+		help:            helpModel,
+		worktreesFolded: worktreesFolded,
+		showGitStatus:   showGitStatus,
+		showBranch:      showBranch,
+		showNoteCounts:  showNoteCounts,
+		showPlanStats:   showPlanStats,
+		showOnHold:      false,
+		pathDisplayMode: pathDisplayMode,
+		showRelease:     showRelease,
+		showBinary:      showBinary,
+		showLink:        showLink,
+		showCx:          showCx,
+		filterGroup:     autoEnableGroupFilter,
 		focusedProject: func() *api.Project {
 			if autoEnableGroupFilter {
 				return nil
 			}
 			return focusedProject
 		}(),
-		contextOnlyPaths:  make(map[string]bool),
-		usedCache:         cfg.UsedCache,
-		isLoading:         cfg.UsedCache,
-		enrichmentLoading: make(map[string]bool),
-		foldedPaths:       foldedPaths,
-		hasChildren:       make(map[string]bool),
-		sequence:          keymap.NewSequenceState(),
-		selectedPaths:     make(map[string]bool),
-		jumpList:          make([]jumpState, 0),
-		jumpIdx:           0,
-		panelFocused:      true, // assume focused until BlurMsg says otherwise
+		contextOnlyPaths:    make(map[string]bool),
+		usedCache:           cfg.UsedCache,
+		isLoading:           cfg.UsedCache,
+		enrichmentLoading:   make(map[string]bool),
+		foldedPaths:         foldedPaths,
+		hasChildren:         make(map[string]bool),
+		sequence:            keymap.NewSequenceState(),
+		selectedPaths:       make(map[string]bool),
+		jumpList:            make([]jumpState, 0),
+		jumpIdx:             0,
+		panelFocused:        true, // assume focused until BlurMsg says otherwise
 		activeWorkspacePath: cfg.ActiveWorkspacePath,
 	}
 
@@ -589,7 +589,6 @@ func (m *Model) Init() tea.Cmd {
 		cmds = append(cmds, fetchAllPlanStatsCmd(m.activeWorkspacePath))
 	}
 	if m.showGitStatus && !hasGitStatus {
-		m.enrichmentLoading["git"] = true
 		// Only fork git locally when the daemon isn't available.
 		// When the daemon is running it already has (or will have within
 		// ~1s of its initial fullScan) the authoritative git status, and
@@ -600,6 +599,7 @@ func (m *Model) Init() tea.Cmd {
 		// because subscribeToDaemonCmd was dispatched moments ago and
 		// hasn't connected yet; use a synchronous IsRunning() check.
 		if !daemon.NewWithAutoStart().IsRunning() {
+			m.enrichmentLoading["git"] = true
 			cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
 		}
 	}
