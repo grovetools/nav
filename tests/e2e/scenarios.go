@@ -19,7 +19,9 @@ func setupMockTmuxConfig(ctx *harness.Context) error {
 	ctx.Set("config_dir", groveConfigDir)
 
 	// Create a mock git repo
-	repoDir := ctx.NewDir("repo")
+	repoDir := ctx.NewDir("test-repo-a")
+	repoCDir := ctx.NewDir("test-repo-c")
+	ctx.Set("repo_c_dir", repoCDir)
 	// Ensure the directory exists
 	if err := fs.CreateDir(repoDir); err != nil {
 		return fmt.Errorf("failed to create repo directory: %w", err)
@@ -59,13 +61,14 @@ tmux:
     repository: test-repo-a
     description: Test repository A
   b:
-    path: /non/existent/path
+    path: /non/existent/test-repo-b
     repository: test-repo-b
     description: Test repository B (no path)
   c:
+    path: %s
     repository: test-repo-c
     description: Test repository C (path not set)
-`, repoDir)
+`, repoDir, repoCDir)
 
 	if err := fs.WriteString(filepath.Join(navStateDir, "sessions.yml"), sessionsYAML); err != nil {
 		return fmt.Errorf("failed to write sessions.yml: %w", err)
@@ -110,7 +113,7 @@ func NavListScenario() *harness.Scenario {
 				// Note: Descriptions are not shown in the current list output
 
 				// Check path handling
-				if err := assert.Contains(result.Stdout, "/non/existent/path", "Should show configured path for repo B"); err != nil {
+				if err := assert.Contains(result.Stdout, "/non/existent/test-repo-b", "Should show configured path for repo B"); err != nil {
 					return err
 				}
 				// Note: Empty paths are shown as empty cells in the table, not "<not configured>"
@@ -133,7 +136,7 @@ func NavStatusScenario() *harness.Scenario {
 				}
 
 				// Add a file to the git repo to create some status
-				repoDir := ctx.Dir("repo")
+				repoDir := ctx.Dir("test-repo-a")
 				testFile := filepath.Join(repoDir, "test.txt")
 				if err := fs.WriteString(testFile, "test content"); err != nil {
 					return err
