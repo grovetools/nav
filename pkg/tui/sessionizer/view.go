@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/table"
@@ -146,6 +147,15 @@ func (m *Model) renderTable() string {
 		}
 		headers = append(headers, remoteHeader)
 	}
+
+	var taskVerbs []string
+	if m.showTaskResults {
+		taskVerbs = collectTaskVerbs(m.filtered)
+		for _, verb := range taskVerbs {
+			headers = append(headers, formatVerbHeader(verb))
+		}
+	}
+
 	if m.pathDisplayMode > 0 {
 		headers = append(headers, "PATH")
 	}
@@ -154,7 +164,7 @@ func (m *Model) renderTable() string {
 	visibleProjects := m.filtered[start:end]
 	rows := make([][]string, len(visibleProjects))
 	for i, project := range visibleProjects {
-		rows[i] = m.formatProjectRow(project, showCxColumn)
+		rows[i] = m.formatProjectRow(project, showCxColumn, taskVerbs)
 	}
 
 	// Adjust cursor to be relative to visible window
@@ -173,7 +183,7 @@ func (m *Model) renderTable() string {
 }
 
 // formatProjectRow formats a single project into a table row
-func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []string {
+func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVerbs []string) []string {
 	// --- WORKSPACE ---
 	var workspaceName string
 
@@ -609,6 +619,13 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []stri
 	if m.showLink {
 		row = append(row, link)
 	}
+	for _, verb := range taskVerbs {
+		var result *models.TaskResult
+		if project.TaskResults != nil {
+			result = project.TaskResults[verb]
+		}
+		row = append(row, formatTaskResultCell(result))
+	}
 	if m.pathDisplayMode > 0 {
 		row = append(row, pathDisplay)
 	}
@@ -647,6 +664,10 @@ func (m *Model) pathColumnBudget() int {
 	}
 	if m.showLink {
 		used += 22
+	}
+	if m.showTaskResults {
+		verbs := collectTaskVerbs(m.filtered)
+		used += len(verbs) * 10
 	}
 	budget := m.width - used
 	if budget < 20 {

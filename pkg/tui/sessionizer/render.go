@@ -2,10 +2,14 @@ package sessionizer
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/grovetools/core/pkg/models"
 	core_theme "github.com/grovetools/core/tui/theme"
+
+	"github.com/grovetools/nav/pkg/api"
 )
 
 // resolveIcon maps a config icon reference (human name or IconXxx constant)
@@ -142,6 +146,81 @@ func formatCurrentVersion(status *models.BinaryStatus) string {
 		return "-"
 	}
 	return status.CurrentVersion
+}
+
+// canonicalVerbOrder defines the preferred display order for validation columns.
+var canonicalVerbOrder = []string{"build", "fmt", "vet", "lint", "test", "test-e2e"}
+
+// collectTaskVerbs gathers all unique verb keys from the filtered projects and
+// returns them in canonical order (build, fmt, vet, lint, test, test-e2e), with
+// any remaining custom verbs sorted alphabetically at the end.
+func collectTaskVerbs(projects []*api.Project) []string {
+	seen := make(map[string]bool)
+	for _, p := range projects {
+		for verb := range p.TaskResults {
+			seen[verb] = true
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+
+	var result []string
+	for _, verb := range canonicalVerbOrder {
+		if seen[verb] {
+			result = append(result, verb)
+			delete(seen, verb)
+		}
+	}
+	var extra []string
+	for verb := range seen {
+		extra = append(extra, verb)
+	}
+	sort.Strings(extra)
+	return append(result, extra...)
+}
+
+// formatVerbHeader title-cases a verb name for the column header.
+func formatVerbHeader(verb string) string {
+	parts := strings.Split(verb, "-")
+	for i, part := range parts {
+		if len(part) > 0 {
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return strings.Join(parts, "-")
+}
+
+// formatTaskResultCell renders a single task result cell with a pass/fail icon
+// and relative timestamp.
+func formatTaskResultCell(result *models.TaskResult) string {
+	if result == nil {
+		return core_theme.DefaultTheme.Muted.Render("-")
+	}
+	icon := core_theme.DefaultTheme.Success.Render("✓")
+	if result.ExitCode != 0 {
+		icon = core_theme.DefaultTheme.Error.Render("✗")
+	}
+	age := formatRelativeAge(result.Timestamp)
+	return icon + " " + core_theme.DefaultTheme.Muted.Render(age)
+}
+
+// formatRelativeAge returns a compact relative time string.
+func formatRelativeAge(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
 }
 
 // formatLink converts a git URL to a clean https link

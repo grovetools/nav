@@ -367,6 +367,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if delta.PlanStats != nil {
 						proj.PlanStats = delta.PlanStats
 					}
+					if delta.TaskResults != nil {
+						if proj.TaskResults == nil {
+							proj.TaskResults = make(map[string]*models.TaskResult)
+						}
+						for verb, result := range delta.TaskResults {
+							proj.TaskResults[verb] = result
+						}
+					}
 				}
 			}
 			return m, m.listenToDaemon()
@@ -401,8 +409,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			// Sources like "workspace", "workspace_watcher" are handled above.
-			// Other unknown sources are ignored to avoid wasteful re-renders.
+
+			// The "initial" SSE event carries full workspace state including
+			// TaskResults. Apply task results from any source that carries them.
+			if msg.update.UpdateType == "initial" {
+				for _, ew := range msg.update.Workspaces {
+					if proj, ok := m.projectMap[ew.Path]; ok {
+						if ew.GitStatus != nil {
+							proj.GitStatus = ew.GitStatus
+							proj.EnrichmentStatus["git"] = "done"
+						}
+						if ew.NoteCounts != nil {
+							proj.NoteCounts = ew.NoteCounts
+						}
+						if ew.PlanStats != nil {
+							proj.PlanStats = ew.PlanStats
+						}
+						if ew.TaskResults != nil {
+							proj.TaskResults = ew.TaskResults
+						}
+					}
+				}
+			}
 		}
 		// Continue listening for more updates
 		return m, m.listenToDaemon()
@@ -1096,6 +1124,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects),
 				)
 			}
+			return m, nil
+
+		case key.Matches(msg, m.keys.ToggleTaskResults):
+			m.showTaskResults = !m.showTaskResults
+			_ = m.buildState().Save(m.configDir)
 			return m, nil
 
 		case key.Matches(msg, m.keys.ManageGroups):

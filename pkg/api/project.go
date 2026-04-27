@@ -24,6 +24,7 @@ type Project struct {
 	ReleaseInfo  *models.ReleaseInfo
 	ActiveBinary *models.BinaryStatus
 	CxStats      *models.CxStats
+	TaskResults  map[string]*models.TaskResult
 	GitRemoteURL string
 
 	// EnrichmentStatus tracks the loading state of different data types

@@ -40,6 +40,7 @@ type SessionizeKeyMap struct {
 	ToggleBinary         key.Binding
 	ToggleLink           key.Binding
 	ToggleCx             key.Binding
+	ToggleTaskResults    key.Binding
 	JumpBack             key.Binding
 	JumpForward          key.Binding
 	Undo                 key.Binding
@@ -101,6 +102,7 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.ToggleRelease,
 			k.ToggleBinary,
 			k.ToggleLink,
+			k.ToggleTaskResults,
 		},
 	}
 }
@@ -159,6 +161,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.ToggleRelease,
 			k.ToggleBinary,
 			k.ToggleLink,
+			k.ToggleTaskResults,
 		),
 		k.FoldSection(),
 		keymap.SystemSection(k.Help, k.Quit),
@@ -290,6 +293,10 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		ToggleCx: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "toggle cx column"),
+		),
+		ToggleTaskResults: key.NewBinding(
+			key.WithKeys("v"),
+			key.WithHelp("v", "toggle validation matrix"),
 		),
 		JumpBack: key.NewBinding(
 			key.WithKeys("ctrl+o"),

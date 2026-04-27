@@ -28,6 +28,7 @@ type SessionizerState struct {
 	ShowBinary           *bool    `yaml:"show_binary,omitempty"`
 	ShowLink             *bool    `yaml:"show_link,omitempty"`
 	ShowCx               *bool    `yaml:"show_cx,omitempty"`
+	ShowTaskResults      *bool    `yaml:"show_task_results,omitempty"`
 }
 
 // CachedProject holds project data with explicit types for proper JSON serialization.

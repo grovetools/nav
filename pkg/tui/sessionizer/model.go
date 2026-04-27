@@ -130,6 +130,7 @@ type Model struct {
 	showBinary      bool
 	showLink        bool
 	showCx          bool
+	showTaskResults bool
 
 	filterDirty bool
 	filterGroup bool
@@ -351,6 +352,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 	showBinary := false
 	showLink := false
 	showCx := true
+	showTaskResults := false
 
 	if !features.Integrations {
 		showGitStatus = false
@@ -412,6 +414,9 @@ func New(cfg Config, projects []*api.Project) *Model {
 		if state.ShowCx != nil {
 			showCx = *state.ShowCx
 		}
+		if state.ShowTaskResults != nil {
+			showTaskResults = *state.ShowTaskResults
+		}
 		for _, p := range state.FoldedPaths {
 			foldedPaths[p] = true
 		}
@@ -452,6 +457,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 		showBinary:      showBinary,
 		showLink:        showLink,
 		showCx:          showCx,
+		showTaskResults: showTaskResults,
 		filterGroup:     autoEnableGroupFilter,
 		focusedProject: func() *api.Project {
 			if autoEnableGroupFilter {
@@ -537,6 +543,7 @@ func (m *Model) buildState() *api.SessionizerState {
 		ShowBinary:           boolPtr(m.showBinary),
 		ShowLink:             boolPtr(m.showLink),
 		ShowCx:               boolPtr(m.showCx),
+		ShowTaskResults:      boolPtr(m.showTaskResults),
 	}
 	if m.focusedProject != nil {
 		state.FocusedEcosystemPath = m.focusedProject.Path
