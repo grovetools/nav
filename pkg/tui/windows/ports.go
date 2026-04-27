@@ -28,7 +28,7 @@ type SessionDriver interface {
 	KillWindow(ctx context.Context, target string) error
 
 	// RenameWindow renames the window identified by target.
-	RenameWindow(ctx context.Context, target string, newName string) error
+	RenameWindow(ctx context.Context, target, newName string) error
 
 	// MoveWindow moves srcTarget to dstTarget. It is called repeatedly
 	// during a reorder operation, first to shuffle every window to a

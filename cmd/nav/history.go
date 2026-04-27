@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"github.com/grovetools/core/pkg/workspace"
+	"github.com/spf13/cobra"
+
 	"github.com/grovetools/nav/pkg/api"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/navapp"
-	"github.com/spf13/cobra"
 )
 
 // buildHistoryLoader returns a history.HistoryLoader closure that reads

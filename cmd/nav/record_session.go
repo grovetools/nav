@@ -5,8 +5,9 @@ import (
 	"os"
 
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
-	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 var recordSessionCmd = &cobra.Command{

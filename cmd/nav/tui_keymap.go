@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/grovetools/core/config"
+
 	navkeymap "github.com/grovetools/nav/pkg/keymap"
 )
 

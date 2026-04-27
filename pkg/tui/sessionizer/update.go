@@ -20,6 +20,7 @@ import (
 	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
+
 	"github.com/grovetools/nav/pkg/api"
 )
 

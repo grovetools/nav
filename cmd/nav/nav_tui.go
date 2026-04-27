@@ -11,6 +11,7 @@ import (
 	"github.com/grovetools/core/pkg/daemon"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
+
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/api"
 	"github.com/grovetools/nav/pkg/tmux"

@@ -5,8 +5,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/grovetools/nav/internal/manager"
 	"github.com/invopop/jsonschema"
+
+	"github.com/grovetools/nav/internal/manager"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 	}
 
 	// Write to the package root
-	if err := os.WriteFile("nav.schema.json", data, 0o644); err != nil {
+	if err := os.WriteFile("nav.schema.json", data, 0o600); err != nil {
 		log.Fatalf("Error writing schema file: %v", err)
 	}
 

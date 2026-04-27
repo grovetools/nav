@@ -13,10 +13,11 @@ import (
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/theme"
+	"github.com/spf13/cobra"
+
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/navapp"
-	"github.com/spf13/cobra"
 )
 
 var ulogSessionize = grovelogging.NewUnifiedLogger("nav.sessionize")

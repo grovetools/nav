@@ -13,9 +13,10 @@ import (
 	"github.com/grovetools/core/pkg/workspace"
 	tablecomponent "github.com/grovetools/core/tui/components/table"
 	core_theme "github.com/grovetools/core/tui/theme"
+	"github.com/spf13/cobra"
+
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tmux"
-	"github.com/spf13/cobra"
 )
 
 var ulogKey = grovelogging.NewUnifiedLogger("nav.key")

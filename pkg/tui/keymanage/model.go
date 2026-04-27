@@ -14,6 +14,7 @@ import (
 	"github.com/grovetools/core/tui/components/help"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
+
 	"github.com/grovetools/nav/pkg/api"
 )
 

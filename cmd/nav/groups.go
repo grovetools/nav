@@ -1,8 +1,9 @@
 package main
 
 import (
-	"github.com/grovetools/nav/pkg/tui/navapp"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tui/navapp"
 )
 
 // groupsCmd is a thin shim that launches the unified nav TUI focused on

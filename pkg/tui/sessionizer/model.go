@@ -17,6 +17,7 @@ import (
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
 	grovecontext "github.com/grovetools/cx/pkg/context"
+
 	"github.com/grovetools/nav/pkg/api"
 )
 

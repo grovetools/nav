@@ -3,9 +3,10 @@ package main
 import (
 	"github.com/grovetools/core/config"
 	"github.com/grovetools/core/pkg/paths"
+	"github.com/spf13/cobra"
+
 	"github.com/grovetools/nav/internal/manager"
 	"github.com/grovetools/nav/pkg/tui/navapp"
-	"github.com/spf13/cobra"
 )
 
 // windowsCmd is a thin shim that launches the unified nav TUI focused on

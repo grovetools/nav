@@ -8,9 +8,11 @@ package history
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/help"
 	core_theme "github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/nav/pkg/api"
 )
 

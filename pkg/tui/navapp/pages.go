@@ -5,6 +5,7 @@ import (
 
 	"github.com/grovetools/core/tui/components/pager"
 	core_theme "github.com/grovetools/core/tui/theme"
+
 	"github.com/grovetools/nav/pkg/tui/groups"
 	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/keymanage"

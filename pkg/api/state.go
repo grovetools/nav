@@ -80,7 +80,7 @@ func (s *SessionizerState) Save(configDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath, data, 0o644)
+	return os.WriteFile(statePath, data, 0o600)
 }
 
 // LoadProjectCache loads the cached project data from the nav cache directory.
@@ -134,7 +134,7 @@ func SaveProjectCache(configDir string, projects []Project) error {
 	}
 
 	cachePath := filepath.Join(navDir, "cache.json")
-	return os.WriteFile(cachePath, data, 0o644)
+	return os.WriteFile(cachePath, data, 0o600)
 }
 
 // KeyManageCache holds cached enriched project data for the key manage TUI.
@@ -194,7 +194,7 @@ func SaveKeyManageCache(configDir string, enrichedProjects map[string]*Project) 
 	}
 
 	cachePath := filepath.Join(navDir, "km-cache.json")
-	return os.WriteFile(cachePath, data, 0o644)
+	return os.WriteFile(cachePath, data, 0o600)
 }
 
 // Features captures resolved feature toggles for the sessionizer UI.

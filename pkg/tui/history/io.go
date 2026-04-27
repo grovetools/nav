@@ -6,7 +6,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/grovetools/core/git"
+
 	"github.com/grovetools/nav/pkg/api"
 )
 

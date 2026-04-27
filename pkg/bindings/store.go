@@ -51,5 +51,5 @@ func Save(path string, file *models.NavSessionsFile) error {
 		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }

@@ -99,7 +99,7 @@ func GenerateTmuxConf(groups []GroupBinding, binDir, cacheDir string) error {
 		} else {
 			groupFilename := fmt.Sprintf("generated-bindings-%s.conf", group.Name)
 			groupFile := filepath.Join(navCacheDir, groupFilename)
-			if err := os.WriteFile(groupFile, []byte(bindings.String()), 0o644); err != nil {
+			if err := os.WriteFile(groupFile, []byte(bindings.String()), 0o600); err != nil {
 				return fmt.Errorf("failed to write group bindings file %s: %w", groupFilename, err)
 			}
 			masterBindings.WriteString(fmt.Sprintf("\n# Source group: %s\n", group.Name))
@@ -108,5 +108,5 @@ func GenerateTmuxConf(groups []GroupBinding, binDir, cacheDir string) error {
 	}
 
 	masterFile := filepath.Join(navCacheDir, "generated-bindings.conf")
-	return os.WriteFile(masterFile, []byte(masterBindings.String()), 0o644)
+	return os.WriteFile(masterFile, []byte(masterBindings.String()), 0o600)
 }

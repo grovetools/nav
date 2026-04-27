@@ -65,7 +65,7 @@ func startMockDaemon(runtimeDir string, projectPaths []string) (*mockDaemon, err
 	mux.HandleFunc("/api/focus", md.handleOK)
 	mux.HandleFunc("/api/refresh", md.handleOK)
 
-	md.server = &http.Server{Handler: mux}
+	md.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = md.server.Serve(listener) }()
 
 	return md, nil
@@ -180,7 +180,7 @@ func buildWorkspacesJSON(projectPaths []string) []byte {
 }
 
 // buildDeltaEvent creates a workspaces_delta SSE event with git status and note counts.
-func buildDeltaEvent(path string, branch string, isDirty bool, issues int, inbox int) string {
+func buildDeltaEvent(path, branch string, isDirty bool, issues, inbox int) string {
 	type statusInfo struct {
 		Branch         string `json:"branch"`
 		IsDirty        bool   `json:"is_dirty"`

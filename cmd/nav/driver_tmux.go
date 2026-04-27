@@ -4,6 +4,7 @@ import (
 	"context"
 
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
+
 	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/keymanage"
 	"github.com/grovetools/nav/pkg/tui/sessionizer"
@@ -110,7 +111,7 @@ func (d *WindowsDriver) KillWindow(ctx context.Context, target string) error {
 }
 
 // RenameWindow renames the given target.
-func (d *WindowsDriver) RenameWindow(ctx context.Context, target string, newName string) error {
+func (d *WindowsDriver) RenameWindow(ctx context.Context, target, newName string) error {
 	return d.client.RenameWindow(ctx, target, newName)
 }
 

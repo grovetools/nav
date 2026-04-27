@@ -19,9 +19,10 @@ import (
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
+	"gopkg.in/yaml.v3"
+
 	"github.com/grovetools/nav/pkg/api"
 	navbindings "github.com/grovetools/nav/pkg/bindings"
-	"gopkg.in/yaml.v3"
 )
 
 type Manager struct {
@@ -365,7 +366,7 @@ func (m *Manager) saveSessionsToFile(path string, sessions map[string]TmuxSessio
 		if err := enc.Encode(wrapper); err != nil {
 			return err
 		}
-		return os.WriteFile(path, []byte(buf.String()), 0o644)
+		return os.WriteFile(path, []byte(buf.String()), 0o600)
 	}
 
 	// For YAML, use full struct
@@ -378,7 +379,7 @@ func (m *Manager) saveSessionsToFile(path string, sessions map[string]TmuxSessio
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // SetActiveGroup switches the manager to operate on a different workspace group.
@@ -876,7 +877,7 @@ func (m *Manager) saveStaticConfig() error {
 		return m.saveStaticConfigFull()
 	}
 
-	return os.WriteFile(targetPath, []byte(content), 0o644)
+	return os.WriteFile(targetPath, []byte(content), 0o600)
 }
 
 // updateTOMLSessions performs a surgical update of the sessions section in a TOML file.
@@ -1031,7 +1032,7 @@ func (m *Manager) saveStaticConfigFull() error {
 		}
 	}
 
-	return os.WriteFile(targetPath, newData, 0o644)
+	return os.WriteFile(targetPath, newData, 0o600)
 }
 
 // saveSessions persists the in-memory session state via the daemon client.
@@ -1146,7 +1147,7 @@ func (m *Manager) saveSessions() error {
 	if err := os.MkdirAll(filepath.Dir(m.sessionsPath), 0o755); err != nil {
 		return fmt.Errorf("failed to create nav state directory: %w", err)
 	}
-	return os.WriteFile(m.sessionsPath, data, 0o644)
+	return os.WriteFile(m.sessionsPath, data, 0o600)
 }
 
 func (m *Manager) UpdateSessions(sessions []models.TmuxSession) error {

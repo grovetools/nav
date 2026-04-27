@@ -6,6 +6,7 @@ import (
 	"github.com/grovetools/core/pkg/models"
 	coretmux "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
+
 	"github.com/grovetools/nav/internal/manager"
 )
 

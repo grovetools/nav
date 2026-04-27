@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	core_theme "github.com/grovetools/core/tui/theme"
-	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 var (

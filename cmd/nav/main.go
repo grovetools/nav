@@ -10,8 +10,9 @@ import (
 	"github.com/grovetools/core/pkg/paths"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/version"
-	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 var (

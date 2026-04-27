@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/grovetools/core/tui/keymap"
+
 	navkeymap "github.com/grovetools/nav/pkg/keymap"
 )
 

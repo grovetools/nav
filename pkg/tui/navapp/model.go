@@ -16,6 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/grovetools/core/tui/components/pager"
+
 	"github.com/grovetools/nav/pkg/tui/groups"
 	"github.com/grovetools/nav/pkg/tui/history"
 	"github.com/grovetools/nav/pkg/tui/keymanage"

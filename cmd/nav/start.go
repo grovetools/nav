@@ -9,8 +9,9 @@ import (
 	"github.com/grovetools/core/pkg/models"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/theme"
-	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 var ulogStart = grovelogging.NewUnifiedLogger("nav.start")

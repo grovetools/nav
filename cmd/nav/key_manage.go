@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grovetools/nav/pkg/tmux"
 	"github.com/spf13/cobra"
+
+	"github.com/grovetools/nav/pkg/tmux"
 )
 
 // keyManageCmd is the cobra entry point for `nav key manage`. The
