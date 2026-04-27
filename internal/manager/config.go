@@ -9,9 +9,11 @@ import (
 
 // Type aliases for the extracted nav binding types now living in core/pkg/models.
 // These preserve backwards compatibility with all existing nav code.
-type TmuxSessionConfig = models.NavSessionConfig
-type GroupState = models.NavGroupState
-type TmuxSessionsFile = models.NavSessionsFile
+type (
+	TmuxSessionConfig = models.NavSessionConfig
+	GroupState        = models.NavGroupState
+	TmuxSessionsFile  = models.NavSessionsFile
+)
 
 // NavFeatures contains granular feature toggles that can override mode presets.
 // Use pointers so we can distinguish between "not set" and "explicitly false".
@@ -33,14 +35,14 @@ type ResolvedFeatures = api.Features
 // This struct only contains static configuration specific to nav itself.
 // Project discovery is handled by grove-core's DiscoveryService.
 type TmuxConfig struct {
-	Mode                string              `yaml:"mode,omitempty" toml:"mode,omitempty" jsonschema:"description=Mode preset: 'bare' (pure sessionizer), 'advanced' (groups + worktrees), 'grove' (all features). Defaults to 'grove'.,enum=bare,enum=advanced,enum=grove" jsonschema_extras:"x-layer=global,x-priority=68"`
-	Features            *NavFeatures        `yaml:"features,omitempty" toml:"features,omitempty" jsonschema:"description=Granular feature overrides that take precedence over mode preset"`
-	Prefix              string              `yaml:"prefix,omitempty" toml:"prefix,omitempty" jsonschema:"description=Prefix key for nav bindings. Options: '<prefix>' (default), '<prefix> X' (sub-table under prefix), 'C-g' (dedicated root key), or '' (direct root with modifiers)." jsonschema_extras:"x-layer=global,x-priority=69"`
-	DefaultIcon         string              `yaml:"default_icon,omitempty" toml:"default_icon,omitempty" jsonschema:"description=Icon for the default group. Defaults to home icon."`
-	AvailableKeys       []string            `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
-	ShowChildProcesses  bool                `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`
-	Groups              map[string]GroupRef `yaml:"groups,omitempty" toml:"groups,omitempty" jsonschema:"description=Workspace groups for multiple key prefixes"`
-	ConfirmKeyUpdates *bool `yaml:"confirm_key_updates,omitempty" toml:"confirm_key_updates,omitempty" jsonschema:"description=Show confirmation prompts for bulk key update operations (L/U). Defaults to true." jsonschema_extras:"x-layer=global,x-priority=72"`
+	Mode               string              `yaml:"mode,omitempty" toml:"mode,omitempty" jsonschema:"description=Mode preset: 'bare' (pure sessionizer), 'advanced' (groups + worktrees), 'grove' (all features). Defaults to 'grove'.,enum=bare,enum=advanced,enum=grove" jsonschema_extras:"x-layer=global,x-priority=68"`
+	Features           *NavFeatures        `yaml:"features,omitempty" toml:"features,omitempty" jsonschema:"description=Granular feature overrides that take precedence over mode preset"`
+	Prefix             string              `yaml:"prefix,omitempty" toml:"prefix,omitempty" jsonschema:"description=Prefix key for nav bindings. Options: '<prefix>' (default), '<prefix> X' (sub-table under prefix), 'C-g' (dedicated root key), or '' (direct root with modifiers)." jsonschema_extras:"x-layer=global,x-priority=69"`
+	DefaultIcon        string              `yaml:"default_icon,omitempty" toml:"default_icon,omitempty" jsonschema:"description=Icon for the default group. Defaults to home icon."`
+	AvailableKeys      []string            `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
+	ShowChildProcesses bool                `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`
+	Groups             map[string]GroupRef `yaml:"groups,omitempty" toml:"groups,omitempty" jsonschema:"description=Workspace groups for multiple key prefixes"`
+	ConfirmKeyUpdates  *bool               `yaml:"confirm_key_updates,omitempty" toml:"confirm_key_updates,omitempty" jsonschema:"description=Show confirmation prompts for bulk key update operations (L/U). Defaults to true." jsonschema_extras:"x-layer=global,x-priority=72"`
 }
 
 // GroupRef defines a workspace group with its own prefix.

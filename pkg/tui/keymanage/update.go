@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/core/pkg/models"
-	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/core/tui/embed"
+	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/nav/pkg/api"
 )
 

@@ -12,8 +12,10 @@ func loadConfig() *config.Config {
 	return cfg
 }
 
-var sessionizeKeys = navkeymap.NewSessionizeKeyMap(loadConfig())
-var manageKeys = navkeymap.NewManageKeyMap(loadConfig())
-var historyKeys = navkeymap.NewHistoryKeyMap(loadConfig())
-var windowsKeys = navkeymap.NewWindowsKeyMap(loadConfig())
-var groupsKeys = navkeymap.NewGroupsKeyMap(loadConfig())
+var (
+	sessionizeKeys = navkeymap.NewSessionizeKeyMap(loadConfig())
+	manageKeys     = navkeymap.NewManageKeyMap(loadConfig())
+	historyKeys    = navkeymap.NewHistoryKeyMap(loadConfig())
+	windowsKeys    = navkeymap.NewWindowsKeyMap(loadConfig())
+	groupsKeys     = navkeymap.NewGroupsKeyMap(loadConfig())
+)

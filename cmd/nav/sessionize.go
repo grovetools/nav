@@ -155,6 +155,7 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 
 	return nil
 }
+
 func handleFirstRunSetup(configDir string, _ *tmux.Manager) error {
 	// Welcome message
 	ulogSessionize.Info("First run setup").
@@ -205,7 +206,7 @@ func handleFirstRunSetup(configDir string, _ *tmux.Manager) error {
 			createResponse = strings.TrimSpace(strings.ToLower(createResponse))
 
 			if createResponse == "" || createResponse == "y" || createResponse == "yes" {
-				if err := os.MkdirAll(expandedPath, 0755); err != nil {
+				if err := os.MkdirAll(expandedPath, 0o755); err != nil {
 					ulogSessionize.Error("Failed to create directory").
 						Field("path", pathInput).
 						Err(err).

@@ -669,4 +669,3 @@ func truncatePath(s string, maxWidth int) string {
 	}
 	return "…"
 }
-

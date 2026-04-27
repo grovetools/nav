@@ -10,22 +10,22 @@ import (
 // ManageKeyMap defines the key bindings for the session key manager TUI.
 type ManageKeyMap struct {
 	keymap.Base
-	Edit        key.Binding // Overrides Base.Edit with "map CWD" behavior
-	SetKey      key.Binding
-	Open        key.Binding
-	Delete      key.Binding // Overrides Base.Delete with "clear mapping" behavior
-	MoveMode    key.Binding
-	Lock        key.Binding
-	MoveUp      key.Binding
-	MoveDown    key.Binding
-	ConfirmMove key.Binding
-	TogglePaths key.Binding
-	NextGroup     key.Binding
-	PrevGroup     key.Binding
-	LoadDefault   key.Binding
-	UnloadDefault key.Binding
-	SaveToGroup   key.Binding
-	MoveToGroup   key.Binding // Move current session to another group
+	Edit           key.Binding // Overrides Base.Edit with "map CWD" behavior
+	SetKey         key.Binding
+	Open           key.Binding
+	Delete         key.Binding // Overrides Base.Delete with "clear mapping" behavior
+	MoveMode       key.Binding
+	Lock           key.Binding
+	MoveUp         key.Binding
+	MoveDown       key.Binding
+	ConfirmMove    key.Binding
+	TogglePaths    key.Binding
+	NextGroup      key.Binding
+	PrevGroup      key.Binding
+	LoadDefault    key.Binding
+	UnloadDefault  key.Binding
+	SaveToGroup    key.Binding
+	MoveToGroup    key.Binding // Move current session to another group
 	NewGroup       key.Binding
 	DeleteGroup    key.Binding
 	Groups         key.Binding // Launch group manager TUI

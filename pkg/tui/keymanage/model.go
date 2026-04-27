@@ -70,17 +70,17 @@ type Config struct {
 
 // Model is the interactive session key manager. It implements tea.Model.
 type Model struct {
-	cfg     Config
+	cfg Config
 	// EmbedMode suppresses the header in View() when the model is
 	// hosted inside a pager that renders its own title row.
 	EmbedMode bool
 	store     Store
-	driver  SessionDriver
-	keys    KeyMap
-	help    help.Model
-	width   int
-	height  int
-	cwdPath string
+	driver    SessionDriver
+	keys      KeyMap
+	help      help.Model
+	width     int
+	height    int
+	cwdPath   string
 
 	cursor   int
 	sessions []models.TmuxSession

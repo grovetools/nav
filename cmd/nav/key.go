@@ -23,8 +23,10 @@ var ulogKey = grovelogging.NewUnifiedLogger("nav.key")
 // (listStyle is now declared in main.go)
 
 // Group flags for multi-group support
-var targetGroup string
-var listAllGroups bool
+var (
+	targetGroup   string
+	listAllGroups bool
+)
 
 var keyCmd = &cobra.Command{
 	Use:   "key",

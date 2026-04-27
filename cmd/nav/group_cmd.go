@@ -11,8 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var groupPrefix string
-var forceDelete bool
+var (
+	groupPrefix string
+	forceDelete bool
+)
 
 var groupCmd = &cobra.Command{
 	Use:     "group",

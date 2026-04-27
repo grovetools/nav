@@ -13,9 +13,9 @@ import (
 
 // GroupBinding holds the resolved data needed to generate tmux bindings for one group.
 type GroupBinding struct {
-	Name     string                              // Group name ("default", "grovetools", etc.)
-	Prefix   string                              // Tmux prefix string (e.g. "<prefix>", "<grove> k")
-	Sessions map[string]models.NavSessionConfig  // Key → session config
+	Name     string                             // Group name ("default", "grovetools", etc.)
+	Prefix   string                             // Tmux prefix string (e.g. "<prefix>", "<grove> k")
+	Sessions map[string]models.NavSessionConfig // Key → session config
 }
 
 // GenerateTmuxConf generates tmux key binding config files for all groups.

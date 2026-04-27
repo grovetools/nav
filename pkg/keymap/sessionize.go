@@ -27,23 +27,23 @@ type SessionizeKeyMap struct {
 	MapToGroup           key.Binding
 	GoToMappingCursor    key.Binding
 	GoToMappingCwd       key.Binding
-	ToggleGitStatus  key.Binding
-	ToggleBranch     key.Binding
-	ToggleNoteCounts key.Binding
-	TogglePlanStats  key.Binding
-	TogglePaths      key.Binding
-	FilterDirty      key.Binding
-	RefreshProjects  key.Binding
-	ToggleHotContext key.Binding
-	ToggleHold       key.Binding
-	ToggleRelease    key.Binding
-	ToggleBinary     key.Binding
-	ToggleLink       key.Binding
-	ToggleCx         key.Binding
-	JumpBack         key.Binding
-	JumpForward      key.Binding
-	Undo             key.Binding
-	Redo             key.Binding
+	ToggleGitStatus      key.Binding
+	ToggleBranch         key.Binding
+	ToggleNoteCounts     key.Binding
+	TogglePlanStats      key.Binding
+	TogglePaths          key.Binding
+	FilterDirty          key.Binding
+	RefreshProjects      key.Binding
+	ToggleHotContext     key.Binding
+	ToggleHold           key.Binding
+	ToggleRelease        key.Binding
+	ToggleBinary         key.Binding
+	ToggleLink           key.Binding
+	ToggleCx             key.Binding
+	JumpBack             key.Binding
+	JumpForward          key.Binding
+	Undo                 key.Binding
+	Redo                 key.Binding
 }
 
 func (k SessionizeKeyMap) ShortHelp() []key.Binding {

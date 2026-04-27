@@ -85,8 +85,8 @@ type Model struct {
 	spinnerFrame      int
 	keyMap            map[string]string // map[path]key
 	filterMode        bool
-	filterText    string
-	statusMessage string
+	filterText        string
+	statusMessage     string
 	jumpMode          bool // mini-leader: 'g' pressed
 }
 

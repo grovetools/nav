@@ -25,7 +25,6 @@ import (
 
 var pageStyle = lipgloss.NewStyle()
 
-
 // cycleGroup switches to the next or previous workspace group
 func (m *Model) cycleGroup(dir int) {
 	groups := m.store.GetGroups()
@@ -1458,8 +1457,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) updateKeyMapping(projectPath, newKey string) {
 	// Find if there's already a session with this key
-	var existingSessionIndex = -1
-	var targetSessionIndex = -1
+	existingSessionIndex := -1
+	targetSessionIndex := -1
 
 	cleanPath := filepath.Clean(projectPath)
 
@@ -1534,7 +1533,9 @@ func (m *Model) updateKeyMapping(projectPath, newKey string) {
 	}
 
 	// Reload tmux config
-	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
+	if m.cfg.ReloadConfig != nil {
+		_ = m.cfg.ReloadConfig()
+	}
 }
 
 func (m *Model) clearKeyMapping(projectPath string) {
@@ -1545,7 +1546,7 @@ func (m *Model) clearKeyMapping(projectPath string) {
 	}
 
 	// Find if this project has a key mapping
-	var targetSessionIndex = -1
+	targetSessionIndex := -1
 	for i, s := range m.sessions {
 		if s.Path != "" {
 			expandedPath := expandPath(s.Path)
@@ -1585,7 +1586,9 @@ func (m *Model) clearKeyMapping(projectPath string) {
 		}
 
 		// Reload tmux config
-		if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
+		if m.cfg.ReloadConfig != nil {
+			_ = m.cfg.ReloadConfig()
+		}
 	}
 }
 
@@ -1674,7 +1677,9 @@ func (m *Model) executeMapToGroup(targetGroup string) {
 
 	// Regenerate bindings
 	_ = m.store.RegenerateBindings()
-	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
+	if m.cfg.ReloadConfig != nil {
+		_ = m.cfg.ReloadConfig()
+	}
 
 	m.selectedPaths = make(map[string]bool)
 
@@ -1804,7 +1809,9 @@ func (m *Model) refreshStateAfterUndoRedo() {
 		m.updateFiltered()
 		m.moveCursorToFirstSelectable()
 	}
-	if m.cfg.ReloadConfig != nil { _ = m.cfg.ReloadConfig() }
+	if m.cfg.ReloadConfig != nil {
+		_ = m.cfg.ReloadConfig()
+	}
 }
 
 func (m *Model) updateFiltered() {
@@ -2137,6 +2144,7 @@ func (m *Model) updateFiltered() {
 		flatten(root)
 	}
 }
+
 func (m *Model) View() string {
 	// If help is visible, show it and return
 	if m.help.ShowAll {

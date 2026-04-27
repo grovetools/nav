@@ -37,13 +37,21 @@ type planStatsMapMsg struct {
 	stats map[string]*models.PlanStats
 }
 
-type releaseInfoMapMsg struct{ releases map[string]*models.ReleaseInfo }
-type binaryStatusMapMsg struct{ statuses map[string]*models.BinaryStatus }
-type cxStatsMapMsg struct{ stats map[string]*models.CxStats }
-type remoteURLMapMsg struct{ urls map[string]string }
+type (
+	releaseInfoMapMsg struct {
+		releases map[string]*models.ReleaseInfo
+	}
+	binaryStatusMapMsg struct {
+		statuses map[string]*models.BinaryStatus
+	}
+	cxStatsMapMsg   struct{ stats map[string]*models.CxStats }
+	remoteURLMapMsg struct{ urls map[string]string }
+)
 
-type tickMsg time.Time
-type spinnerTickMsg time.Time
+type (
+	tickMsg        time.Time
+	spinnerTickMsg time.Time
+)
 
 // projectsUpdateMsg is sent when the list of discovered projects is updated.
 type projectsUpdateMsg struct {

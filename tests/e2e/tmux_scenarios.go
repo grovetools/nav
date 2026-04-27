@@ -503,13 +503,13 @@ func NavWindowsScenario() *harness.Scenario {
 					name    string
 					command string
 				}{
-					{"job-test", "fish"},           // Should get robot icon 󰚩 (not fish)
-					{"code-review", "fish"},        // Should get code review icon  (not fish)
-					{"term", "fish"},               // Should get shell icon  (not fish)
-					{"plan", "fish"},               // Should get plan icon 󰠡 (not fish)
-					{"cx-edit-file", "fish"},       // Should get file tree icon  (not fish)
-					{"impl-task", "fish"},          // Should get interactive agent icon 󰈺 (not fish, but same icon)
-					{"plain-fish", "fish"},         // Should get fish icon 󰈺 (fallback)
+					{"job-test", "fish"},     // Should get robot icon 󰚩 (not fish)
+					{"code-review", "fish"},  // Should get code review icon  (not fish)
+					{"term", "fish"},         // Should get shell icon  (not fish)
+					{"plan", "fish"},         // Should get plan icon 󰠡 (not fish)
+					{"cx-edit-file", "fish"}, // Should get file tree icon  (not fish)
+					{"impl-task", "fish"},    // Should get interactive agent icon 󰈺 (not fish, but same icon)
+					{"plain-fish", "fish"},   // Should get fish icon 󰈺 (fallback)
 				}
 
 				for _, win := range windows {

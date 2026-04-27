@@ -9,10 +9,12 @@ import (
 // aliases below are kept so cmd/nav and other in-tree callers continue to
 // compile during the migration.
 
-type SessionizerState = api.SessionizerState
-type CachedProject = api.CachedProject
-type ProjectCache = api.ProjectCache
-type KeyManageCache = api.KeyManageCache
+type (
+	SessionizerState = api.SessionizerState
+	CachedProject    = api.CachedProject
+	ProjectCache     = api.ProjectCache
+	KeyManageCache   = api.KeyManageCache
+)
 
 func LoadState(configDir string) (*SessionizerState, error) {
 	return api.LoadState(configDir)

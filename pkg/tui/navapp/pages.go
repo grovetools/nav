@@ -91,6 +91,7 @@ func (p *sessionizePage) Enabled() bool {
 	}
 	return p.s.cfg.NewSessionize != nil
 }
+
 func (p *sessionizePage) IsTextEntryActive() bool {
 	return p.s.sessionize != nil && p.s.sessionize.IsTextInputFocused()
 }
@@ -104,12 +105,14 @@ func (p *sessionizePage) Footer() string {
 
 func (p *sessionizePage) TabID() string { return "sessionize" }
 
-var _ pager.Page = (*sessionizePage)(nil)
-var _ pager.PageWithID = (*sessionizePage)(nil)
-var _ pager.PageWithTitle = (*sessionizePage)(nil)
-var _ pager.PageWithEnabled = (*sessionizePage)(nil)
-var _ pager.PageWithTextInput = (*sessionizePage)(nil)
-var _ pager.PageWithFooter = (*sessionizePage)(nil)
+var (
+	_ pager.Page              = (*sessionizePage)(nil)
+	_ pager.PageWithID        = (*sessionizePage)(nil)
+	_ pager.PageWithTitle     = (*sessionizePage)(nil)
+	_ pager.PageWithEnabled   = (*sessionizePage)(nil)
+	_ pager.PageWithTextInput = (*sessionizePage)(nil)
+	_ pager.PageWithFooter    = (*sessionizePage)(nil)
+)
 
 // ---------- keymanagePage (tab 1: Key Manage) ----------
 
@@ -177,6 +180,7 @@ func (p *keymanagePage) Enabled() bool {
 	}
 	return p.s.cfg.NewKeymanage != nil
 }
+
 func (p *keymanagePage) IsTextEntryActive() bool {
 	return p.s.keymanage != nil && p.s.keymanage.IsTextInputFocused()
 }
@@ -190,12 +194,14 @@ func (p *keymanagePage) Footer() string {
 
 func (p *keymanagePage) TabID() string { return "keymanage" }
 
-var _ pager.Page = (*keymanagePage)(nil)
-var _ pager.PageWithID = (*keymanagePage)(nil)
-var _ pager.PageWithTitle = (*keymanagePage)(nil)
-var _ pager.PageWithEnabled = (*keymanagePage)(nil)
-var _ pager.PageWithTextInput = (*keymanagePage)(nil)
-var _ pager.PageWithFooter = (*keymanagePage)(nil)
+var (
+	_ pager.Page              = (*keymanagePage)(nil)
+	_ pager.PageWithID        = (*keymanagePage)(nil)
+	_ pager.PageWithTitle     = (*keymanagePage)(nil)
+	_ pager.PageWithEnabled   = (*keymanagePage)(nil)
+	_ pager.PageWithTextInput = (*keymanagePage)(nil)
+	_ pager.PageWithFooter    = (*keymanagePage)(nil)
+)
 
 // ---------- historyPage (tab 2: History) ----------
 
@@ -260,6 +266,7 @@ func (p *historyPage) Enabled() bool {
 	}
 	return p.s.cfg.NewHistory != nil
 }
+
 func (p *historyPage) IsTextEntryActive() bool {
 	return p.s.history != nil && p.s.history.FilterMode()
 }
@@ -273,12 +280,14 @@ func (p *historyPage) Footer() string {
 
 func (p *historyPage) TabID() string { return "history" }
 
-var _ pager.Page = (*historyPage)(nil)
-var _ pager.PageWithID = (*historyPage)(nil)
-var _ pager.PageWithTitle = (*historyPage)(nil)
-var _ pager.PageWithEnabled = (*historyPage)(nil)
-var _ pager.PageWithTextInput = (*historyPage)(nil)
-var _ pager.PageWithFooter = (*historyPage)(nil)
+var (
+	_ pager.Page              = (*historyPage)(nil)
+	_ pager.PageWithID        = (*historyPage)(nil)
+	_ pager.PageWithTitle     = (*historyPage)(nil)
+	_ pager.PageWithEnabled   = (*historyPage)(nil)
+	_ pager.PageWithTextInput = (*historyPage)(nil)
+	_ pager.PageWithFooter    = (*historyPage)(nil)
+)
 
 // ---------- windowsPage (tab 3: Windows) ----------
 
@@ -343,6 +352,7 @@ func (p *windowsPage) Enabled() bool {
 	}
 	return p.s.cfg.NewWindows != nil
 }
+
 func (p *windowsPage) IsTextEntryActive() bool {
 	if p.s.windows == nil {
 		return false
@@ -360,12 +370,14 @@ func (p *windowsPage) Footer() string {
 
 func (p *windowsPage) TabID() string { return "windows" }
 
-var _ pager.Page = (*windowsPage)(nil)
-var _ pager.PageWithID = (*windowsPage)(nil)
-var _ pager.PageWithTitle = (*windowsPage)(nil)
-var _ pager.PageWithEnabled = (*windowsPage)(nil)
-var _ pager.PageWithTextInput = (*windowsPage)(nil)
-var _ pager.PageWithFooter = (*windowsPage)(nil)
+var (
+	_ pager.Page              = (*windowsPage)(nil)
+	_ pager.PageWithID        = (*windowsPage)(nil)
+	_ pager.PageWithTitle     = (*windowsPage)(nil)
+	_ pager.PageWithEnabled   = (*windowsPage)(nil)
+	_ pager.PageWithTextInput = (*windowsPage)(nil)
+	_ pager.PageWithFooter    = (*windowsPage)(nil)
+)
 
 // ---------- groupsPage (tab 4: Groups) ----------
 
@@ -429,6 +441,7 @@ func (p *groupsPage) Enabled() bool {
 	}
 	return p.s.cfg.NewGroups != nil
 }
+
 func (p *groupsPage) IsTextEntryActive() bool {
 	return p.s.groups != nil && p.s.groups.InputMode() != ""
 }
@@ -442,9 +455,11 @@ func (p *groupsPage) Footer() string {
 
 func (p *groupsPage) TabID() string { return "groups" }
 
-var _ pager.Page = (*groupsPage)(nil)
-var _ pager.PageWithID = (*groupsPage)(nil)
-var _ pager.PageWithTitle = (*groupsPage)(nil)
-var _ pager.PageWithEnabled = (*groupsPage)(nil)
-var _ pager.PageWithTextInput = (*groupsPage)(nil)
-var _ pager.PageWithFooter = (*groupsPage)(nil)
+var (
+	_ pager.Page              = (*groupsPage)(nil)
+	_ pager.PageWithID        = (*groupsPage)(nil)
+	_ pager.PageWithTitle     = (*groupsPage)(nil)
+	_ pager.PageWithEnabled   = (*groupsPage)(nil)
+	_ pager.PageWithTextInput = (*groupsPage)(nil)
+	_ pager.PageWithFooter    = (*groupsPage)(nil)
+)
