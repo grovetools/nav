@@ -23,7 +23,7 @@ LDFLAGS = -ldflags="\
 -X '$(VERSION_PKG).Branch=$(GIT_BRANCH)' \
 -X '$(VERSION_PKG).BuildDate=$(BUILD_DATE)'"
 
-.PHONY: all build test clean fmt vet lint run check dev build-all schema help
+.PHONY: all build test clean fmt fmt-check vet lint run check dev build-all schema help
 
 all: build
 
@@ -50,7 +50,15 @@ clean:
 
 fmt:
 	@echo "Formatting code..."
-	@go fmt ./...
+	@gofumpt -w .
+
+fmt-check:
+	@unformatted="$$(gofumpt -l . 2>/dev/null)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "Unformatted files (run 'make fmt'):"; \
+		echo "$$unformatted" | sed 's/^/  /'; \
+		exit 1; \
+	fi
 
 vet:
 	@echo "Running go vet..."
@@ -69,7 +77,7 @@ run: build
 	@$(BIN_DIR)/$(BINARY_NAME) $(ARGS)
 
 # Run all checks
-check: fmt vet lint test
+check: schema fmt-check vet lint test
 
 # Cross-compilation targets
 PLATFORMS ?= darwin/amd64 darwin/arm64 linux/amd64 linux/arm64
