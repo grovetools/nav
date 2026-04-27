@@ -330,9 +330,9 @@ func (m *Manager) loadSessionsFromFile(path string) map[string]TmuxSessionConfig
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if strings.HasSuffix(path, ".toml") {
-			toml.Decode(string(data), &file)
+			_, _ = toml.Decode(string(data), &file) // best-effort config parse
 		} else {
-			yaml.Unmarshal(data, &file)
+			_ = yaml.Unmarshal(data, &file) // best-effort config parse
 		}
 		if file.Nav.Sessions != nil {
 			return file.Nav.Sessions
@@ -1196,13 +1196,6 @@ func (m *Manager) UpdateSingleSession(key string, session models.TmuxSession) er
 	return m.Save()
 }
 
-// isGitRepository checks if a directory contains a .git folder or file
-func isGitRepository(path string) bool {
-	gitPath := filepath.Join(path, ".git")
-	_, err := os.Stat(gitPath)
-	return err == nil
-}
-
 // GetAvailableProjects uses the daemon client to fetch enriched workspaces.
 // If the daemon is running, it uses cached/pre-computed data including git status.
 // If not, it falls back to direct discovery via LocalClient.
@@ -1571,14 +1564,6 @@ func (m *Manager) isTmuxRunning() bool {
 	// Check if tmux server is running by trying to list sessions
 	_, err := m.tmuxClient.ListSessions(context.Background())
 	return err == nil || !strings.Contains(err.Error(), "no server")
-}
-
-func (m *Manager) hasSession(name string) bool {
-	if m.tmuxClient == nil {
-		return false
-	}
-	exists, err := m.tmuxClient.SessionExists(context.Background(), name)
-	return err == nil && exists
 }
 
 // RegenerateBindingsGo generates tmux key bindings in Go (replacing Python script).

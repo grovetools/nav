@@ -6,7 +6,6 @@
 package history
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/grovetools/core/pkg/workspace"
@@ -86,9 +85,8 @@ type Model struct {
 	spinnerFrame      int
 	keyMap            map[string]string // map[path]key
 	filterMode        bool
-	filterText        string
-	filterInput       textinput.Model // reserved for future; currently unused
-	statusMessage     string
+	filterText    string
+	statusMessage string
 	jumpMode          bool // mini-leader: 'g' pressed
 }
 

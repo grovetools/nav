@@ -20,7 +20,6 @@ import (
 	"github.com/grovetools/core/tui/keymap"
 	core_theme "github.com/grovetools/core/tui/theme"
 	"github.com/grovetools/core/util/pathutil"
-	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/nav/pkg/api"
 )
 
@@ -2318,21 +2317,6 @@ func (m *Model) enrichVisibleProjects() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// hasVisibleContextData checks if any filtered projects have a context rule applied or cx stats.
-func (m *Model) hasVisibleContextData() bool {
-	for _, project := range m.filtered {
-		if status, ok := m.rulesState[project.Path]; ok {
-			if status == grovecontext.RuleHot || status == grovecontext.RuleCold || status == grovecontext.RuleExcluded {
-				return true
-			}
-		}
-		if project.CxStats != nil && project.CxStats.Tokens > 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // getVisibleRange calculates the start and end indices of visible projects.
 func (m *Model) getVisibleRange() (int, int) {
 	visibleHeight := m.height - 10
@@ -2416,7 +2400,6 @@ func (m *Model) jumpToPath(targetPath string, applyGroupFilter bool) {
 	} else if targetProj != nil {
 		// Apply ecosystem focus for this project
 		var targetEcosystem *api.Project
-		var targetEcosystemIsWorktree bool
 
 		for _, p := range m.projects {
 			if !p.IsEcosystem() {
@@ -2428,12 +2411,9 @@ func (m *Model) jumpToPath(targetPath string, applyGroupFilter bool) {
 			if strings.HasPrefix(targetProjNorm, pNorm+string(filepath.Separator)) || targetProjNorm == pNorm {
 				if p.IsWorktree() {
 					targetEcosystem = p
-					targetEcosystemIsWorktree = true
 					break
-				} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
-					targetEcosystem = p
-					targetEcosystemIsWorktree = false
 				}
+				targetEcosystem = p
 			}
 		}
 
@@ -2481,7 +2461,6 @@ func (m *Model) focusEcosystemForPath(targetPath string) tea.Cmd {
 	}
 
 	var targetEcosystem *api.Project
-	var targetEcosystemIsWorktree bool
 
 	for _, p := range m.projects {
 		if !p.IsEcosystem() {
@@ -2495,12 +2474,9 @@ func (m *Model) focusEcosystemForPath(targetPath string) tea.Cmd {
 		if strings.HasPrefix(targetNormalized, pNormalized+string(filepath.Separator)) || targetNormalized == pNormalized {
 			if p.IsWorktree() {
 				targetEcosystem = p
-				targetEcosystemIsWorktree = true
 				break
-			} else if targetEcosystem == nil || !targetEcosystemIsWorktree {
-				targetEcosystem = p
-				targetEcosystemIsWorktree = false
 			}
+			targetEcosystem = p
 		}
 	}
 

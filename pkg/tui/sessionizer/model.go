@@ -141,7 +141,6 @@ type Model struct {
 	isLoading    bool
 	usedCache    bool
 	spinnerFrame int
-	lastSpinTime time.Time
 
 	enrichmentLoading map[string]bool
 

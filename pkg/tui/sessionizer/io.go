@@ -14,7 +14,6 @@ import (
 	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
-	"github.com/grovetools/core/pkg/workspace"
 	grovecontext "github.com/grovetools/cx/pkg/context"
 	"github.com/grovetools/nav/pkg/api"
 )
@@ -23,12 +22,6 @@ import (
 type gitStatusMsg struct {
 	path   string
 	status *git.ExtendedGitStatus
-}
-
-// initialProjectsEnrichedMsg is sent after initial project data is loaded from session paths.
-type initialProjectsEnrichedMsg struct {
-	enrichedProjects map[string]*api.Project
-	projectList      []*api.Project
 }
 
 // gitStatusMapMsg is sent when git statuses for multiple projects are fetched.
@@ -457,50 +450,6 @@ func clearStatusCmd(duration time.Duration) tea.Cmd {
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
 		return statusMsg{message: ""}
 	})
-}
-
-// enrichInitialProjectsCmd populates session-mapped paths into a project map
-// using workspace.GetProjectByPath. Used by other TUIs (key manage); the
-// sessionizer keeps it here so its message types stay self-contained.
-func enrichInitialProjectsCmd(sessions []models.TmuxSession, cachedProjects map[string]*api.Project) tea.Cmd {
-	return func() tea.Msg {
-		enrichedProjects := make(map[string]*api.Project)
-		var projectList []*api.Project
-
-		for path, proj := range cachedProjects {
-			enrichedProjects[path] = proj
-		}
-
-		for _, s := range sessions {
-			if s.Path == "" {
-				continue
-			}
-
-			expandedPath := expandPath(s.Path)
-			cleanPath, err := filepath.Abs(expandedPath)
-			if err != nil {
-				continue
-			}
-			cleanPath = filepath.Clean(cleanPath)
-
-			if _, exists := enrichedProjects[cleanPath]; !exists {
-				node, err := workspace.GetProjectByPath(s.Path)
-				if err == nil {
-					proj := &api.Project{WorkspaceNode: node}
-					enrichedProjects[cleanPath] = proj
-				}
-			}
-		}
-
-		for _, proj := range enrichedProjects {
-			projectList = append(projectList, proj)
-		}
-
-		return initialProjectsEnrichedMsg{
-			enrichedProjects: enrichedProjects,
-			projectList:      projectList,
-		}
-	}
 }
 
 // subscribeToDaemonCmd opens an SSE stream to the daemon and returns the

@@ -21,27 +21,6 @@ import (
 
 var ulogSessionize = grovelogging.NewUnifiedLogger("nav.sessionize")
 
-// buildInitialEnrichmentOptions creates options for enriching project data.
-// For initial load, we disable enrichment to show the UI faster.
-func buildInitialEnrichmentOptions() *manager.EnrichmentOptions {
-	return &manager.EnrichmentOptions{
-		FetchGitStatus:  false,
-		FetchNoteCounts: false,
-		FetchPlanStats:  false,
-	}
-}
-
-// buildEnrichmentOptions creates options for enriching project data
-// This is used for periodic refreshes in the TUI
-func buildEnrichmentOptions(fetchGit, fetchNotes, fetchPlans bool) *manager.EnrichmentOptions {
-	return &manager.EnrichmentOptions{
-		FetchGitStatus:  fetchGit,
-		FetchNoteCounts: fetchNotes,
-		FetchPlanStats:  fetchPlans,
-		GitStatusPaths:  nil, // nil means fetch for all projects
-	}
-}
-
 var sessionizeCmd = &cobra.Command{
 	Use:     "sessionize",
 	Aliases: []string{"sz"},
@@ -172,11 +151,11 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 
 	// Close popup if running in one
 	cmd := client.ClosePopupCmd()
-	cmd.Run() // Ignore errors
+	_ = cmd.Run() // best-effort popup close
 
 	return nil
 }
-func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
+func handleFirstRunSetup(configDir string, _ *tmux.Manager) error {
 	// Welcome message
 	ulogSessionize.Info("First run setup").
 		Pretty("Welcome to nav sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
@@ -309,7 +288,7 @@ func handleFirstRunSetup(configDir string, mgr *tmux.Manager) error {
 
 	// Use the manager to save the configuration.
 	// We need to re-initialize the manager since the config file might not exist yet.
-	mgr, err := tmux.NewManager(configDir)
+	_, err := tmux.NewManager(configDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to re-initialize manager: %w", err)
 	}
@@ -353,137 +332,12 @@ func generateTmuxConfigWithPaths(searchPaths []struct{ key, path, description st
 	}
 }
 
-// generateConfigWithPaths creates a configuration file with the user's specified paths (deprecated - kept for compatibility)
-func generateConfigWithPaths(searchPaths []struct{ key, path, description string }) string {
-	var content strings.Builder
-	
-	content.WriteString(`# project-search-paths.yaml
-# Configuration file for nav sessionizer
-#
-# This file defines where to search for projects.
-# The sessionizer will scan these directories to find projects
-# you can quickly switch between.
-
-# Search paths: your project directories
-search_paths:
-`)
-	
-	for _, sp := range searchPaths {
-		content.WriteString(fmt.Sprintf("  %s:\n", sp.key))
-		content.WriteString(fmt.Sprintf("    path: %s\n", sp.path))
-		content.WriteString(fmt.Sprintf("    description: \"%s\"\n", sp.description))
-		content.WriteString("    enabled: true\n\n")
-	}
-	
-	content.WriteString(`# Discovery settings control how projects are found
-discovery:
-  # Maximum depth to search within each path (1 = only immediate subdirectories)
-  max_depth: 2
-  
-  # Minimum depth (0 = include the search path itself as a project)
-  min_depth: 0
-  
-  # Patterns to exclude from search
-  exclude_patterns:
-    - node_modules
-    - .cache
-    - target
-    - build
-    - dist
-
-# Explicit projects: specific directories to always include
-explicit_projects: []
-  # Example:
-  # - path: ~/special-project
-  #   name: "Special Project"
-  #   description: "My special project outside the search paths"
-  #   enabled: true
-
-# Tips:
-# 1. The sessionizer automatically discovers Git worktrees in .grove-worktrees
-# 2. Projects are sorted by recent access
-# 3. You can edit this file anytime to add or remove directories
-# 4. Set enabled: false to temporarily disable a search path
-`)
-	
-	return content.String()
-}
-
 // getDefaultNavConfigContent returns a well-commented default configuration for the nav section
 func getDefaultNavConfigContent() string {
 	return `[nav]
 available_keys = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"]
 
 # Search paths are now configured via [groves] section - see grove-core docs
-`
-}
-
-// getDefaultConfigContent returns a well-commented default configuration
-func getDefaultConfigContent() string {
-	return `# project-search-paths.yaml
-# Configuration file for nav sessionizer
-#
-# This file defines where to search for projects and how to discover them.
-# The sessionizer will scan these directories and their subdirectories
-# to find projects you can quickly switch between.
-
-# Search paths: directories where the sessionizer looks for projects
-search_paths:
-  # Example: Work projects
-  work:
-    path: ~/Work
-    description: "Work projects"
-    enabled: true
-    
-  # Example: Personal projects  
-  personal:
-    path: ~/Projects
-    description: "Personal projects"
-    enabled: true
-    
-  # Example: Learning and experiments
-  experiments:
-    path: ~/Code
-    description: "Code experiments and learning"
-    enabled: false  # Set to true to enable
-
-# Discovery settings control how projects are found
-discovery:
-  # Maximum depth to search within each path (1 = only immediate subdirectories)
-  max_depth: 2
-  
-  # Minimum depth (0 = include the search path itself as a project)
-  min_depth: 0
-  
-  # File types to look for to identify project directories (not currently used)
-  file_types:
-    - .git
-    - package.json
-    - Cargo.toml
-    - go.mod
-    
-  # Patterns to exclude from search
-  exclude_patterns:
-    - node_modules
-    - .cache
-    - target
-    - build
-    - dist
-
-# Explicit projects: specific directories to always include
-explicit_projects:
-  # Example of explicitly adding a project outside the search paths
-  - path: ~/important-project
-    name: "Important Project"  # Optional custom name
-    description: "My important project that lives elsewhere"
-    enabled: false  # Set to true to enable
-
-# Tips:
-# 1. Use ~ for your home directory
-# 2. Each search path needs a unique key (like 'work', 'personal')
-# 3. Set enabled: false to temporarily disable a search path
-# 4. The sessionizer automatically discovers Git worktrees in .grove-worktrees
-# 5. Projects are sorted by recent access when using nav
 `
 }
 

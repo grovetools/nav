@@ -66,31 +66,31 @@ func startMockDaemon(runtimeDir string, projectPaths []string) (*mockDaemon, err
 	mux.HandleFunc("/api/refresh", md.handleOK)
 
 	md.server = &http.Server{Handler: mux}
-	go md.server.Serve(listener)
+	go func() { _ = md.server.Serve(listener) }()
 
 	return md, nil
 }
 
 func (md *mockDaemon) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (md *mockDaemon) handleEmpty(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`[]`))
+	_, _ = w.Write([]byte(`[]`))
 }
 
 func (md *mockDaemon) handleWorkspaces(workspacesJSON []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(workspacesJSON)
+		_, _ = w.Write(workspacesJSON)
 	}
 }
 
 func (md *mockDaemon) handleEmptyObject(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{}`))
+	_, _ = w.Write([]byte(`{}`))
 }
 
 func (md *mockDaemon) handleOK(w http.ResponseWriter, r *http.Request) {

@@ -1196,7 +1196,7 @@ func NavWindowsMoveScenario() *harness.Scenario {
 					parts := strings.Split(line, ":")
 					if len(parts) == 2 {
 						var idx int
-						fmt.Sscanf(parts[0], "%d", &idx)
+						_, _ = fmt.Sscanf(parts[0], "%d", &idx)
 						windowsByIndex[idx] = parts[1]
 					}
 				}

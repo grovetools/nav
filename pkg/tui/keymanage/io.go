@@ -81,8 +81,6 @@ type planStatsMapMsg struct {
 
 type spinnerTickMsg time.Time
 
-type delayedReturnMsg struct{}
-
 type clearHighlightMsg struct{}
 
 // ----- Internal tea.Cmds ----------------------------------------------------

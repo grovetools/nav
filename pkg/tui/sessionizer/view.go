@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/components/table"
@@ -175,7 +174,7 @@ func (m *Model) renderTable() string {
 // formatProjectRow formats a single project into a table row
 func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool) []string {
 	// --- WORKSPACE ---
-	workspaceName := project.Name
+	var workspaceName string
 
 	// Find this project's index in the filtered list (for isLast detection)
 	projectIndex := -1
@@ -671,13 +670,3 @@ func truncatePath(s string, maxWidth int) string {
 	return "…"
 }
 
-// Helper function to check if an ExtendedGitStatus has any git status
-func hasGitStatus(gitStatus interface{}) bool {
-	if gitStatus == nil {
-		return false
-	}
-	if extStatus, ok := gitStatus.(*git.ExtendedGitStatus); ok && extStatus != nil && extStatus.StatusInfo != nil {
-		return true
-	}
-	return false
-}

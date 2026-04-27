@@ -19,11 +19,8 @@ import (
 
 // pageStyle is the default lipgloss style for the keymanage view.
 var (
-	pageStyle     = lipgloss.NewStyle()
-	titleStyle    = core_theme.DefaultTheme.Header
-	selectedStyle = core_theme.DefaultTheme.Selected
-	dimStyle      = core_theme.DefaultTheme.Muted
-	helpStyle     = core_theme.DefaultTheme.Muted
+	pageStyle = lipgloss.NewStyle()
+	dimStyle  = core_theme.DefaultTheme.Muted
 )
 
 // Features re-exports the nav feature-flag struct for ergonomics.
