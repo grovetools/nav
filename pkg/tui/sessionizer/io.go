@@ -54,9 +54,11 @@ type (
 	spinnerTickMsg time.Time
 )
 
-// projectsUpdateMsg is sent when the list of discovered projects is updated.
-type projectsUpdateMsg struct {
-	projects []*api.Project
+// ProjectsUpdateMsg is sent when the list of discovered projects is updated.
+// Exported so hosts (e.g. treemux) can push project lists into the
+// sessionizer when the daemon SSE stream delivers workspace updates.
+type ProjectsUpdateMsg struct {
+	Projects []*api.Project
 }
 
 // runningSessionsUpdateMsg is sent with the latest list of active sessions.
@@ -260,10 +262,10 @@ func fetchProjectsCmd(dir string, loader ProjectLoader) tea.Cmd {
 		client.Close()
 
 		if loader == nil {
-			return projectsUpdateMsg{projects: nil}
+			return ProjectsUpdateMsg{Projects: nil}
 		}
 		projects, _ := loader()
-		return projectsUpdateMsg{projects: projects}
+		return ProjectsUpdateMsg{Projects: projects}
 	}
 }
 
@@ -271,10 +273,10 @@ func fetchProjectsCmd(dir string, loader ProjectLoader) tea.Cmd {
 func reloadProjectsCmd(loader ProjectLoader) tea.Cmd {
 	return func() tea.Msg {
 		if loader == nil {
-			return projectsUpdateMsg{projects: nil}
+			return ProjectsUpdateMsg{Projects: nil}
 		}
 		projects, _ := loader()
-		return projectsUpdateMsg{projects: projects}
+		return ProjectsUpdateMsg{Projects: projects}
 	}
 }
 

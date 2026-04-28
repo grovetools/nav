@@ -254,7 +254,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.enrichmentLoading["link"] = false
 		return m, nil
 
-	case projectsUpdateMsg:
+	case ProjectsUpdateMsg:
 		// Save the current selected project path
 		selectedPath := ""
 		if m.cursor < len(m.filtered) {
@@ -262,7 +262,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Update the main project list and map
-		m.projects = msg.projects
+		m.projects = msg.Projects
 		m.projectMap = make(map[string]*api.Project, len(m.projects))
 		for _, p := range m.projects {
 			p.EnrichmentStatus = make(map[string]string)

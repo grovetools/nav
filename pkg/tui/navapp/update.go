@@ -109,6 +109,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case sessionizer.ProjectsUpdateMsg:
+		if m.state.sessionize != nil {
+			updated, cmd := m.state.sessionize.Update(msg)
+			if sm, ok := updated.(*sessionizer.Model); ok {
+				m.state.sessionize = sm
+			}
+			return m, cmd
+		}
+		return m, nil
+
 	// ---- Cross-TUI routing ------------------------------------------------
 
 	case sessionizer.RequestMapKeyMsg:
