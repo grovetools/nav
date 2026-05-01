@@ -131,17 +131,7 @@ func sessionizeViaTuimux(sessionName, absPath string) error {
 		return fmt.Errorf("failed to detect mux engine: %w", err)
 	}
 
-	exists, err := engine.SessionExists(ctx, sessionName)
-	if err != nil {
-		return fmt.Errorf("failed to check session: %w", err)
-	}
-
-	if !exists {
-		if err := engine.CreateSession(ctx, sessionName, mux.WithWorkDir(absPath)); err != nil {
-			return fmt.Errorf("failed to create session: %w", err)
-		}
-	}
-
+	// SwitchSession auto-creates within the current TUI if the session doesn't exist.
 	if err := engine.SwitchSession(ctx, sessionName); err != nil {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}

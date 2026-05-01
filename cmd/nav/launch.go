@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
-	"github.com/grovetools/core/pkg/mux"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
@@ -42,50 +41,46 @@ Examples:
 		sessionName := args[0]
 		ctx := context.Background()
 
-		// Try mux engine first, fall back to direct tmux client.
-		if engine, err := mux.DetectMuxEngine(ctx); err == nil {
-			var opts []mux.SessionOption
-			if launchWorkingDir != "" {
-				opts = append(opts, mux.WithWorkDir(launchWorkingDir))
-			}
-			if err := engine.CreateSession(ctx, sessionName, opts...); err != nil {
-				return fmt.Errorf("failed to launch session: %w", err)
-			}
-		} else {
-			client, err := tmuxclient.NewClient()
-			if err != nil {
-				return fmt.Errorf("failed to create tmux client: %w", err)
+		client, err := tmuxclient.NewClient()
+		if err != nil {
+			return fmt.Errorf("failed to create tmux client: %w", err)
+		}
+
+		// Parse pane configurations
+		var paneOpts []tmuxclient.PaneOptions
+		for _, paneStr := range launchPanes {
+			pane := tmuxclient.PaneOptions{}
+
+			// Check for @workdir syntax
+			if idx := strings.LastIndex(paneStr, "@"); idx != -1 {
+				pane.Command = paneStr[:idx]
+				pane.WorkingDirectory = paneStr[idx+1:]
+			} else {
+				pane.Command = paneStr
 			}
 
-			var paneOpts []tmuxclient.PaneOptions
-			for _, paneStr := range launchPanes {
-				pane := tmuxclient.PaneOptions{}
-				if idx := strings.LastIndex(paneStr, "@"); idx != -1 {
-					pane.Command = paneStr[:idx]
-					pane.WorkingDirectory = paneStr[idx+1:]
-				} else {
-					pane.Command = paneStr
-				}
-				paneOpts = append(paneOpts, pane)
-			}
+			paneOpts = append(paneOpts, pane)
+		}
 
-			opts := tmuxclient.LaunchOptions{
-				SessionName:      sessionName,
-				WorkingDirectory: launchWorkingDir,
-				WindowName:       launchWindowName,
-				Panes:            paneOpts,
-			}
-			if err := client.Launch(ctx, opts); err != nil {
-				return fmt.Errorf("failed to launch session: %w", err)
-			}
+		opts := tmuxclient.LaunchOptions{
+			SessionName:      sessionName,
+			WorkingDirectory: launchWorkingDir,
+			WindowName:       launchWindowName,
+			Panes:            paneOpts,
+		}
+
+		err = client.Launch(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("failed to launch session: %w", err)
 		}
 
 		ulogLaunch.Success("Session launched").
 			Field("session", sessionName).
 			Field("window_name", launchWindowName).
 			Field("working_dir", launchWorkingDir).
-			Pretty(fmt.Sprintf("%s Session '%s' launched successfully",
-				theme.IconSuccess, sessionName)).
+			Field("pane_count", len(paneOpts)).
+			Pretty(fmt.Sprintf("%s Session '%s' launched successfully\n\nTo attach to this session, run:\n  tmux attach-session -t %s",
+				theme.IconSuccess, sessionName, sessionName)).
 			PrettyOnly().
 			Emit()
 
