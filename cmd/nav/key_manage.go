@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/spf13/cobra"
 
 	"github.com/grovetools/nav/pkg/tmux"
@@ -26,7 +26,7 @@ var keyManageCmd = &cobra.Command{
 // reloadTmuxConfig reloads the tmux configuration. Used by the extracted
 // nav TUI packages via Config.ReloadConfig.
 func reloadTmuxConfig() error {
-	if os.Getenv("TMUX") == "" {
+	if mux.ActiveMux() == mux.MuxNone {
 		return fmt.Errorf("not in a tmux session")
 	}
 	cmd := tmux.Command("source-file", expandPath("~/.tmux.conf"))

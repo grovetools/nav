@@ -10,6 +10,7 @@ import (
 
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/pkg/workspace"
 	tablecomponent "github.com/grovetools/core/tui/components/table"
 	core_theme "github.com/grovetools/core/tui/theme"
@@ -821,7 +822,7 @@ var keyUnmapCmd = &cobra.Command{
 				}
 
 				// Try to reload tmux config
-				if os.Getenv("TMUX") != "" {
+				if mux.ActiveMux() != mux.MuxNone {
 					// Use tmux.Command to respect GROVE_TMUX_SOCKET
 					cmd := tmux.Command("source-file", expandPath("~/.tmux.conf"))
 					if err := cmd.Run(); err == nil {

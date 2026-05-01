@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"os"
 
+	"github.com/grovetools/core/pkg/mux"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/spf13/cobra"
 
@@ -16,7 +16,7 @@ var recordSessionCmd = &cobra.Command{
 	Long:  `Records the current tmux session's working directory to the access history. Designed to be called from a tmux hook (client-session-changed) to track session switches.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Must be in tmux
-		if os.Getenv("TMUX") == "" {
+		if mux.ActiveMux() == mux.MuxNone {
 			return nil
 		}
 

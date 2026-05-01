@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/pkg/repo"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
@@ -111,7 +112,7 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	absPath := project.Path
 
 	// Check if we're in tmux
-	if os.Getenv("TMUX") == "" {
+	if mux.ActiveMux() == mux.MuxNone {
 		// Not in tmux, create new session
 		// Use tmux.Command to respect GROVE_TMUX_SOCKET
 		cmd := tmux.Command("new-session", "-s", sessionName, "-c", absPath)

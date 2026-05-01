@@ -16,6 +16,7 @@ import (
 	"github.com/grovetools/core/pkg/daemon"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/paths"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
@@ -64,7 +65,7 @@ func expandPath(path string) string {
 // tmuxCommand creates an exec.Command for tmux that respects GROVE_TMUX_SOCKET.
 // This ensures all tmux operations use the same socket as the tmux client.
 func tmuxCommand(args ...string) *exec.Cmd {
-	if socket := os.Getenv("GROVE_TMUX_SOCKET"); socket != "" {
+	if socket := os.Getenv(mux.EnvGroveTmuxSocket); socket != "" {
 		// Prepend -L <socket> to use the isolated tmux server
 		args = append([]string{"-L", socket}, args...)
 	}
@@ -1508,7 +1509,7 @@ func (m *Manager) Sessionize(path string) error {
 
 	// Check if tmux is running
 	tmuxRunning := m.isTmuxRunning()
-	inTmux := os.Getenv("TMUX") != ""
+	inTmux := mux.ActiveMux() != mux.MuxNone
 
 	// If tmux is not running and we're not in tmux, start new session
 	if !tmuxRunning && !inTmux {
@@ -1601,7 +1602,7 @@ func (m *Manager) RegenerateBindingsGo() error {
 // DetectTmuxKeyForPath detects the tmux session key for a given working directory
 func (m *Manager) DetectTmuxKeyForPath(workingDir string) string {
 	// Check if we're in a tmux session
-	if tmuxEnv := os.Getenv("TMUX"); tmuxEnv == "" {
+	if mux.ActiveMux() == mux.MuxNone {
 		return ""
 	}
 

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/grovetools/compositor"
 	"github.com/grovetools/core/pkg/daemon"
+	"github.com/grovetools/core/pkg/mux"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 
@@ -53,7 +54,7 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 
 	// Try to create a tmux client (may fail if not in tmux).
 	var client *tmuxclient.Client
-	if os.Getenv("TMUX") != "" {
+	if mux.ActiveMux() != mux.MuxNone {
 		client, _ = tmuxclient.NewClient()
 	}
 
