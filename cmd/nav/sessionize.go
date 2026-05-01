@@ -142,6 +142,10 @@ func sessionizeViaTuimux(sessionName, absPath string) error {
 		}
 	}
 
+	if err := engine.SwitchSession(ctx, sessionName); err != nil {
+		return fmt.Errorf("failed to switch to session: %w", err)
+	}
+
 	// Close popup if running in one (best-effort).
 	if te, ok := engine.(mux.MuxTUIEngine); ok {
 		_ = te.ClosePopup(ctx)

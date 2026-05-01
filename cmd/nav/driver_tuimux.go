@@ -32,9 +32,7 @@ func (d *TuimuxDriver) Launch(ctx context.Context, sessionName, workingDir strin
 }
 
 func (d *TuimuxDriver) SwitchTo(ctx context.Context, sessionName string) error {
-	// tuimux sessions are managed by the daemon; switching is a no-op
-	// from the nav perspective since sessions are always visible.
-	return nil
+	return d.engine.SwitchSession(ctx, sessionName)
 }
 
 func (d *TuimuxDriver) Kill(ctx context.Context, sessionName string) error {
