@@ -1596,7 +1596,15 @@ func (m *Manager) RegenerateBindingsGo() error {
 		})
 	}
 
-	return navbindings.GenerateTmuxConf(groupBindings, paths.BinDir(), paths.CacheDir())
+	binDir := paths.BinDir()
+	cacheDir := paths.CacheDir()
+
+	// Generate both tmux and tuimux bindings so nav works regardless
+	// of which mux is active at runtime.
+	if err := navbindings.GenerateTmuxConf(groupBindings, binDir, cacheDir); err != nil {
+		return err
+	}
+	return navbindings.GenerateTuimuxConf(groupBindings, binDir, cacheDir)
 }
 
 // DetectTmuxKeyForPath detects the tmux session key for a given working directory

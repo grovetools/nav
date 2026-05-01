@@ -7,8 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/grovetools/core/pkg/keygen"
 	"github.com/grovetools/core/pkg/models"
-	"github.com/grovetools/core/pkg/tmux/keygen"
+	tmuxkeygen "github.com/grovetools/core/pkg/tmux/keygen"
 )
 
 // GroupBinding holds the resolved data needed to generate tmux bindings for one group.
@@ -42,7 +43,7 @@ func GenerateTmuxConf(groups []GroupBinding, binDir, cacheDir string) error {
 			tableName = "nav-" + group.Name
 		}
 
-		cfg := keygen.Config{
+		cfg := tmuxkeygen.Config{
 			Prefix:    group.Prefix,
 			TableName: tableName,
 		}
@@ -109,4 +110,48 @@ func GenerateTmuxConf(groups []GroupBinding, binDir, cacheDir string) error {
 
 	masterFile := filepath.Join(navCacheDir, "generated-bindings.conf")
 	return os.WriteFile(masterFile, []byte(masterBindings.String()), 0o600)
+}
+
+// GenerateTuimuxConf generates tuimux keybinding config for all groups.
+// binDir is the grove bin directory (for nav binary references).
+// cacheDir is the grove cache directory (output location).
+func GenerateTuimuxConf(groups []GroupBinding, binDir, cacheDir string) error {
+	navCacheDir := filepath.Join(cacheDir, "nav")
+	if err := os.MkdirAll(navCacheDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create nav cache directory: %w", err)
+	}
+
+	var allBindings []keygen.TuimuxBinding
+	for _, group := range groups {
+		if group.Prefix == "" {
+			continue
+		}
+
+		keys := make([]string, 0, len(group.Sessions))
+		for k := range group.Sessions {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			sess := group.Sessions[key]
+			if sess.Path == "" {
+				continue
+			}
+			cmd := fmt.Sprintf("nav sessionize '%s'", sess.Path)
+			allBindings = append(allBindings, keygen.TuimuxBinding{
+				Key:            key,
+				Command:        cmd,
+				Style:          "run-shell",
+				ExitOnComplete: true,
+			})
+		}
+	}
+
+	cfg := &keygen.TuimuxConfig{
+		Bindings: allBindings,
+	}
+	toml := cfg.GenerateTOML()
+	outFile := filepath.Join(navCacheDir, "generated-bindings-tuimux.toml")
+	return os.WriteFile(outFile, []byte(toml), 0o600)
 }

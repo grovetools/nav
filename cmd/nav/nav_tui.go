@@ -54,8 +54,18 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 
 	// Try to create a tmux client (may fail if not in tmux).
 	var client *tmuxclient.Client
-	if mux.ActiveMux() != mux.MuxNone {
+	if mux.ActiveMux() == mux.MuxTmux {
 		client, _ = tmuxclient.NewClient()
+	}
+
+	// Detect tuimux engine when running inside tuimux.
+	var tuimuxEngine mux.MuxTUIEngine
+	if mux.ActiveMux() == mux.MuxTuimux {
+		if eng, err := mux.DetectMuxEngine(context.Background()); err == nil {
+			if te, ok := eng.(mux.MuxTUIEngine); ok {
+				tuimuxEngine = te
+			}
+		}
 	}
 
 	// Auto-select the active group — CWD match first, then the
@@ -80,8 +90,8 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 
 	cfg := navapp.Config{
 		InitialTab:    initialTab,
-		NewSessionize: newSessionizeFactory(mgr, client, opts.CwdFocusPath),
-		NewKeymanage:  newKeymanageFactory(mgr, client, cwd),
+		NewSessionize: newSessionizeFactory(mgr, client, tuimuxEngine, opts.CwdFocusPath),
+		NewKeymanage:  newKeymanageFactory(mgr, client, tuimuxEngine, cwd),
 		NewHistory:    newHistoryFactory(mgr),
 		NewGroups:     newGroupsFactory(mgr),
 		OnReenterKeymanage: func() {
@@ -96,9 +106,11 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 		},
 	}
 
-	// Windows tab is only meaningful inside a tmux session.
+	// Windows tab requires a mux backend.
 	if client != nil {
 		cfg.NewWindows = newWindowsFactory(client)
+	} else if tuimuxEngine != nil {
+		cfg.NewWindows = newTuimuxWindowsFactory(tuimuxEngine)
 	}
 
 	model = navapp.New(cfg)
@@ -202,7 +214,7 @@ func handlePostExit(finalModel tea.Model, mgr *tmux.Manager, client *tmuxclient.
 // factory reads the project cache (or falls back to the full project
 // loader) on first access so cold start and warm start produce the
 // same sorted, ecosystem-grouped project list.
-func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocusPath string) navapp.SessionizeFactory {
+func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, tuimuxEngine mux.MuxTUIEngine, cwdFocusPath string) navapp.SessionizeFactory {
 	return func() *sessionizer.Model {
 		usedCache := false
 		var projects []manager.SessionizeProject
@@ -267,7 +279,11 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocus
 			ReloadConfig:        reloadTmuxConfig,
 			KeyMap:              sessionizeKeys,
 		}
-		if client != nil {
+		if tuimuxEngine != nil {
+			driver := NewTuimuxDriver(tuimuxEngine)
+			cfg.SessionDriver = driver
+			cfg.SessionStateProvider = driver
+		} else if client != nil {
 			driver := NewTmuxDriver(client)
 			cfg.SessionDriver = driver
 			cfg.SessionStateProvider = driver
@@ -279,7 +295,7 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwdFocus
 // newKeymanageFactory builds the keymanage sub-model factory. It warms
 // the enriched-project cache so the table populates without a stall
 // on first paint.
-func newKeymanageFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwd string) navapp.KeymanageFactory {
+func newKeymanageFactory(mgr *tmux.Manager, client *tmuxclient.Client, tuimuxEngine mux.MuxTUIEngine, cwd string) navapp.KeymanageFactory {
 	return func() *keymanage.Model {
 		enrichedProjects := make(map[string]*api.Project)
 		usedCache := false
@@ -296,7 +312,9 @@ func newKeymanageFactory(mgr *tmux.Manager, client *tmuxclient.Client, cwd strin
 		}
 
 		var driver keymanage.SessionDriver
-		if client != nil {
+		if tuimuxEngine != nil {
+			driver = NewTuimuxDriver(tuimuxEngine)
+		} else if client != nil {
 			driver = NewTmuxDriver(client)
 		}
 
@@ -346,6 +364,19 @@ func newWindowsFactory(client *tmuxclient.Client) navapp.WindowsFactory {
 			SessionName:        currentSession,
 			ShowChildProcesses: showChildProcesses,
 			KeyMap:             windowsKeys,
+		})
+	}
+}
+
+// newTuimuxWindowsFactory builds the windows sub-model factory backed
+// by a tuimux engine. Window listing is not yet supported so the tab
+// will be nil when the engine returns ErrNotImplemented.
+func newTuimuxWindowsFactory(engine mux.MuxTUIEngine) navapp.WindowsFactory {
+	return func() *windows.Model {
+		return windows.New(windows.Config{
+			Driver:      newTuimuxWindowsDriver(engine),
+			SessionName: "default",
+			KeyMap:      windowsKeys,
 		})
 	}
 }

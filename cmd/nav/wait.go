@@ -6,6 +6,7 @@ import (
 	"time"
 
 	grovelogging "github.com/grovetools/core/logging"
+	"github.com/grovetools/core/pkg/mux"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
@@ -30,7 +31,6 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessionName := args[0]
 
-		// Parse durations
 		pollInterval, err := time.ParseDuration(waitPollInterval)
 		if err != nil {
 			return fmt.Errorf("invalid poll interval: %w", err)
@@ -41,17 +41,11 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			return fmt.Errorf("invalid timeout: %w", err)
 		}
 
-		// Create context with timeout
 		ctx := context.Background()
 		if timeout > 0 {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, timeout)
 			defer cancel()
-		}
-
-		client, err := tmuxclient.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
 		}
 
 		ulogWait.Progress("Waiting for session").
@@ -60,7 +54,17 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			PrettyOnly().
 			Emit()
 
-		err = client.WaitForSessionClose(ctx, sessionName, pollInterval)
+		// Try mux engine first for polling, fall back to tmux client.
+		if engine, engineErr := mux.DetectMuxEngine(ctx); engineErr == nil {
+			err = waitForSessionClose(ctx, engine, sessionName, pollInterval)
+		} else {
+			client, clientErr := tmuxclient.NewClient()
+			if clientErr != nil {
+				return fmt.Errorf("failed to create tmux client: %w", clientErr)
+			}
+			err = client.WaitForSessionClose(ctx, sessionName, pollInterval)
+		}
+
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return fmt.Errorf("timeout waiting for session to close")
@@ -80,4 +84,21 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 func init() {
 	waitCmd.Flags().StringVar(&waitPollInterval, "poll-interval", "1s", "How often to check if session exists")
 	waitCmd.Flags().StringVar(&waitTimeout, "timeout", "0s", "Maximum time to wait (0 = no timeout)")
+}
+
+func waitForSessionClose(ctx context.Context, engine mux.MuxEngine, sessionName string, pollInterval time.Duration) error {
+	for {
+		exists, err := engine.SessionExists(ctx, sessionName)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
 }

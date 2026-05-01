@@ -7,6 +7,7 @@ import (
 
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/models"
+	"github.com/grovetools/core/pkg/mux"
 	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
@@ -49,58 +50,68 @@ change to the configured directory for that session.`,
 			return fmt.Errorf("no session configured for key '%s'", key)
 		}
 
-		// Create tmux client
 		ctx := context.Background()
-		client, err := tmuxclient.NewClient()
-		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
-		}
-
-		// Prepare session name
 		sessionName := fmt.Sprintf("grove-%s", key)
-
-		// Check if session already exists
-		exists, err := client.SessionExists(ctx, sessionName)
-		if err != nil {
-			return fmt.Errorf("failed to check session existence: %w", err)
-		}
-
-		if exists {
-			ulogStart.Info("Session already exists").
-				Field("session", sessionName).
-				Field("key", key).
-				Pretty(fmt.Sprintf("%s Session '%s' already exists. Attaching...\n\nTo attach manually, run:\n  tmux attach-session -t %s",
-					theme.IconInfo, sessionName, sessionName)).
-				PrettyOnly().
-				Emit()
-			return nil
-		}
 
 		// Determine working directory
 		workDir := session.Path
 		if workDir == "" && session.Repository != "" {
-			// Try to use repository name as directory under home
 			workDir = filepath.Join("~", session.Repository)
 		}
 
-		// Create launch options
-		opts := tmuxclient.LaunchOptions{
-			SessionName:      sessionName,
-			WorkingDirectory: workDir,
-			WindowName:       session.Repository,
-		}
-
-		// Launch the session
-		err = client.Launch(ctx, opts)
-		if err != nil {
-			return fmt.Errorf("failed to launch session: %w", err)
+		// Route through mux engine when available, fall back to tmux client.
+		engine, engineErr := mux.DetectMuxEngine(ctx)
+		if engineErr == nil {
+			exists, err := engine.SessionExists(ctx, sessionName)
+			if err != nil {
+				return fmt.Errorf("failed to check session existence: %w", err)
+			}
+			if exists {
+				ulogStart.Info("Session already exists").
+					Field("session", sessionName).
+					Field("key", key).
+					Pretty(fmt.Sprintf("%s Session '%s' already exists.",
+						theme.IconInfo, sessionName)).
+					PrettyOnly().
+					Emit()
+				return nil
+			}
+			if err := engine.CreateSession(ctx, sessionName, mux.WithWorkDir(workDir)); err != nil {
+				return fmt.Errorf("failed to launch session: %w", err)
+			}
+		} else {
+			client, err := tmuxclient.NewClient()
+			if err != nil {
+				return fmt.Errorf("failed to create tmux client: %w", err)
+			}
+			exists, err := client.SessionExists(ctx, sessionName)
+			if err != nil {
+				return fmt.Errorf("failed to check session existence: %w", err)
+			}
+			if exists {
+				ulogStart.Info("Session already exists").
+					Field("session", sessionName).
+					Field("key", key).
+					Pretty(fmt.Sprintf("%s Session '%s' already exists.",
+						theme.IconInfo, sessionName)).
+					PrettyOnly().
+					Emit()
+				return nil
+			}
+			opts := tmuxclient.LaunchOptions{
+				SessionName:      sessionName,
+				WorkingDirectory: workDir,
+				WindowName:       session.Repository,
+			}
+			if err := client.Launch(ctx, opts); err != nil {
+				return fmt.Errorf("failed to launch session: %w", err)
+			}
 		}
 
 		prettyMsg := fmt.Sprintf("%s Session '%s' started for %s", theme.IconSuccess, sessionName, session.Description)
 		if workDir != "" {
 			prettyMsg += fmt.Sprintf("\nWorking directory: %s", workDir)
 		}
-		prettyMsg += fmt.Sprintf("\n\nTo attach to this session, run:\n  tmux attach-session -t %s", sessionName)
 
 		ulogStart.Success("Session started").
 			Field("session", sessionName).

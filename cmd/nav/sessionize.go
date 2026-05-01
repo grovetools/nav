@@ -100,43 +100,69 @@ var sessionizeCmd = &cobra.Command{
 	},
 }
 
-// sessionizeProject creates or switches to a tmux session for the given project.
+// sessionizeProject creates or switches to a mux session for the given project.
 func sessionizeProject(project *manager.SessionizeProject) error {
 	if project == nil {
 		return fmt.Errorf("no project selected")
 	}
 
-	// The project object already contains all necessary information.
-	// We no longer need to call workspace.GetProjectByPath.
 	sessionName := project.Identifier("_")
 	absPath := project.Path
 
-	// Check if we're in tmux
-	if mux.ActiveMux() == mux.MuxNone {
-		// Not in tmux, create new session
-		// Use tmux.Command to respect GROVE_TMUX_SOCKET
+	switch mux.ActiveMux() {
+	case mux.MuxTuimux:
+		return sessionizeViaTuimux(sessionName, absPath)
+	case mux.MuxTmux:
+		return sessionizeViaTmux(sessionName, absPath)
+	default:
+		// Not in any mux — launch a tmux session interactively.
 		cmd := tmux.Command("new-session", "-s", sessionName, "-c", absPath)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	}
+}
 
-	// We're in tmux, use the tmux client
+func sessionizeViaTuimux(sessionName, absPath string) error {
+	ctx := context.Background()
+	engine, err := mux.DetectMuxEngine(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to detect mux engine: %w", err)
+	}
+
+	exists, err := engine.SessionExists(ctx, sessionName)
+	if err != nil {
+		return fmt.Errorf("failed to check session: %w", err)
+	}
+
+	if !exists {
+		if err := engine.CreateSession(ctx, sessionName, mux.WithWorkDir(absPath)); err != nil {
+			return fmt.Errorf("failed to create session: %w", err)
+		}
+	}
+
+	// Close popup if running in one (best-effort).
+	if te, ok := engine.(mux.MuxTUIEngine); ok {
+		_ = te.ClosePopup(ctx)
+	}
+
+	return nil
+}
+
+func sessionizeViaTmux(sessionName, absPath string) error {
 	ctx := context.Background()
 	client, err := tmuxclient.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create tmux client: %w", err)
 	}
 
-	// Check if session exists
 	exists, err := client.SessionExists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("failed to check session: %w", err)
 	}
 
 	if !exists {
-		// Create new session
 		opts := tmuxclient.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: absPath,
@@ -146,14 +172,11 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 		}
 	}
 
-	// Switch to the session
 	if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}
 
-	// Close popup if running in one
-	cmd := client.ClosePopupCmd()
-	_ = cmd.Run() // best-effort popup close
+	_ = client.ClosePopupCmd().Run()
 
 	return nil
 }
