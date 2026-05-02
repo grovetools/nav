@@ -17,9 +17,9 @@ import (
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/pkg/paths"
-	"github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/util/pathutil"
+
 	"gopkg.in/yaml.v3"
 
 	"github.com/grovetools/nav/pkg/api"
@@ -35,7 +35,7 @@ type Manager struct {
 	configPath    string
 	navConfigPath string // Path to the file containing nav config (may differ from configPath for fragments)
 	sessionsPath  string
-	tmuxClient    *tmux.Client
+	muxEngine     mux.MuxEngine
 	activeGroup   string
 	sessionsFile  TmuxSessionsFile
 	undoStack     [][]byte
@@ -164,11 +164,11 @@ func NewManager(configDir string) (*Manager, error) {
 	sessionsFile.Sessions = sessions
 	sessionsFile.LockedKeys = lockedKeys
 
-	// Initialize tmux client
-	tmuxClient, clientErr := tmux.NewClient()
+	// Initialize mux engine
+	muxEngine, clientErr := mux.DetectMuxEngine(context.Background())
 	if clientErr != nil {
 		// Log warning but don't fail - some operations may still work
-		fmt.Fprintf(os.Stderr, "Warning: could not initialize tmux client: %v\n", clientErr)
+		fmt.Fprintf(os.Stderr, "Warning: could not initialize mux engine: %v\n", clientErr)
 	}
 
 	return &Manager{
@@ -180,7 +180,7 @@ func NewManager(configDir string) (*Manager, error) {
 		configPath:    configPath,
 		navConfigPath: navConfigPath,
 		sessionsPath:  sessionsPath,
-		tmuxClient:    tmuxClient,
+		muxEngine:     muxEngine,
 		activeGroup:   "default",
 		sessionsFile:  sessionsFile,
 		undoStack:     make([][]byte, 0),
@@ -1522,31 +1522,31 @@ func (m *Manager) Sessionize(path string) error {
 		return cmd.Run()
 	}
 
-	// Check if tmux client is available
-	if m.tmuxClient == nil {
-		return fmt.Errorf("tmux client not initialized")
+	// Check if mux engine is available
+	if m.muxEngine == nil {
+		return fmt.Errorf("mux engine not initialized")
 	}
 
 	// Check if session already exists
-	exists, err := m.tmuxClient.SessionExists(ctx, sessionName)
+	exists, err := m.muxEngine.SessionExists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("failed to check session: %w", err)
 	}
 
 	if !exists {
-		// Create new detached session using the tmux client
-		opts := tmux.LaunchOptions{
+		// Create new detached session using the mux engine
+		opts := mux.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: expandedPath,
 		}
-		if err := m.tmuxClient.Launch(ctx, opts); err != nil {
+		if err := m.muxEngine.Launch(ctx, opts); err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 	}
 
 	// Switch to the session if we're in tmux
 	if inTmux {
-		return m.tmuxClient.SwitchClientToSession(ctx, sessionName)
+		return m.muxEngine.SwitchSession(ctx, sessionName, "")
 	}
 
 	// Attach to the session if we're outside tmux
@@ -1560,11 +1560,11 @@ func (m *Manager) Sessionize(path string) error {
 }
 
 func (m *Manager) isTmuxRunning() bool {
-	if m.tmuxClient == nil {
+	if m.muxEngine == nil {
 		return false
 	}
-	// Check if tmux server is running by trying to list sessions
-	_, err := m.tmuxClient.ListSessions(context.Background())
+	// Check if mux server is running by trying to list sessions
+	_, err := m.muxEngine.ListSessions(context.Background())
 	return err == nil || !strings.Contains(err.Error(), "no server")
 }
 
