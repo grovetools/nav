@@ -74,8 +74,20 @@ func newTuimuxWindowsDriver(engine mux.MuxEngine) *TuimuxWindowsDriver {
 
 var _ windows.SessionDriver = (*TuimuxWindowsDriver)(nil)
 
-func (d *TuimuxWindowsDriver) ListWindows(_ context.Context, _ string) ([]tmuxclient.Window, error) {
-	return nil, mux.ErrNotImplemented
+func (d *TuimuxWindowsDriver) ListWindows(ctx context.Context, _ string) ([]tmuxclient.Window, error) {
+	sessions, err := d.engine.ListSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	windows := make([]tmuxclient.Window, len(sessions))
+	for i, s := range sessions {
+		windows[i] = tmuxclient.Window{
+			ID:    s.Name,
+			Index: i,
+			Name:  s.Name,
+		}
+	}
+	return windows, nil
 }
 
 func (d *TuimuxWindowsDriver) CapturePane(ctx context.Context, target string) (string, error) {
