@@ -7,7 +7,7 @@ import (
 
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/models"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 
@@ -49,18 +49,17 @@ change to the configured directory for that session.`,
 			return fmt.Errorf("no session configured for key '%s'", key)
 		}
 
-		// Create tmux client
 		ctx := context.Background()
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
 		// Prepare session name
 		sessionName := fmt.Sprintf("grove-%s", key)
 
 		// Check if session already exists
-		exists, err := client.SessionExists(ctx, sessionName)
+		exists, err := engine.SessionExists(ctx, sessionName)
 		if err != nil {
 			return fmt.Errorf("failed to check session existence: %w", err)
 		}
@@ -83,15 +82,13 @@ change to the configured directory for that session.`,
 			workDir = filepath.Join("~", session.Repository)
 		}
 
-		// Create launch options
-		opts := tmuxclient.LaunchOptions{
+		opts := mux.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: workDir,
 			WindowName:       session.Repository,
 		}
 
-		// Launch the session
-		err = client.Launch(ctx, opts)
+		err = engine.Launch(ctx, opts)
 		if err != nil {
 			return fmt.Errorf("failed to launch session: %w", err)
 		}

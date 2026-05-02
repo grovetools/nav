@@ -5,19 +5,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/pkg/repo"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 
 	"github.com/grovetools/nav/internal/manager"
-	"github.com/grovetools/nav/pkg/tmux"
+	navtmux "github.com/grovetools/nav/pkg/tmux"
 	"github.com/grovetools/nav/pkg/tui/navapp"
 )
 
@@ -32,7 +32,7 @@ var sessionizeCmd = &cobra.Command{
 		// If a path is provided as argument, use it directly
 		if len(args) > 0 {
 			// Record access for direct path usage too
-			mgr, err := tmux.NewManager(configDir)
+			mgr, err := navtmux.NewManager(configDir)
 			if err != nil {
 				return fmt.Errorf("failed to initialize manager: %w", err)
 			}
@@ -48,7 +48,7 @@ var sessionizeCmd = &cobra.Command{
 		}
 
 		// Otherwise, show the interactive project picker
-		mgr, err := tmux.NewManager(configDir)
+		mgr, err := navtmux.NewManager(configDir)
 		if err != nil {
 			// Check if the error is related to config loading, but not a simple "not found"
 			if !os.IsNotExist(err) {
@@ -115,8 +115,8 @@ func sessionizeProject(project *manager.SessionizeProject) error {
 	case mux.MuxTmux:
 		return sessionizeViaTmux(sessionName, absPath)
 	default:
-		// Not in any mux — launch a tmux session interactively.
-		cmd := tmux.Command("new-session", "-s", sessionName, "-c", absPath)
+		// Not in any mux — launch a tmux session interactively via exec.
+		cmd := exec.Command("tmux", "new-session", "-s", sessionName, "-c", absPath)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -146,36 +146,38 @@ func sessionizeViaTuimux(sessionName, absPath string) error {
 
 func sessionizeViaTmux(sessionName, absPath string) error {
 	ctx := context.Background()
-	client, err := tmuxclient.NewClient()
+	engine, err := mux.DetectMuxEngine(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create tmux client: %w", err)
+		return fmt.Errorf("failed to detect mux engine: %w", err)
 	}
 
-	exists, err := client.SessionExists(ctx, sessionName)
+	exists, err := engine.SessionExists(ctx, sessionName)
 	if err != nil {
 		return fmt.Errorf("failed to check session: %w", err)
 	}
 
 	if !exists {
-		opts := tmuxclient.LaunchOptions{
+		opts := mux.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: absPath,
 		}
-		if err := client.Launch(ctx, opts); err != nil {
+		if err := engine.Launch(ctx, opts); err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 	}
 
-	if err := client.SwitchClientToSession(ctx, sessionName); err != nil {
+	if err := engine.SwitchSession(ctx, sessionName, ""); err != nil {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}
 
-	_ = client.ClosePopupCmd().Run()
+	if te, ok := engine.(mux.MuxTUIEngine); ok {
+		_ = te.ClosePopup(ctx)
+	}
 
 	return nil
 }
 
-func handleFirstRunSetup(configDir string, _ *tmux.Manager) error {
+func handleFirstRunSetup(configDir string, _ *navtmux.Manager) error {
 	// Welcome message
 	ulogSessionize.Info("First run setup").
 		Pretty("Welcome to nav sessionizer!\nIt looks like this is your first time running, or your configuration is missing.\nLet's set up your project directories in your main grove.yml file.\n").
@@ -308,7 +310,7 @@ func handleFirstRunSetup(configDir string, _ *tmux.Manager) error {
 
 	// Use the manager to save the configuration.
 	// We need to re-initialize the manager since the config file might not exist yet.
-	_, err := tmux.NewManager(configDir)
+	_, err := navtmux.NewManager(configDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to re-initialize manager: %w", err)
 	}

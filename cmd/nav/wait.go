@@ -6,7 +6,7 @@ import (
 	"time"
 
 	grovelogging "github.com/grovetools/core/logging"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 )
@@ -49,9 +49,9 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			defer cancel()
 		}
 
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
 		ulogWait.Progress("Waiting for session").
@@ -60,7 +60,7 @@ If the timeout is reached or an error occurs, it exits with non-zero status.`,
 			PrettyOnly().
 			Emit()
 
-		err = client.WaitForSessionClose(ctx, sessionName, pollInterval)
+		err = engine.WaitForSessionClose(ctx, sessionName, pollInterval)
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return fmt.Errorf("timeout waiting for session to close")

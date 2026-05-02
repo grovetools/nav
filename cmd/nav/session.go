@@ -6,7 +6,7 @@ import (
 	"os"
 
 	grovelogging "github.com/grovetools/core/logging"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 )
@@ -27,12 +27,12 @@ var sessionExistsCmd = &cobra.Command{
 		sessionName := args[0]
 		ctx := context.Background()
 
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
-		exists, err := client.SessionExists(ctx, sessionName)
+		exists, err := engine.SessionExists(ctx, sessionName)
 		if err != nil {
 			return fmt.Errorf("failed to check session: %w", err)
 		}
@@ -64,12 +64,12 @@ var sessionKillCmd = &cobra.Command{
 		sessionName := args[0]
 		ctx := context.Background()
 
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
-		err = client.KillSession(ctx, sessionName)
+		err = engine.KillSession(ctx, sessionName)
 		if err != nil {
 			return fmt.Errorf("failed to kill session: %w", err)
 		}
@@ -92,12 +92,12 @@ var sessionCaptureCmd = &cobra.Command{
 		ctx := context.Background()
 		target := args[0]
 
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
-		content, err := client.CapturePane(ctx, target)
+		content, err := engine.CapturePane(ctx, target)
 		if err != nil {
 			return fmt.Errorf("failed to capture pane: %w", err)
 		}

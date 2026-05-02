@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/grovetools/core/pkg/mux"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
 	"github.com/spf13/cobra"
 
 	"github.com/grovetools/nav/pkg/tmux"
@@ -20,19 +19,19 @@ var recordSessionCmd = &cobra.Command{
 			return nil
 		}
 
-		client, err := tmuxclient.NewClient()
+		ctx := context.Background()
+
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
 			return nil
 		}
 
-		ctx := context.Background()
-
-		currentSession, err := client.GetCurrentSession(ctx)
+		currentSession, err := engine.GetCurrentSession(ctx)
 		if err != nil || currentSession == "" {
 			return nil
 		}
 
-		sessionPath, err := client.GetSessionPath(ctx, currentSession)
+		sessionPath, err := engine.GetSessionPath(ctx, currentSession)
 		if err != nil || sessionPath == "" {
 			return nil
 		}

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
-	tmuxclient "github.com/grovetools/core/pkg/tmux"
+	"github.com/grovetools/core/pkg/mux"
 	"github.com/grovetools/core/tui/theme"
 	"github.com/spf13/cobra"
 )
@@ -41,15 +41,15 @@ Examples:
 		sessionName := args[0]
 		ctx := context.Background()
 
-		client, err := tmuxclient.NewClient()
+		engine, err := mux.DetectMuxEngine(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to create tmux client: %w", err)
+			return fmt.Errorf("failed to detect mux engine: %w", err)
 		}
 
 		// Parse pane configurations
-		var paneOpts []tmuxclient.PaneOptions
+		var paneOpts []mux.PaneOptions
 		for _, paneStr := range launchPanes {
-			pane := tmuxclient.PaneOptions{}
+			pane := mux.PaneOptions{}
 
 			// Check for @workdir syntax
 			if idx := strings.LastIndex(paneStr, "@"); idx != -1 {
@@ -62,14 +62,14 @@ Examples:
 			paneOpts = append(paneOpts, pane)
 		}
 
-		opts := tmuxclient.LaunchOptions{
+		opts := mux.LaunchOptions{
 			SessionName:      sessionName,
 			WorkingDirectory: launchWorkingDir,
 			WindowName:       launchWindowName,
 			Panes:            paneOpts,
 		}
 
-		err = client.Launch(ctx, opts)
+		err = engine.Launch(ctx, opts)
 		if err != nil {
 			return fmt.Errorf("failed to launch session: %w", err)
 		}

@@ -52,10 +52,14 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 		return fmt.Errorf("failed to get current working directory: %w", err)
 	}
 
-	// Try to create a tmux client (may fail if not in tmux).
+	// Try to obtain a tmux client via MuxEngine (may fail if not in tmux).
 	var client *tmuxclient.Client
 	if mux.ActiveMux() == mux.MuxTmux {
-		client, _ = tmuxclient.NewClient()
+		if eng, engErr := mux.DetectMuxEngine(context.Background()); engErr == nil {
+			if te, ok := eng.(*mux.TmuxEngine); ok {
+				client = te.Client()
+			}
+		}
 	}
 
 	// Detect tuimux engine when running inside tuimux.
