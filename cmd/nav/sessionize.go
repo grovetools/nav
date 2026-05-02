@@ -132,7 +132,7 @@ func sessionizeViaTuimux(sessionName, absPath string) error {
 	}
 
 	// SwitchSession auto-creates within the current TUI if the session doesn't exist.
-	if err := engine.SwitchSession(ctx, sessionName); err != nil {
+	if err := engine.SwitchSession(ctx, sessionName, absPath); err != nil {
 		return fmt.Errorf("failed to switch to session: %w", err)
 	}
 

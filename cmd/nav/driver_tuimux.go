@@ -28,11 +28,13 @@ var (
 )
 
 func (d *TuimuxDriver) Launch(ctx context.Context, sessionName, workingDir string) error {
-	return d.engine.CreateSession(ctx, sessionName, mux.WithWorkDir(workingDir))
+	// Use SwitchSession which auto-creates model-level sessions within the
+	// current TUI, rather than CreateSession which spawns a separate daemon.
+	return d.engine.SwitchSession(ctx, sessionName, workingDir)
 }
 
 func (d *TuimuxDriver) SwitchTo(ctx context.Context, sessionName string) error {
-	return d.engine.SwitchSession(ctx, sessionName)
+	return d.engine.SwitchSession(ctx, sessionName, "")
 }
 
 func (d *TuimuxDriver) Kill(ctx context.Context, sessionName string) error {
