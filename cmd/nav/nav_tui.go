@@ -148,14 +148,14 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 		return fmt.Errorf("error running program: %w", runErr)
 	}
 
-	return handlePostExit(finalModel, mgr, client)
+	return handlePostExit(finalModel, mgr, client, tuimuxEngine)
 }
 
 // handlePostExit dispatches the various "what did the user pick?" tail
 // actions that used to live inline at the bottom of runNavTUIWithView —
 // keymanage save-on-exit, sessionize jump, history jump, and windows
 // switch.
-func handlePostExit(finalModel tea.Model, mgr *tmux.Manager, client *tmuxclient.Client) error {
+func handlePostExit(finalModel tea.Model, mgr *tmux.Manager, client *tmuxclient.Client, tuimuxEngine mux.MuxTUIEngine) error {
 	nm, ok := finalModel.(*navapp.Model)
 	if !ok {
 		return nil
@@ -196,15 +196,25 @@ func handlePostExit(finalModel tea.Model, mgr *tmux.Manager, client *tmuxclient.
 	if hm := nm.History(); hm != nil {
 		if selected := hm.Selected(); selected != nil {
 			_ = mgr.RecordProjectAccess(selected.Path)
-			return mgr.Sessionize(selected.Path)
+			node, err := workspace.GetProjectByPath(selected.Path)
+			if err != nil {
+				return fmt.Errorf("failed to get project info for path %s: %w", selected.Path, err)
+			}
+			return sessionizeProject(&manager.SessionizeProject{WorkspaceNode: node})
 		}
 	}
 
 	// Windows switch.
-	if wm := nm.Windows(); wm != nil && wm.SelectedWindow() != nil && client != nil {
-		target := fmt.Sprintf("%s:%d", wm.SessionName(), wm.SelectedWindow().Index)
-		_ = client.SwitchClient(context.Background(), target)
-		_ = client.ClosePopupCmd().Run()
+	if wm := nm.Windows(); wm != nil && wm.SelectedWindow() != nil {
+		ctx := context.Background()
+		if tuimuxEngine != nil {
+			_ = tuimuxEngine.SwitchSession(ctx, wm.SessionName(), "")
+			_ = tuimuxEngine.ClosePopup(ctx)
+		} else if client != nil {
+			target := fmt.Sprintf("%s:%d", wm.SessionName(), wm.SelectedWindow().Index)
+			_ = client.SwitchClient(ctx, target)
+			_ = client.ClosePopupCmd().Run()
+		}
 	}
 
 	return nil
