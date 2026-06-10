@@ -41,7 +41,7 @@
         },
         "integrations": {
           "type": "boolean",
-          "description": "Enable Grove integrations (Flow plans"
+          "description": "Enable Grove integrations (Flow plans, Notebooks, Context)"
         },
         "worktrees": {
           "type": "boolean",
@@ -70,7 +70,7 @@
         "advanced",
         "grove"
       ],
-      "description": "Mode preset: 'bare' (pure sessionizer)",
+      "description": "Mode preset: 'bare' (pure sessionizer), 'advanced' (groups + worktrees), 'grove' (all features). Defaults to 'grove'.",
       "x-layer": "global",
       "x-priority": "68"
     },
@@ -80,7 +80,7 @@
     },
     "prefix": {
       "type": "string",
-      "description": "Prefix key for nav bindings. Options: '\u003cprefix\u003e' (default)",
+      "description": "Prefix key for nav bindings. Options: '\u003cprefix\u003e' (default), '\u003cprefix\u003e X' (sub-table under prefix), 'C-g' (dedicated root key), or '' (direct root with modifiers).",
       "x-layer": "global",
       "x-priority": "69"
     },

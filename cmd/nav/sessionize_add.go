@@ -18,7 +18,7 @@ var sessionizeAddCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ulogSessionizeAdd.Warn("Deprecated command used").
 			Field("command", "add").
-			Pretty(theme.IconError + " This command is deprecated.\n\nProject discovery is now managed centrally via grove-core's DiscoveryService.\nTo add search paths, edit your global ~/.config/grove/grove.yml file:\n\n  groves:\n    work:\n      path: ~/work\n      enabled: true\n\nSee https://docs.grove.dev for more information.").
+			Pretty(theme.IconError + " This command is deprecated.\n\nProject discovery is now managed centrally via grove-core's DiscoveryService.\nTo add search paths, edit your global ~/.config/grove/grove.yml file:\n\n  groves:\n    work:\n      path: ~/work\n      enabled: true").
 			PrettyOnly().
 			Emit()
 		return fmt.Errorf("command deprecated")
@@ -33,7 +33,7 @@ var sessionizeRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ulogSessionizeAdd.Warn("Deprecated command used").
 			Field("command", "remove").
-			Pretty(theme.IconError + " This command is deprecated.\n\nProject discovery is now managed centrally via grove-core's DiscoveryService.\nTo manage search paths, edit your global ~/.config/grove/grove.yml file:\n\n  groves:\n    work:\n      path: ~/work\n      enabled: true\n\nSee https://docs.grove.dev for more information.").
+			Pretty(theme.IconError + " This command is deprecated.\n\nProject discovery is now managed centrally via grove-core's DiscoveryService.\nTo manage search paths, edit your global ~/.config/grove/grove.yml file:\n\n  groves:\n    work:\n      path: ~/work\n      enabled: true").
 			PrettyOnly().
 			Emit()
 		return fmt.Errorf("command deprecated")

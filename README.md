@@ -10,7 +10,7 @@
 
 *   **Project Sessionizer (`nav sessionize` or `sz`)**: A terminal interface that lists projects discovered via grove `core`. It aggregates metadata including Git status, `nb` note counts, `flow` plan statistics, and `cx` token counts. Supports filtering, ecosystem focusing (`@`), and hierarchical worktree display.
 *   **Key Mapping (`nav key manage` or `km`)**: A terminal interface for assigning single-character hotkeys to specific project paths. These mappings generate global tmux bindings for rapid access.
-*   **Session History (`nav history` or `h`)**: A terminal interface listing accessed project sessions, sorted by recency. The `nav last` (or `l`) command switches to the most recently used session without opening the interface.
+*   **Session History (`nav history` or `h`)**: A terminal interface listing accessed project sessions, sorted by recency. The `nav history last` (or `nav h l`) command switches to the most recently used session without opening the interface.
 *   **Window Management (`nav windows`)**: A terminal interface for identifying and manipulating windows within the current session. Features include filtering by name or process, renaming, closing, and moving windows, with a pane content preview.
 *   **Hotkey Generation**: Generates a tmux configuration file containing `bind-key` commands for mapped projects.
 *   **Session Automation (`nav launch`, `nav wait`)**: Commands to create sessions with specific layouts/panes or block execution until a session closes.
@@ -22,12 +22,12 @@
 
 **Data & Caching**
 *   **Static Configuration**: Reads search paths and settings from `~/.config/grove/grove.yml`.
-*   **Session State**: Key mappings are stored in `~/.local/state/nav/sessions.yml` (platform dependent).
-*   **Cache**: Project metadata (Git status, note counts) is cached in `~/.cache/nav/cache.json` to improve startup performance.
+*   **Session State**: Key mappings are stored in `~/.local/state/grove/nav/sessions.yml` (platform dependent).
+*   **Cache**: Project metadata (Git status, note counts) is cached in `~/.cache/grove/nav/cache.json` to improve startup performance.
 *   **Enrichment**: The sessionizer executes background subprocesses (`git`, `nb`, `cx`, `grove`) to populate status columns asynchronously.
 
 **Tmux Integration**
-*   **Bindings**: `nav` generates `~/.cache/nav/generated-bindings.conf`. Users source this file in `~/.tmux.conf`.
+*   **Bindings**: `nav` generates `~/.cache/grove/nav/generated-bindings.conf`. Users source this file in `~/.tmux.conf`.
 *   **Hooks**: The generated configuration includes a `client-session-changed` hook that executes `nav record-session`, maintaining the access history.
 *   **Execution**: Operations interact with the tmux server via the `tmux` binary. The tool respects the `GROVE_TMUX_SOCKET` environment variable for socket isolation.
 
