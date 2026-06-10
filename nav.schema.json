@@ -93,7 +93,7 @@
         "type": "string"
       },
       "type": "array",
-      "description": "Keys available for tmux pane shortcuts",
+      "description": "Keys available for tmux pane shortcuts. Defaults to a-z excluding 'q' (reserved as nav's table escape key) when unset.",
       "x-important": true,
       "x-layer": "global",
       "x-priority": "70"

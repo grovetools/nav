@@ -106,6 +106,9 @@ func NewManager(configDir string) (*Manager, error) {
 			return nil, fmt.Errorf("failed to parse 'tmux' config section: %w", err)
 		}
 	}
+	// Fall back to the built-in default key set when no config provides one,
+	// so nav is usable out of the box. Explicit configuration always wins.
+	navCfg.ApplyDefaults()
 
 	// Find the primary config file path for saving
 	configPath, err := core_config.FindConfigFile(configDir)

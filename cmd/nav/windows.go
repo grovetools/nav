@@ -42,6 +42,7 @@ func loadTmuxConfig() (*manager.TmuxConfig, error) {
 			return nil, err
 		}
 	}
+	navConfig.ApplyDefaults()
 	return &navConfig, nil
 }
 

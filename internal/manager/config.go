@@ -40,10 +40,30 @@ type TmuxConfig struct {
 	Features           *NavFeatures        `yaml:"features,omitempty" toml:"features,omitempty" jsonschema:"description=Granular feature overrides that take precedence over mode preset"`
 	Prefix             string              `yaml:"prefix,omitempty" toml:"prefix,omitempty" jsonschema:"description=Prefix key for nav bindings. Options: '<prefix>' (default)\\, '<prefix> X' (sub-table under prefix)\\, 'C-g' (dedicated root key)\\, or '' (direct root with modifiers)." jsonschema_extras:"x-layer=global,x-priority=69"`
 	DefaultIcon        string              `yaml:"default_icon,omitempty" toml:"default_icon,omitempty" jsonschema:"description=Icon for the default group. Defaults to home icon."`
-	AvailableKeys      []string            `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts" jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
+	AvailableKeys      []string            `yaml:"available_keys" toml:"available_keys" jsonschema:"description=Keys available for tmux pane shortcuts. Defaults to a-z excluding 'q' (reserved as nav's table escape key) when unset." jsonschema_extras:"x-layer=global,x-priority=70,x-important=true"`
 	ShowChildProcesses bool                `yaml:"show_child_processes,omitempty" toml:"show_child_processes" jsonschema:"description=Show child processes in pane list" jsonschema_extras:"x-layer=global,x-priority=71"`
 	Groups             map[string]GroupRef `yaml:"groups,omitempty" toml:"groups,omitempty" jsonschema:"description=Workspace groups for multiple key prefixes"`
 	ConfirmKeyUpdates  *bool               `yaml:"confirm_key_updates,omitempty" toml:"confirm_key_updates,omitempty" jsonschema:"description=Show confirmation prompts for bulk key update operations (L/U). Defaults to true." jsonschema_extras:"x-layer=global,x-priority=72"`
+}
+
+// DefaultAvailableKeys returns the built-in key set used when the user's
+// config does not define available_keys. It mirrors the a-z set that the
+// `nav sessionize --setup` wizard writes, minus 'q', which nav's generated
+// tmux key table binds as an escape hatch (alongside Escape, C-c, and '?'
+// for help — see core/pkg/tmux/keygen.GenerateEscapeHatches).
+func DefaultAvailableKeys() []string {
+	return []string{
+		"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+		"n", "o", "p", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+	}
+}
+
+// ApplyDefaults fills in built-in defaults for fields the user left unset.
+// An explicitly configured (non-empty) available_keys list always wins.
+func (c *TmuxConfig) ApplyDefaults() {
+	if len(c.AvailableKeys) == 0 {
+		c.AvailableKeys = DefaultAvailableKeys()
+	}
 }
 
 // GroupRef defines a workspace group with its own prefix.
