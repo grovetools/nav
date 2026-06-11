@@ -22,6 +22,8 @@ Each line provides a summary of a project's state:
     ●   another     ~/Personal/another-project
 ```
 
+Worktrees appear regardless of layout. The first row above is a legacy in-repo worktree (under `.grove-worktrees/`); sibling-workspace worktrees instead show a grove data-dir path, e.g. `~/.local/share/grove/worktrees/my-repo-1a2b3c4d/my-feature`.
+
 -   **Hotkey**: The first character (`a`) is the hotkey mapped to this project.
 -   **Session Indicator (`●`)**:
     -   Blue (`●`): The current tmux session.

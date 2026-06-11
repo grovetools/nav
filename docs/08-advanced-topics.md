@@ -173,7 +173,7 @@ To reduce flicker or “flashing,” the model compares old and new data and onl
 ### Project discovery and grouping
 Project discovery runs on each refresh:
 - Search paths are read from configuration; explicit projects are included even if outside search paths.
-- Git worktrees under .grove-worktrees are discovered and grouped under their parent repository.
+- Git worktrees are discovered in both layouts—the legacy in-repo `.grove-worktrees/` directory and the XDG sibling-workspace base under the grove data dir (`~/.local/share/grove/worktrees/`)—and grouped under their parent repository.
 - Default view prioritizes groups with active sessions; parent repositories are always shown, while inactive worktrees are hidden to reduce noise.
 - When the filter is active, all matching projects are shown but sorted with active groups first and by match quality (exact name, prefix, contains, path match).
 

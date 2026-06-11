@@ -29,6 +29,8 @@ Example of a single line in the list (spacing simplified for clarity):
 
   a ● ▶ feat-branch  /home/user/Work/repo/.grove-worktrees/feat-branch  ↑1 M:3 S:1 +10 -4
 
+The path column reflects the worktree's layout. The line above is a legacy in-repo worktree (under `.grove-worktrees/`); a sibling-workspace worktree instead shows a grove data-dir path, e.g. `~/.local/share/grove/worktrees/repo-1a2b3c4d/feat-branch` (honoring `$GROVE_HOME`/`$XDG_DATA_HOME`).
+
 Breakdown of elements:
 
 - Key mapping: the first token (e.g., a) shows the assigned hotkey. If a project has no assigned key, two spaces are reserved to keep alignment.

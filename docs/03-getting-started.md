@@ -54,7 +54,7 @@ explicit_projects: []
 
 Notes
 - gmux expands ~ to your home directory.
-- The sessionizer will also discover Git worktrees under .grove-worktrees directories next to a repository.
+- The sessionizer also discovers Git worktrees in both layouts: the legacy in-repo `.grove-worktrees/` directory next to a repository, and sibling-workspace worktrees under the grove data dir (`~/.local/share/grove/worktrees/`, honoring `$GROVE_HOME`/`$XDG_DATA_HOME`).
 
 2. Tmux Integration
 

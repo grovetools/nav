@@ -46,7 +46,7 @@ The sessionizer discovers projects using `grove-core`'s DiscoveryService:
 1.  Scans all enabled `groves` paths for projects with `grove.yml` files.
 2.  Identifies ecosystems (directories with `grove.yml` containing a `workspaces` key).
 3.  Discovers projects (directories with `grove.yml` but no `workspaces` key).
-4.  For each project, scans for `.grove-worktrees` subdirectories and includes worktrees hierarchically.
+4.  For each project, discovers its Git worktrees in either layout and includes them hierarchically: the legacy in-repo `.grove-worktrees/` subdirectory, and the XDG sibling-workspace base under the grove data dir (`~/.local/share/grove/worktrees/`, honoring `$GROVE_HOME`/`$XDG_DATA_HOME`).
 5.  Includes non-Grove directories (directories with `.git` but no `grove.yml`).
 6.  Adds all enabled `explicit_projects` (useful for including specific directories like dotfiles).
 
