@@ -145,6 +145,7 @@ type Model struct {
 	spinnerFrame int
 
 	enrichmentLoading map[string]bool
+	lastEnrichmentTime time.Time // Track when enrichment was last completed
 
 	rulesState map[string]grovecontext.RuleStatus
 
@@ -628,6 +629,72 @@ func (m *Model) Init() tea.Cmd {
 	}
 
 	anyEnrichmentLoading := m.isLoading
+	for _, loading := range m.enrichmentLoading {
+		if loading {
+			anyEnrichmentLoading = true
+			break
+		}
+	}
+	if anyEnrichmentLoading {
+		cmds = append(cmds, spinnerTickCmd())
+	}
+
+	return tea.Batch(cmds...)
+}
+
+// ReEnrichAll forces complete re-enrichment of all projects, clearing cached data
+// and re-fetching everything. This is called when focus returns to the Sessionize page
+// to ensure stale data doesn't persist. It's exported for use in callbacks.
+func (m *Model) ReEnrichAll() tea.Cmd {
+	return m.reEnrichAll()
+}
+
+// reEnrichAll is the internal implementation.
+func (m *Model) reEnrichAll() tea.Cmd {
+	cmds := []tea.Cmd{}
+
+	// Mark all enrichment data as needing refresh
+	// (by clearing status so it's fetched again)
+	for _, p := range m.projects {
+		if m.showGitStatus || m.showBranch {
+			p.EnrichmentStatus["git"] = ""
+		}
+	}
+
+	// Trigger all applicable enrichments
+	if m.showNoteCounts {
+		m.enrichmentLoading["notes"] = true
+		cmds = append(cmds, fetchAllNoteCountsCmd(m.activeWorkspacePath))
+	}
+	if m.showPlanStats {
+		m.enrichmentLoading["plans"] = true
+		cmds = append(cmds, fetchAllPlanStatsCmd(m.activeWorkspacePath))
+	}
+	if (m.showGitStatus || m.showBranch) && !daemon.NewWithAutoStart().IsRunning() {
+		m.enrichmentLoading["git"] = true
+		cmds = append(cmds, fetchAllGitStatusesCmd(m.projects))
+	}
+	if m.showRelease {
+		m.enrichmentLoading["release"] = true
+		cmds = append(cmds, fetchAllReleaseInfoCmd(m.activeWorkspacePath, m.projects))
+	}
+	if m.showBinary {
+		m.enrichmentLoading["binary"] = true
+		cmds = append(cmds, fetchAllBinaryStatusCmd(m.activeWorkspacePath, m.projects))
+	}
+	if m.showLink {
+		m.enrichmentLoading["link"] = true
+		cmds = append(cmds, fetchAllRemoteURLsCmd(m.activeWorkspacePath, m.projects))
+	}
+	if m.showCx {
+		m.enrichmentLoading["cxstats"] = true
+		cmds = append(cmds, fetchCxPerLineStatsCmd(m.activeWorkspacePath, m.projects))
+	}
+
+	// Record when enrichment started
+	m.lastEnrichmentTime = time.Now()
+
+	anyEnrichmentLoading := false
 	for _, loading := range m.enrichmentLoading {
 		if loading {
 			anyEnrichmentLoading = true

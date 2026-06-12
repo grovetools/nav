@@ -98,6 +98,12 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 		NewKeymanage:  newKeymanageFactory(mgr, client, tuimuxEngine, cwd),
 		NewHistory:    newHistoryFactory(mgr),
 		NewGroups:     newGroupsFactory(mgr),
+		OnReenterSessionize: func() tea.Cmd {
+			if sm := model.Sessionize(); sm != nil {
+				return sm.ReEnrichAll()
+			}
+			return nil
+		},
 		OnReenterKeymanage: func() {
 			if km := model.Keymanage(); km != nil {
 				km.RefreshAfterGroupSwitch()

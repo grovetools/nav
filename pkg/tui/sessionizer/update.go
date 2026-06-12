@@ -480,6 +480,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Track if we're starting any enrichment
 		startedEnrichment := false
 
+		// TTL-based re-enrichment: if cached data is older than ~60 seconds, force a full refresh.
+		// This ensures that even if the user isn't manually refreshing, stale data gets replaced.
+		const enrichmentTTL = 60 * time.Second
+		if !m.lastEnrichmentTime.IsZero() && time.Since(m.lastEnrichmentTime) > enrichmentTTL {
+			// Trigger a full re-enrichment (this will clear all cached data and re-fetch)
+			cmds = append(cmds, m.reEnrichAll())
+			return m, tea.Batch(cmds...)
+		}
+
 		// Only refresh fast/dynamic data on tick.
 		// Expensive/static data (release, binary, link, cxstats) only refresh on toggle or manual refresh.
 		// Skip enrichment fetches if daemon is streaming updates (it pushes all enrichment data)
@@ -781,7 +790,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(msg, m.keys.RefreshProjects):
 			m.isLoading = true
-			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.activeWorkspacePath, m.cfg.LoadProjects))
+			// After reloading projects, also re-enrich all data to ensure freshness
+			return m, tea.Batch(spinnerTickCmd(), fetchProjectsCmd(m.activeWorkspacePath, m.cfg.LoadProjects), m.reEnrichAll())
 
 		case key.Matches(msg, m.keys.ClearFocus):
 			m.saveJumpState()
