@@ -284,7 +284,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 		case workspace.KindEcosystemRoot:
 			icon = core_theme.IconEcosystem
 		case workspace.KindEcosystemWorktree:
-			icon = core_theme.IconWorktree // Use IconWorktree as IconEcosystemWorktree is not in core
+			icon = core_theme.IconEcosystemWorktree
 		case workspace.KindStandaloneProjectWorktree,
 			workspace.KindEcosystemSubProjectWorktree,
 			workspace.KindEcosystemWorktreeSubProjectWorktree:
@@ -358,12 +358,12 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 		}
 	}
 
-	// Anchor marker: prepend bold-arrow icon when this child is the anchor of its
-	// ecosystem worktree container (identified by name == base of container owner path).
+	// Anchor marker: prepend the ecosystem-worktree icon when this child is the anchor
+	// of its ecosystem worktree container (identified by name == base of container owner path).
 	parentProj := m.projectMap[project.GetHierarchicalParent()]
 	if parentProj != nil && parentProj.ParentProjectPath != "" &&
 		project.Name == filepath.Base(parentProj.ParentProjectPath) {
-		nameStyled = core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold+" ") + nameStyled
+		nameStyled = core_theme.DefaultTheme.Highlight.Render(core_theme.IconEcosystemWorktree+" ") + nameStyled
 	}
 
 	// Add fold indicator if this node has children and is currently folded

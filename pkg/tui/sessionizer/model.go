@@ -327,7 +327,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 	helpModel := help.NewBuilder().
 		WithKeys(cfg.KeyMap).
 		WithTitle("Project Sessionizer - Help").
-		WithLegend("Icons: " + core_theme.IconBullet + " current • " + core_theme.IconBullet + " active • " + core_theme.IconEcosystem + " ecosystem • " + core_theme.IconRepo + " repo • " + core_theme.IconWorktree + " worktree • " + core_theme.IconGitBranch + " branch").
+		WithLegend("Icons: " + core_theme.IconBullet + " current • " + core_theme.IconBullet + " active • " + core_theme.IconEcosystem + " ecosystem • " + core_theme.IconEcosystemWorktree + " ecosystem worktree • " + core_theme.IconRepo + " repo • " + core_theme.IconWorktree + " worktree • " + core_theme.IconGitBranch + " branch").
 		Build()
 
 	projectMap := make(map[string]*api.Project, len(projects))
