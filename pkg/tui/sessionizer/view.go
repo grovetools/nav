@@ -433,9 +433,11 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 	branch := "-"
 	gitStatus := "-"
 	changes := "-"
-	// Mute behind counts for children of an ecosystem worktree while scaffold-folded
-	// (all children share the same behind baseline — showing it per-child is noise).
-	muteBehind := m.scaffoldFolded && parentProj != nil && parentProj.Kind == workspace.KindEcosystemWorktree
+	// Mute behind counts for children of an ecosystem worktree while its scaffold
+	// summary is folded (all children share the same behind baseline — showing it
+	// per-child is noise). Keys on the parent container's vim-fold state, the
+	// single source of truth for the scaffold fold.
+	muteBehind := parentProj != nil && parentProj.Kind == workspace.KindEcosystemWorktree && m.foldedPaths[parentProj.Path]
 	if m.showBranch || m.showGitStatus {
 		if project.EnrichmentStatus["git"] == "loading" {
 			// Keep default dashes while loading to reduce visual noise

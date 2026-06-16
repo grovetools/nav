@@ -43,7 +43,7 @@ func TestUpdateFiltered_ScaffoldFold(t *testing.T) {
 	container := makeProject(containerPath, "feature", workspace.KindEcosystemWorktree, ecoPath, ecoFlowPath, nil)
 	// Anchor child: clean, but must never fold
 	anchor := makeProject(anchorPath, "flow", workspace.KindEcosystemWorktreeSubProject, containerPath, "", nil)
-	// Clean sibling: no active changes → should be hidden when scaffoldFolded
+	// Clean sibling: no active changes → should be hidden when the container is folded
 	clean := makeProject(cleanPath, "core", workspace.KindEcosystemWorktreeSubProject, containerPath, "", nil)
 	// Dirty sibling: active → must be visible
 	dirty := makeProject(dirtyPath, "nav", workspace.KindEcosystemWorktreeSubProject, containerPath, "",
@@ -58,11 +58,12 @@ func TestUpdateFiltered_ScaffoldFold(t *testing.T) {
 
 	ti := textinput.New()
 	m := &Model{
-		projects:         projects,
-		projectMap:       projectMap,
-		filterInput:      ti,
-		scaffoldFolded:   true,
-		foldedPaths:      make(map[string]bool),
+		projects:    projects,
+		projectMap:  projectMap,
+		filterInput: ti,
+		// Folded container → scaffold SUMMARY (clean child hidden). foldedPaths is
+		// the single source of truth for the scaffold fold.
+		foldedPaths:      map[string]bool{containerPath: true},
 		hasChildren:      make(map[string]bool),
 		contextOnlyPaths: make(map[string]bool),
 		keyMap:           make(map[string]string),
@@ -102,12 +103,12 @@ func TestUpdateFiltered_ScaffoldFold(t *testing.T) {
 		t.Error("dirty child should be visible")
 	}
 	if filtered[cleanPath] {
-		t.Error("clean non-anchor child should be hidden when scaffoldFolded=true")
+		t.Error("clean non-anchor child should be hidden when container is folded")
 	}
 }
 
 // TestUpdateFiltered_ScaffoldUnfold verifies that all children are visible when
-// scaffoldFolded is false.
+// the container is unfolded (absent from foldedPaths).
 func TestUpdateFiltered_ScaffoldUnfold(t *testing.T) {
 	const (
 		ecoPath       = "/eco"
@@ -133,10 +134,10 @@ func TestUpdateFiltered_ScaffoldUnfold(t *testing.T) {
 
 	ti := textinput.New()
 	m := &Model{
-		projects:         projects,
-		projectMap:       projectMap,
-		filterInput:      ti,
-		scaffoldFolded:   false,
+		projects:    projects,
+		projectMap:  projectMap,
+		filterInput: ti,
+		// Container absent from foldedPaths → UNFOLDED → full repo list.
 		foldedPaths:      make(map[string]bool),
 		hasChildren:      make(map[string]bool),
 		contextOnlyPaths: make(map[string]bool),
@@ -148,7 +149,7 @@ func TestUpdateFiltered_ScaffoldUnfold(t *testing.T) {
 
 	// All 4 should appear
 	if got := len(m.filtered); got != 4 {
-		t.Errorf("filtered length = %d, want 4 (scaffoldFolded=false shows all)", got)
+		t.Errorf("filtered length = %d, want 4 (unfolded container shows all)", got)
 	}
 	if container.HiddenCleanCount != 0 {
 		t.Errorf("container.HiddenCleanCount = %d, want 0 when not folding", container.HiddenCleanCount)

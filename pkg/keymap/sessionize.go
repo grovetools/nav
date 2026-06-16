@@ -215,7 +215,7 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		),
 		ToggleScaffold: key.NewBinding(
 			key.WithKeys("A"),
-			key.WithHelp("A", "toggle active-only fold"),
+			key.WithHelp("A", "all anchor groups: summary/full"),
 		),
 		NextGroup: key.NewBinding(
 			key.WithKeys("tab"),

@@ -116,7 +116,6 @@ type Model struct {
 	ecosystemPickerMode bool
 	focusedProject      *api.Project
 	worktreesFolded     bool
-	scaffoldFolded      bool
 	foldedPaths         map[string]bool
 	hasChildren         map[string]bool
 	sequence            *keymap.SequenceState
@@ -424,6 +423,18 @@ func New(cfg Config, projects []*api.Project) *Model {
 		}
 	}
 
+	// Default fold state: anchor groups (ecosystem worktree containers) start
+	// FOLDED so the default view is the clean scaffold summary (anchor child +
+	// active children + [+N clean] badge). foldedPaths is the single source of
+	// truth for the scaffold fold (replacing the old standalone scaffoldFolded
+	// global, which likewise defaulted to summary and never persisted). Per-group
+	// zo/za and the bulk `A` toggle operate on this same map at runtime.
+	for _, p := range projects {
+		if p.Kind == workspace.KindEcosystemWorktree {
+			foldedPaths[p.Path] = true
+		}
+	}
+
 	// Host opt-out wins over persisted state: embedders that set
 	// DisableCx in Config never get the cx rules pipeline, no matter
 	// what the user's nav state file says.
@@ -449,7 +460,6 @@ func New(cfg Config, projects []*api.Project) *Model {
 		sessions:        sessions,
 		help:            helpModel,
 		worktreesFolded: worktreesFolded,
-		scaffoldFolded:  true,
 		showGitStatus:   showGitStatus,
 		showBranch:      showBranch,
 		showNoteCounts:  showNoteCounts,

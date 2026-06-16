@@ -1264,7 +1264,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
 		case key.Matches(msg, m.keys.ToggleScaffold):
-			m.scaffoldFolded = !m.scaffoldFolded
+			// Bulk-toggle ALL anchor groups (ecosystem worktree containers) between
+			// summary (folded) and full (unfolded) — a scoped zM/zR over foldedPaths,
+			// keeping foldedPaths as the single source of truth. If any anchor group
+			// is currently unfolded, fold them all (collapse to summary); otherwise
+			// unfold them all (expand to full repo list).
+			anyUnfolded := false
+			for _, p := range m.filtered {
+				if p.Kind == workspace.KindEcosystemWorktree && !m.foldedPaths[p.Path] {
+					anyUnfolded = true
+					break
+				}
+			}
+			for _, p := range m.filtered {
+				if p.Kind != workspace.KindEcosystemWorktree {
+					continue
+				}
+				if anyUnfolded {
+					m.foldedPaths[p.Path] = true
+				} else {
+					delete(m.foldedPaths, p.Path)
+				}
+			}
+			_ = m.buildState().Save(m.configDir)
 			m.updateFiltered()
 			m.cursor = 0
 			m.moveCursorToFirstSelectable()
@@ -2181,7 +2203,15 @@ func (m *Model) updateFiltered() {
 		// For ecosystem worktree containers: aggregate child git stats and partition
 		// visible vs hidden children (scaffold fold). Must run BEFORE the early
 		// return below so collapsed containers still show fresh [+N clean]/⇡⇣.
-		if p.Kind == workspace.KindEcosystemWorktree {
+		//
+		// The scaffold fold now keys on the container's own vim-fold state
+		// (foldedPaths) — the single source of truth. A FOLDED ecosystem worktree
+		// renders the SUMMARY (anchor child + active children + [+N clean] badge);
+		// an UNFOLDED one renders the FULL repo list. This replaces the old
+		// standalone scaffoldFolded global.
+		isEcoWT := p.Kind == workspace.KindEcosystemWorktree
+		scaffoldFolded := isEcoWT && filter == "" && m.foldedPaths[p.Path]
+		if isEcoWT {
 			var visibleChildren []*api.Project
 			for _, c := range children {
 				git := c.GetGitStatus()
@@ -2197,7 +2227,7 @@ func (m *Model) updateFiltered() {
 						p.AggregateBehind = behind
 					}
 				}
-				if m.scaffoldFolded && !isActive && !isAnchor {
+				if scaffoldFolded && !isActive && !isAnchor {
 					p.HiddenCleanCount++
 				} else {
 					visibleChildren = append(visibleChildren, c)
@@ -2206,8 +2236,11 @@ func (m *Model) updateFiltered() {
 			children = visibleChildren
 		}
 
-		// Check for active folding (ignored if actively text searching)
-		if filter == "" && m.foldedPaths[p.Path] && m.hasChildren[p.Path] {
+		// Check for active folding (ignored if actively text searching).
+		// For an ecosystem worktree, "folded" means SUMMARY (handled by the
+		// partition above) rather than collapsed-empty, so we never early-return
+		// for it. Every other node keeps the classic folded == collapsed semantics.
+		if filter == "" && !isEcoWT && m.foldedPaths[p.Path] && m.hasChildren[p.Path] {
 			return
 		}
 

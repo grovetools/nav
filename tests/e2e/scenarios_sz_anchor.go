@@ -19,13 +19,18 @@ import (
 //   - An ecosystem worktree container (Kind == KindEcosystemWorktree) whose
 //     ParentProjectPath points at a sub-repo nests UNDER that sub-repo in the
 //     sessionize tree (GetHierarchicalParent returns the owner).
-//   - scaffoldFolded defaults true: under the container, only ACTIVE children
-//     show (git IsDirty || UntrackedCount>0 || AheadCount>0 || AheadMainCount>0);
-//     clean/behind-only siblings collapse behind a "[+N clean]" badge on the
-//     container row.
+//   - The scaffold fold reuses the vim-fold system (foldedPaths) — the single
+//     source of truth. Anchor groups (Kind == KindEcosystemWorktree) START
+//     FOLDED by default (seeded in NewModel), so the default view is the clean
+//     SUMMARY: under the container, only ACTIVE children show (git IsDirty ||
+//     UntrackedCount>0 || AheadCount>0 || AheadMainCount>0); clean/behind-only
+//     siblings collapse behind a "[+N clean]" badge on the container row.
 //   - The ANCHOR child (child.Name == filepath.Base(container.ParentProjectPath))
 //     never folds and carries the IconArrowRightBold marker ("=>" in ASCII mode).
-//   - Key "A" toggles scaffoldFolded.
+//   - Per-group "zo" (FoldOpen) on the container reveals the FULL repo list
+//     (the clean scaffold child appears).
+//   - Key "A" bulk-toggles ALL anchor groups between summary (folded) and full
+//     (unfolded), operating on the same foldedPaths map.
 //
 // Discovery strategy: rather than depend on grove's disk-scan classifier
 // producing exactly the right WorkspaceKind / ParentProjectPath wiring from an
@@ -250,9 +255,9 @@ func NavSzAnchorScaffoldFoldScenario() *harness.Scenario {
 				if err != nil {
 					return fmt.Errorf("capture folded screen: %w", err)
 				}
-				ctx.ShowCommandOutput("Folded (default scaffoldFolded=true)", folded, "")
+				ctx.ShowCommandOutput("Folded (default: anchor group seeded folded)", folded, "")
 
-				// Assert the folded state.
+				// (a) Assert the DEFAULT folded (summary) state.
 				if verr := ctx.Verify(func(v *verify.Collector) {
 					// Hierarchy + active children visible.
 					v.Contains("anchor repo 'flow' present", folded, "flow")
@@ -268,37 +273,88 @@ func NavSzAnchorScaffoldFoldScenario() *harness.Scenario {
 					return verr
 				}
 
-				// Toggle the fold off with 'A' and confirm the clean child appears.
-				if err := session.SendKeys("A"); err != nil {
-					return fmt.Errorf("send 'A' toggle: %w", err)
+				// (b) Per-group FoldOpen: move the cursor onto the 'feature'
+				// container row, then press 'zo'. The default tree (folded) is
+				// eco(0) -> flow anchor-repo(1) -> feature container(2), so two
+				// 'j' presses land on the container.
+				if err := session.SendKeys("j"); err != nil {
+					return fmt.Errorf("send 'j': %w", err)
+				}
+				time.Sleep(300 * time.Millisecond)
+				if err := session.SendKeys("j"); err != nil {
+					return fmt.Errorf("send 'j': %w", err)
+				}
+				time.Sleep(300 * time.Millisecond)
+				if err := session.SendKeys("zo"); err != nil {
+					return fmt.Errorf("send 'zo' fold-open: %w", err)
 				}
 				time.Sleep(1500 * time.Millisecond)
 				if err := session.WaitStable(); err != nil {
-					return fmt.Errorf("TUI did not stabilize after toggle: %w", err)
+					return fmt.Errorf("TUI did not stabilize after zo: %w", err)
 				}
 
-				unfolded, err := session.Capture()
+				perGroupOpen, err := session.Capture()
 				if err != nil {
-					return fmt.Errorf("capture unfolded screen: %w", err)
+					return fmt.Errorf("capture per-group unfold screen: %w", err)
 				}
-				ctx.ShowCommandOutput("Unfolded (after 'A')", unfolded, "")
+				ctx.ShowCommandOutput("Per-group unfold (after 'zo' on container)", perGroupOpen, "")
+
+				if verr := ctx.Verify(func(v *verify.Collector) {
+					// FoldOpen on the container reveals the FULL repo list — the
+					// previously hidden clean scaffold child now shows. Load-bearing
+					// proof that per-group vim-fold drives the scaffold view.
+					v.Contains("clean scaffold child 'core' visible after zo", perGroupOpen, "core")
+					// Badge gone once nothing is hidden under the (now unfolded) group.
+					v.NotContains("fold badge removed after zo", perGroupOpen, "[+1 clean]")
+					// Anchor still present.
+					v.Contains("anchor repo 'flow' still present", perGroupOpen, "flow")
+				}); verr != nil {
+					return verr
+				}
+
+				// (c) Bulk toggle with 'A': with the group unfolded, 'A' folds ALL
+				// anchor groups back to summary (clean child hidden, badge returns).
+				if err := session.SendKeys("A"); err != nil {
+					return fmt.Errorf("send 'A' bulk-fold: %w", err)
+				}
+				time.Sleep(1500 * time.Millisecond)
+				if err := session.WaitStable(); err != nil {
+					return fmt.Errorf("TUI did not stabilize after first 'A': %w", err)
+				}
+				bulkFolded, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("capture bulk-folded screen: %w", err)
+				}
+				ctx.ShowCommandOutput("Bulk-folded (after 'A')", bulkFolded, "")
+				if verr := ctx.Verify(func(v *verify.Collector) {
+					v.NotContains("clean scaffold child 'core' hidden after bulk-fold", bulkFolded, "core")
+					v.Contains("fold badge back after bulk-fold", bulkFolded, "[+1 clean]")
+				}); verr != nil {
+					return verr
+				}
+
+				// 'A' again: bulk-unfold ALL anchor groups back to the full list.
+				if err := session.SendKeys("A"); err != nil {
+					return fmt.Errorf("send 'A' bulk-unfold: %w", err)
+				}
+				time.Sleep(1500 * time.Millisecond)
+				if err := session.WaitStable(); err != nil {
+					return fmt.Errorf("TUI did not stabilize after second 'A': %w", err)
+				}
+				bulkUnfolded, err := session.Capture()
+				if err != nil {
+					return fmt.Errorf("capture bulk-unfolded screen: %w", err)
+				}
+				ctx.ShowCommandOutput("Bulk-unfolded (after second 'A')", bulkUnfolded, "")
 
 				_ = paths // fixture path map retained for diagnostics/future assertions
 
 				return ctx.Verify(func(v *verify.Collector) {
-					// Previously hidden clean scaffold child now visible — this is
-					// the load-bearing proof that the 'A' toggle turned the fold off.
-					v.Contains("clean scaffold child 'core' visible after unfold", unfolded, "core")
-					// Badge gone once nothing is hidden.
-					v.NotContains("fold badge removed after unfold", unfolded, "[+1 clean]")
-					// Anchor still present.
-					v.Contains("anchor repo 'flow' still present", unfolded, "flow")
-					// NOTE: we intentionally do not re-assert the dirty 'nav' row here.
-					// Unfolding adds a row, and with the test pane height the bottom
-					// child can scroll just past the viewport. The dirty child's
-					// visibility is already proven by the folded-state assertion
-					// ("active child 'nav' visible"); the unique unfold signal is
-					// the clean 'core' child appearing, asserted above.
+					// Bulk-unfold reveals the clean scaffold child again across all
+					// anchor groups via the shared foldedPaths map.
+					v.Contains("clean scaffold child 'core' visible after bulk-unfold", bulkUnfolded, "core")
+					v.NotContains("fold badge removed after bulk-unfold", bulkUnfolded, "[+1 clean]")
+					v.Contains("anchor repo 'flow' still present", bulkUnfolded, "flow")
 				})
 			}),
 		},
