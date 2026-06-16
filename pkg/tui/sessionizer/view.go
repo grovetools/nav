@@ -358,12 +358,12 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 		}
 	}
 
-	// Anchor marker: prepend the ecosystem-worktree icon when this child is the anchor
-	// of its ecosystem worktree container (identified by name == base of container owner path).
+	// Anchor marker: prepend the anchor icon when this child is the anchor of its
+	// ecosystem worktree container (identified by name == base of container owner path).
 	parentProj := m.projectMap[project.GetHierarchicalParent()]
 	if parentProj != nil && parentProj.ParentProjectPath != "" &&
 		project.Name == filepath.Base(parentProj.ParentProjectPath) {
-		nameStyled = core_theme.DefaultTheme.Highlight.Render(core_theme.IconEcosystemWorktree+" ") + nameStyled
+		nameStyled = core_theme.DefaultTheme.Highlight.Render(core_theme.IconAnchor+" ") + nameStyled
 	}
 
 	// Add fold indicator if this node has children and is currently folded
