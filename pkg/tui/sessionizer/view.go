@@ -358,6 +358,14 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 		}
 	}
 
+	// Anchor marker: prepend bold-arrow icon when this child is the anchor of its
+	// ecosystem worktree container (identified by name == base of container owner path).
+	parentProj := m.projectMap[project.GetHierarchicalParent()]
+	if parentProj != nil && parentProj.ParentProjectPath != "" &&
+		project.Name == filepath.Base(parentProj.ParentProjectPath) {
+		nameStyled = core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold+" ") + nameStyled
+	}
+
 	// Add fold indicator if this node has children and is currently folded
 	foldIndicator := ""
 	if m.hasChildren[project.Path] && m.foldedPaths[project.Path] {
@@ -370,6 +378,10 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 	}
 
 	workspaceName = prefix + selectionIndicator + iconStyled + nameStyled + foldIndicator
+
+	if project.HiddenCleanCount > 0 {
+		workspaceName += core_theme.DefaultTheme.Muted.Render(fmt.Sprintf(" [+%d clean]", project.HiddenCleanCount))
+	}
 
 	// --- KEY ---
 	keyMapping := ""
@@ -421,6 +433,9 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 	branch := "-"
 	gitStatus := "-"
 	changes := "-"
+	// Mute behind counts for children of an ecosystem worktree while scaffold-folded
+	// (all children share the same behind baseline — showing it per-child is noise).
+	muteBehind := m.scaffoldFolded && parentProj != nil && parentProj.Kind == workspace.KindEcosystemWorktree
 	if m.showBranch || m.showGitStatus {
 		if project.EnrichmentStatus["git"] == "loading" {
 			// Keep default dashes while loading to reduce visual noise
@@ -450,7 +465,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 						if status.AheadMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 						}
-						if status.BehindMainCount > 0 {
+						if !muteBehind && status.BehindMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 						}
 					} else if status.HasUpstream {
@@ -458,7 +473,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 						if status.AheadCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 						}
-						if status.BehindCount > 0 {
+						if !muteBehind && status.BehindCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 						}
 					} else if hasMainDivergence && isMainBranch {
@@ -466,7 +481,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 						if status.AheadMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 						}
-						if status.BehindMainCount > 0 {
+						if !muteBehind && status.BehindMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 						}
 					}
@@ -475,6 +490,27 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 						gitStatus = strings.Join(statusParts, " ")
 					} else if !status.IsDirty {
 						gitStatus = core_theme.DefaultTheme.Success.Render(core_theme.IconSuccess)
+					}
+
+					// Append aggregate ahead/behind for ecosystem worktree containers.
+					// Placed outside HasUpstream/isMainBranch branches so it always renders.
+					if project.AggregateAhead > 0 || project.AggregateBehind > 0 {
+						if project.AggregateAhead > 0 {
+							aggAhead := core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", project.AggregateAhead))
+							if gitStatus == "-" {
+								gitStatus = aggAhead
+							} else {
+								gitStatus += " " + aggAhead
+							}
+						}
+						if project.AggregateBehind > 0 {
+							aggBehind := core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", project.AggregateBehind))
+							if gitStatus == "-" {
+								gitStatus = aggBehind
+							} else {
+								gitStatus += " " + aggBehind
+							}
+						}
 					}
 				}
 

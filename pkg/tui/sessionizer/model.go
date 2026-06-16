@@ -116,6 +116,7 @@ type Model struct {
 	ecosystemPickerMode bool
 	focusedProject      *api.Project
 	worktreesFolded     bool
+	scaffoldFolded      bool
 	foldedPaths         map[string]bool
 	hasChildren         map[string]bool
 	sequence            *keymap.SequenceState
@@ -144,7 +145,7 @@ type Model struct {
 	usedCache    bool
 	spinnerFrame int
 
-	enrichmentLoading map[string]bool
+	enrichmentLoading  map[string]bool
 	lastEnrichmentTime time.Time // Track when enrichment was last completed
 
 	rulesState map[string]grovecontext.RuleStatus
@@ -448,6 +449,7 @@ func New(cfg Config, projects []*api.Project) *Model {
 		sessions:        sessions,
 		help:            helpModel,
 		worktreesFolded: worktreesFolded,
+		scaffoldFolded:  true,
 		showGitStatus:   showGitStatus,
 		showBranch:      showBranch,
 		showNoteCounts:  showNoteCounts,

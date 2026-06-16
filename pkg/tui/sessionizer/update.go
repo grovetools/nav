@@ -1263,6 +1263,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			return m, tea.Batch(m.enrichVisibleProjects(), updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()))
 
+		case key.Matches(msg, m.keys.ToggleScaffold):
+			m.scaffoldFolded = !m.scaffoldFolded
+			m.updateFiltered()
+			m.cursor = 0
+			m.moveCursorToFirstSelectable()
+			return m, nil
+
 		case key.Matches(msg, m.keys.EditKey):
 			// Map selected project(s) to available keys in current group
 			if len(m.selectedPaths) > 0 {
@@ -2163,12 +2170,46 @@ func (m *Model) updateFiltered() {
 	flatten = func(p *api.Project) {
 		m.filtered = append(m.filtered, p)
 
+		// Reset transient display fields — Projects are shared pointers mutated by
+		// SSE deltas; stale values survive across updateFiltered calls otherwise.
+		p.HiddenCleanCount = 0
+		p.AggregateAhead = 0
+		p.AggregateBehind = 0
+
+		children := childrenByParent[p.Path]
+
+		// For ecosystem worktree containers: aggregate child git stats and partition
+		// visible vs hidden children (scaffold fold). Must run BEFORE the early
+		// return below so collapsed containers still show fresh [+N clean]/⇡⇣.
+		if p.Kind == workspace.KindEcosystemWorktree {
+			var visibleChildren []*api.Project
+			for _, c := range children {
+				git := c.GetGitStatus()
+				isActive := git != nil && (git.IsDirty || git.UntrackedCount > 0 || git.AheadCount > 0 || git.AheadMainCount > 0)
+				isAnchor := p.ParentProjectPath != "" && c.Name == filepath.Base(p.ParentProjectPath)
+				if git != nil {
+					p.AggregateAhead += git.AheadCount + git.AheadMainCount
+					behind := git.BehindCount
+					if git.BehindMainCount > behind {
+						behind = git.BehindMainCount
+					}
+					if behind > p.AggregateBehind {
+						p.AggregateBehind = behind
+					}
+				}
+				if m.scaffoldFolded && !isActive && !isAnchor {
+					p.HiddenCleanCount++
+				} else {
+					visibleChildren = append(visibleChildren, c)
+				}
+			}
+			children = visibleChildren
+		}
+
 		// Check for active folding (ignored if actively text searching)
 		if filter == "" && m.foldedPaths[p.Path] && m.hasChildren[p.Path] {
 			return
 		}
-
-		children := childrenByParent[p.Path]
 
 		sort.Slice(children, func(i, j int) bool {
 			iIsEcoWT := children[i].Kind == workspace.KindEcosystemWorktree

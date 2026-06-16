@@ -19,6 +19,7 @@ type SessionizeKeyMap struct {
 	FocusEcosystemCwd    key.Binding
 	ClearFocus           key.Binding
 	ToggleWorktrees      key.Binding
+	ToggleScaffold       key.Binding
 	NextGroup            key.Binding
 	PrevGroup            key.Binding
 	FilterGroup          key.Binding
@@ -81,6 +82,7 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.FocusEcosystem,
 			k.ClearFocus,
 			k.ToggleWorktrees,
+			k.ToggleScaffold,
 			k.FilterDirty,
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Groups")),
 			k.NextGroup,
@@ -135,6 +137,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.GoToMappingCwd,
 			k.ClearFocus,
 			k.ToggleWorktrees,
+			k.ToggleScaffold,
 			k.FilterDirty,
 			k.ToggleHotContext,
 		),
@@ -209,6 +212,10 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		ToggleWorktrees: key.NewBinding(
 			key.WithKeys("w"),
 			key.WithHelp("w", "toggle worktrees"),
+		),
+		ToggleScaffold: key.NewBinding(
+			key.WithKeys("A"),
+			key.WithHelp("A", "toggle active-only fold"),
 		),
 		NextGroup: key.NewBinding(
 			key.WithKeys("tab"),

@@ -33,6 +33,11 @@ type Project struct {
 
 	// ContextStatus holds the rule status (H, C, X) for the project.
 	ContextStatus string `json:"context_status,omitempty"`
+
+	// Transient display fields computed by updateFiltered; not persisted.
+	HiddenCleanCount int `json:"-"`
+	AggregateAhead   int `json:"-"`
+	AggregateBehind  int `json:"-"`
 }
 
 // GetGitStatus returns the git status as *git.StatusInfo for backward compatibility.
