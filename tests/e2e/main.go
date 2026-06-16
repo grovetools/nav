@@ -33,6 +33,9 @@ func main() {
 		NavSzColsCombinedViewScenario(),
 		NavSzColsFilterHidesCxScenario(),
 
+		// Anchor-nesting + scaffold-fold + anchor-marker test
+		NavSzAnchorScaffoldFoldScenario(),
+
 		// Delta-aware workspace update tests
 		NavDeltaUpdatesGitScenario(),
 		NavDeltaUpdatesNotesScenario(),

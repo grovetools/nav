@@ -29,10 +29,25 @@ type mockDaemon struct {
 	clients []chan string // SSE client channels
 }
 
+// startMockDaemonWithJSON creates a mock daemon that serves the supplied raw
+// JSON array verbatim from /api/workspaces. Use this when the test needs full
+// control over workspace kinds, hierarchy, and per-workspace enrichment (e.g.
+// the anchor/scaffold-fold scenario) rather than the simple standalone list
+// produced by buildWorkspacesJSON.
+func startMockDaemonWithJSON(runtimeDir string, workspacesJSON []byte) (*mockDaemon, error) {
+	return startMockDaemonRaw(runtimeDir, workspacesJSON)
+}
+
 // startMockDaemon creates a mock daemon listening on the grove socket path
 // derived from the harness runtime directory. projectPaths are returned by /api/workspaces
 // so the TUI discovers the test projects.
 func startMockDaemon(runtimeDir string, projectPaths []string) (*mockDaemon, error) {
+	return startMockDaemonRaw(runtimeDir, buildWorkspacesJSON(projectPaths))
+}
+
+// startMockDaemonRaw is the shared implementation: it binds the grove socket and
+// serves the given workspaces JSON.
+func startMockDaemonRaw(runtimeDir string, workspacesJSON []byte) (*mockDaemon, error) {
 	// The daemon client looks for the socket at $XDG_RUNTIME_DIR/grove/groved.sock
 	groveDir := filepath.Join(runtimeDir, "grove")
 	if err := os.MkdirAll(groveDir, 0o755); err != nil {
@@ -47,9 +62,6 @@ func startMockDaemon(runtimeDir string, projectPaths []string) (*mockDaemon, err
 	if err != nil {
 		return nil, fmt.Errorf("listening on unix socket: %w", err)
 	}
-
-	// Build workspace JSON for /api/workspaces
-	workspacesJSON := buildWorkspacesJSON(projectPaths)
 
 	md := &mockDaemon{
 		listener:   listener,

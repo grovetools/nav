@@ -1,0 +1,13 @@
+# Sessionize anchor-nesting + scaffold-fold + anchor-marker rules
+# Scopes the sessionizer source that nests an ecosystem worktree container
+# under its owning sub-repo (anchor), folds clean/scaffold children behind a
+# "[+N clean]" badge while always showing active + anchor children, and renders
+# the anchor marker. Changes here should trigger the
+# nav-sz-anchor-scaffold-fold E2E scenario.
+
+pkg/tui/sessionizer/update.go
+pkg/tui/sessionizer/view.go
+pkg/tui/sessionizer/model.go
+pkg/keymap/sessionize.go
+pkg/api/project.go
+tests/e2e/scenarios_sz_anchor.go

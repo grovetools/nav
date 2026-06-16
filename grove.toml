@@ -9,6 +9,11 @@ path = "./bin/nav"
 [context]
 default_rules = "dev-no-tests"
 
+[[test_scopes]]
+name = "sessionize-anchor-fold"
+rules = ".cx/sessionize-anchor-fold.rules"
+scenarios = ["nav-sz-anchor-scaffold-fold"]
+
 [[hooks.on_stop]]
 name = "Auto-format"
 command = "make fmt; CODE=$?; grove internal task-report . fmt $CODE; exit $CODE"
