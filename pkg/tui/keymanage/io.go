@@ -100,14 +100,14 @@ func clearHighlightCmd() tea.Cmd {
 }
 
 // enrichInitialProjectsCmd turns each mapped session's path into a
-// fully-populated *api.Project via workspace.GetProjectByPath, preserving
-// any cached entries. Mirrors the sessionizer helper of the same name.
+// fully-populated *api.Project via workspace.GetProjectByPath. Always
+// re-resolves from disk to avoid stale cache data (e.g. wrong Kind or
+// Name for anchored/XDG worktrees whose lookup logic evolved). Cached
+// entries are used only as a seed for enrichment fields (GitStatus,
+// NoteCounts, etc.) that are expensive to re-fetch.
 func enrichInitialProjectsCmd(sessions []models.TmuxSession, cached map[string]*api.Project) tea.Cmd {
 	return func() tea.Msg {
 		enriched := make(map[string]*api.Project)
-		for path, proj := range cached {
-			enriched[path] = proj
-		}
 
 		for _, s := range sessions {
 			if s.Path == "" {
@@ -118,10 +118,20 @@ func enrichInitialProjectsCmd(sessions []models.TmuxSession, cached map[string]*
 				continue
 			}
 			cleanPath = filepath.Clean(cleanPath)
-			if _, exists := enriched[cleanPath]; !exists {
-				if node, err := workspace.GetProjectByPath(s.Path); err == nil {
-					enriched[cleanPath] = &api.Project{WorkspaceNode: node}
+			if _, exists := enriched[cleanPath]; exists {
+				continue
+			}
+			if node, err := workspace.GetProjectByPath(s.Path); err == nil {
+				proj := &api.Project{WorkspaceNode: node}
+				if prev, ok := cached[cleanPath]; ok {
+					proj.GitStatus = prev.GitStatus
+					proj.NoteCounts = prev.NoteCounts
+					proj.PlanStats = prev.PlanStats
+					proj.ContextStatus = prev.ContextStatus
 				}
+				enriched[cleanPath] = proj
+			} else if prev, ok := cached[cleanPath]; ok {
+				enriched[cleanPath] = prev
 			}
 		}
 

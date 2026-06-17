@@ -308,7 +308,24 @@ func (m *Model) buildRows(sessions []models.TmuxSession, withJustMappedHighlight
 			cleanPath := filepath.Clean(s.Path)
 			if projInfo, found := m.enrichedProjects[cleanPath]; found {
 				// Repository/worktree determination.
-				if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
+				if projInfo.IsEcosystem() && projInfo.IsWorktree() {
+					// Anchored ecosystem worktree container: show the
+					// anchor/owner repo as Repository and the container
+					// name as the Branch/Worktree column.
+					ownerName := filepath.Base(projInfo.ParentProjectPath)
+					ownerIcon := core_theme.IconRepo
+					if parentProj, found := m.enrichedProjects[projInfo.ParentProjectPath]; found {
+						if parentProj.Kind == workspace.KindEcosystemRoot {
+							ownerIcon = core_theme.IconEcosystem
+						}
+						if parentProj.RepoShorthand != "" {
+							parts := strings.Split(parentProj.RepoShorthand, "/")
+							ownerName = parts[len(parts)-1]
+						}
+					}
+					repository = core_theme.DefaultTheme.Muted.Render(ownerIcon+" ") + ownerName
+					worktree = core_theme.DefaultTheme.Muted.Render(core_theme.IconEcosystemWorktree+" ") + projInfo.Name
+				} else if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
 					parentName := filepath.Base(projInfo.ParentProjectPath)
 					parentIcon := core_theme.IconRepo
 					if parentProj, found := m.enrichedProjects[projInfo.ParentProjectPath]; found {
@@ -346,14 +363,16 @@ func (m *Model) buildRows(sessions []models.TmuxSession, withJustMappedHighlight
 						ecosystem = "cx-repos"
 					}
 
-					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath {
+					if projInfo.RootEcosystemPath != "" && projInfo.ParentEcosystemPath != projInfo.RootEcosystemPath &&
+						!projInfo.IsEcosystem() {
 						ecoWorktreeName := filepath.Base(projInfo.ParentEcosystemPath)
 						if projInfo.IsWorktree() && projInfo.ParentProjectPath != "" {
-							repository = filepath.Base(projInfo.ParentProjectPath)
+							repoName := filepath.Base(projInfo.ParentProjectPath)
+							repository = repoName
 							worktree = ecoWorktreeName
 						} else {
 							repository = projInfo.Name
-							worktree = ecoWorktreeName + " *"
+							worktree = ecoWorktreeName
 						}
 					}
 				} else if projInfo.IsEcosystem() {
