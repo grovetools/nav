@@ -462,12 +462,20 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 					isMainBranch := status.Branch == "main" || status.Branch == "master"
 
 					if !isMainBranch {
-						// Feature branch: always compare against local main, never remote upstream
+						// Feature branch: local main first (⇡⇣), then remote upstream (↑↓) if tracked
 						if status.AheadMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 						}
 						if !muteBehind && status.BehindMainCount > 0 {
 							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+						}
+						if status.HasUpstream {
+							if status.AheadCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
+							}
+							if !muteBehind && status.BehindCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
+							}
 						}
 					} else if status.HasUpstream {
 						// On main with upstream: show remote tracking counts
