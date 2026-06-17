@@ -460,38 +460,43 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 					}
 
 					isMainBranch := status.Branch == "main" || status.Branch == "master"
+					isEcoWT := project.Kind == workspace.KindEcosystemWorktree
 
-					if !isMainBranch {
-						// Feature branch: local main first (⇡⇣), then remote upstream (↑↓) if tracked
-						if status.AheadMainCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
-						}
-						if !muteBehind && status.BehindMainCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
-						}
-						if status.HasUpstream {
+					if !isEcoWT {
+						// Per-row branch divergence — suppressed for container rows; they
+						// show only the children's aggregate appended below.
+						if !isMainBranch {
+							// Feature branch: local main first (⇡⇣), then remote upstream (↑↓) if tracked
+							if status.AheadMainCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+							}
+							if !muteBehind && status.BehindMainCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+							}
+							if status.HasUpstream {
+								if status.AheadCount > 0 {
+									statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
+								}
+								if !muteBehind && status.BehindCount > 0 {
+									statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
+								}
+							}
+						} else if status.HasUpstream {
+							// On main with upstream: show remote tracking counts
 							if status.AheadCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 							}
 							if !muteBehind && status.BehindCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 							}
-						}
-					} else if status.HasUpstream {
-						// On main with upstream: show remote tracking counts
-						if status.AheadCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
-						}
-						if !muteBehind && status.BehindCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
-						}
-					} else {
-						// On main without upstream: compare against origin/main (stored in AheadMainCount)
-						if status.AheadMainCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
-						}
-						if !muteBehind && status.BehindMainCount > 0 {
-							statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+						} else {
+							// On main without upstream: compare against origin/main (stored in AheadMainCount)
+							if status.AheadMainCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
+							}
+							if !muteBehind && status.BehindMainCount > 0 {
+								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
+							}
 						}
 					}
 
