@@ -2215,16 +2215,12 @@ func (m *Model) updateFiltered() {
 			var visibleChildren []*api.Project
 			for _, c := range children {
 				git := c.GetGitStatus()
-				isActive := git != nil && (git.IsDirty || git.UntrackedCount > 0 || git.AheadCount > 0 || git.AheadMainCount > 0)
+				isActive := git != nil && (git.IsDirty || git.UntrackedCount > 0 || git.AheadMainCount > 0)
 				isAnchor := p.ParentProjectPath != "" && c.Name == filepath.Base(p.ParentProjectPath)
 				if git != nil {
-					p.AggregateAhead += git.AheadCount + git.AheadMainCount
-					behind := git.BehindCount
-					if git.BehindMainCount > behind {
-						behind = git.BehindMainCount
-					}
-					if behind > p.AggregateBehind {
-						p.AggregateBehind = behind
+					p.AggregateAhead += git.AheadMainCount
+					if git.BehindMainCount > p.AggregateBehind {
+						p.AggregateBehind = git.BehindMainCount
 					}
 				}
 				if scaffoldFolded && !isActive && !isAnchor {
