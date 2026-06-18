@@ -537,7 +537,10 @@ func (m *Model) mapSelectedSlot() (tea.Model, tea.Cmd) {
 
 	if m.pendingMapProject != nil {
 		m.pendingMapProject = nil
-		return m, clearHighlightCmd()
+		// This was a cross-TUI handoff from the sessionizer. Signal the host to
+		// switch back so the sessionizer's focus refresh repopulates its key map
+		// and the (key) indicator appears immediately.
+		return m, tea.Batch(clearHighlightCmd(), func() tea.Msg { return MappingDoneMsg{} })
 	}
 	return m, nil
 }

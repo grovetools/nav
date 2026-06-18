@@ -151,6 +151,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case keymanage.CancelMappingMsg:
 		return m, requestSwitchTab(TabSessionize)
 
+	case keymanage.MappingDoneMsg:
+		// A single-item map handed off from the sessionizer completed. Return to
+		// the sessionizer; the resulting focus refresh repopulates its key map so
+		// the new (key) indicator shows with no delay.
+		return m, requestSwitchTab(TabSessionize)
+
 	case keymanage.JumpToSessionizeMsg:
 		cmd := m.doSwitchTab(TabSessionize)
 		if m.state.sessionize != nil {

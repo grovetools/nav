@@ -41,6 +41,12 @@ type BulkMappingDoneMsg struct {
 // switching back to the sessionizer view.
 type CancelMappingMsg struct{}
 
+// MappingDoneMsg is emitted by the keymanage model after the user
+// successfully maps a project (handed off from the sessionizer) to a key.
+// Hosts should route this by switching back to the sessionizer view, which
+// triggers its focus refresh so the new (key) indicator appears immediately.
+type MappingDoneMsg struct{}
+
 // JumpToSessionizeMsg is emitted when the user asks to jump to the
 // sessionizer view for a specific path (g/S keybindings). Hosts should
 // switch to the sessionizer view and focus on the given path.

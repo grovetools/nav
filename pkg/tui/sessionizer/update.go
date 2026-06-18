@@ -343,6 +343,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle real-time state updates from daemon
 		source := msg.update.Source
 
+		// Keymap bindings changed out-of-band (e.g. another nav process or an
+		// embedded `nav key manage` pane in treemux persisted a mapping). The
+		// in-process shared Manager already reflects same-process edits, so this
+		// is only needed for cross-process/embedded environments. Refresh the
+		// key map so the (key) indicator updates with no delay.
+		if msg.update.UpdateType == "nav_bindings" {
+			return m, tea.Batch(fetchKeyMapCmd(m.store), m.listenToDaemon())
+		}
+
 		if msg.update.UpdateType == "workspaces" &&
 			(source == "workspace" || source == "workspace_watcher") {
 			// The workspace collector or watcher detected a structural change
@@ -1529,6 +1538,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) updateKeyMapping(projectPath, newKey string) {
+	// Read-modify-write the LATEST session set, not our cached snapshot. The
+	// cached m.sessions can be stale relative to mappings made elsewhere (e.g.
+	// the Key Manage tab), and writing it back would silently clobber them.
+	// GetSessions() is an instantaneous in-process map read on the shared
+	// Manager, so this is cheap and atomic.
+	if latest, err := m.store.GetSessions(); err == nil {
+		m.sessions = latest
+	}
+
 	// Find if there's already a session with this key
 	existingSessionIndex := -1
 	targetSessionIndex := -1
@@ -1612,6 +1630,12 @@ func (m *Model) updateKeyMapping(projectPath, newKey string) {
 }
 
 func (m *Model) clearKeyMapping(projectPath string) {
+	// Read-modify-write the LATEST session set so a stale cached snapshot can't
+	// clobber mappings made elsewhere (see updateKeyMapping for rationale).
+	if latest, err := m.store.GetSessions(); err == nil {
+		m.sessions = latest
+	}
+
 	cleanPath := filepath.Clean(projectPath)
 	normalizedCleanPath, err := pathutil.NormalizeForLookup(cleanPath)
 	if err != nil {
