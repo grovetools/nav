@@ -56,7 +56,8 @@ func TestBuildGitChangeTree(t *testing.T) {
 		assert.Equal(t, []string{"plan_finish", "io.go"}, childNames(pkg))
 
 		factory := child(t, child(t, pkg, "plan_finish"), "factory.go")
-		assert.Equal(t, "pkg/plan_finish/factory.go", factory.Path)
+		// Leaf nodes store the absolute path (repo root + relative file path).
+		assert.Equal(t, "/code/grovetools/flow/pkg/plan_finish/factory.go", factory.Path)
 		assert.Equal(t, 'M', factory.Status.Working)
 		assert.Empty(t, factory.Children)
 

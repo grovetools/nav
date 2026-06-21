@@ -77,7 +77,10 @@ func insertFile(repoNode *GitChangeNode, f git.FileStatus) {
 			cur.Children = append(cur.Children, child)
 		}
 		if isLeaf {
-			child.Path = f.Path
+			// Store the absolute path (repo root + relative path) so the
+			// overlay's `v` handler can hand a concrete file to the editor
+			// diff-split. Rendering uses Name, so display is unaffected.
+			child.Path = filepath.Join(repoNode.Path, f.Path)
 			child.Status = f
 		}
 		cur = child

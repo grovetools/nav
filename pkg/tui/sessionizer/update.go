@@ -638,6 +638,44 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.gitChangesCursor += halfPage
 			case key.Matches(msg, m.keys.Bottom):
 				m.gitChangesCursor = rowCount - 1
+			case key.Matches(msg, m.keys.ToggleTaskResults):
+				// `v` opens the changed file under the cursor in a host
+				// editor diff-split. The overlay intercepts keys before the
+				// table's normal v=ToggleTaskResults, so the key is free here.
+				// Only meaningful when nav is embedded in a host (treemux)
+				// that can create the BSP split; leader-x closes it host-side.
+				if !m.embedMode {
+					return m, nil
+				}
+				rows := flattenGitChangeTree(m.gitChangesTree)
+				if m.gitChangesCursor < 0 || m.gitChangesCursor >= len(rows) {
+					return m, nil
+				}
+				n := rows[m.gitChangesCursor].node
+				// Only act on file leaves: repo nodes and intermediate dirs
+				// have IsRepo set or an empty Path respectively.
+				if n == nil || n.IsRepo || n.Path == "" {
+					return m, nil
+				}
+
+				// Build the editor diff arguments from the configured command
+				// template, injecting the overlay's base: "main" for the
+				// since-main view, "" (collapsed by Fields) for working-tree.
+				base := ""
+				if m.gitChangesBase == "main" {
+					base = "main"
+				}
+				args := strings.Fields(strings.ReplaceAll(m.gitDiffCommand, "{{base}}", base))
+
+				path := n.Path
+				return m, func() tea.Msg {
+					return embed.SplitEditorRequestMsg{
+						Path:      path,
+						Ratio:     0.5,
+						Focus:     false,
+						ExtraArgs: args,
+					}
+				}
 			}
 
 			// Clamp the cursor into range, then scroll so it stays visible.
