@@ -193,6 +193,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case gitChangesMsg:
+		m.gitChangesLoading = false
+		m.gitChangesCursor = 0
+		if msg.err != nil {
+			m.gitChangesTree = &GitChangeNode{}
+			return m, nil
+		}
+		m.gitChangesTree = buildGitChangeTree(msg.changes)
+		return m, nil
+
 	case noteCountsMapMsg:
 		// Update note counts - only update projects that have counts
 		for _, proj := range m.projects {
@@ -584,6 +594,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.help, cmd = m.help.Update(msg)
 				return m, cmd
 			}
+		}
+
+		// Handle git changes overlay: intercept all keys while open.
+		if m.gitChangesMode {
+			switch {
+			case msg.Type == tea.KeyEsc, key.Matches(msg, m.keys.Quit):
+				m.gitChangesMode = false
+				m.gitChangesLoading = false
+				m.gitChangesTree = nil
+				m.gitChangesCursor = 0
+				return m, nil
+			case key.Matches(msg, m.keys.Up):
+				if m.gitChangesCursor > 0 {
+					m.gitChangesCursor--
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Down):
+				if m.gitChangesCursor < m.gitChangesRowCount()-1 {
+					m.gitChangesCursor++
+				}
+				return m, nil
+			}
+			return m, nil
 		}
 
 		// Handle map to group mode
@@ -1102,6 +1135,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showGitStatus = !m.showGitStatus
 			_ = m.buildState().Save(m.configDir)
 			return m, m.enrichVisibleProjects()
+
+		case key.Matches(msg, m.keys.ToggleGitChanges):
+			if m.cursor >= len(m.filtered) {
+				return m, nil
+			}
+			target := m.filtered[m.cursor]
+
+			var repos []*api.Project
+			if target.IsEcosystem() {
+				// Collect every project the table groups under this row so the
+				// change tree mirrors the folded children the user sees.
+				key := target.GetGroupingKey()
+				for _, p := range m.projects {
+					if p.GetGroupingKey() == key {
+						repos = append(repos, p)
+					}
+				}
+			} else {
+				repos = []*api.Project{target}
+			}
+
+			m.gitChangesMode = true
+			m.gitChangesLoading = true
+			m.gitChangesTree = nil
+			m.gitChangesCursor = 0
+			return m, fetchGitChangesCmd(repos)
 
 		case key.Matches(msg, m.keys.ToggleBranch):
 			m.showBranch = !m.showBranch
@@ -2323,6 +2382,11 @@ func (m *Model) View() string {
 	// If help is visible, show it and return
 	if m.help.ShowAll {
 		return pageStyle.Render(m.help.View())
+	}
+
+	// Git changes overlay takes over the whole view when active.
+	if m.gitChangesMode {
+		return pageStyle.Render(m.renderGitChangesView())
 	}
 
 	var b strings.Builder

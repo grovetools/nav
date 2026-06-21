@@ -159,6 +159,14 @@ type Model struct {
 	mapToGroupCursor  int
 	mapToGroupPaths   []string
 
+	// Git changes overlay state. gitChangesMode short-circuits the table view
+	// and intercepts navigation keys; the trie is built on demand when the
+	// overlay opens (lazy GetChangedFiles fetch).
+	gitChangesMode    bool
+	gitChangesLoading bool
+	gitChangesTree    *GitChangeNode
+	gitChangesCursor  int
+
 	selectedPaths map[string]bool
 
 	jumpList []jumpState

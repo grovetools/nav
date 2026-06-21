@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/grovetools/core/git"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/repo"
 	"github.com/grovetools/core/pkg/workspace"
@@ -724,6 +725,125 @@ func (m *Model) pathColumnBudget() int {
 		budget = 20
 	}
 	return budget
+}
+
+// gitChangeRow is a flattened, renderable line of the git changes trie.
+type gitChangeRow struct {
+	node   *GitChangeNode
+	depth  int  // 0 = repo, 1 = top-level entry within a repo, ...
+	isLast bool // last among its siblings (├─ vs └─)
+}
+
+// flattenGitChangeTree walks the trie depth-first, emitting one row per node
+// (excluding the synthetic root). Repo nodes are depth 0.
+func flattenGitChangeTree(root *GitChangeNode) []gitChangeRow {
+	if root == nil {
+		return nil
+	}
+	var rows []gitChangeRow
+	var walk func(nodes []*GitChangeNode, depth int)
+	walk = func(nodes []*GitChangeNode, depth int) {
+		for i, n := range nodes {
+			rows = append(rows, gitChangeRow{node: n, depth: depth, isLast: i == len(nodes)-1})
+			walk(n.Children, depth+1)
+		}
+	}
+	walk(root.Children, 0)
+	return rows
+}
+
+// gitChangesRowCount returns the number of selectable rows in the overlay,
+// used to bound the cursor during navigation.
+func (m *Model) gitChangesRowCount() int {
+	return len(flattenGitChangeTree(m.gitChangesTree))
+}
+
+// gitStatusIcon maps a porcelain v2 X/Y status to a theme-driven glyph. All
+// glyphs come from core_theme.Icon* constants — no literal nerd-font runes.
+func gitStatusIcon(fs git.FileStatus) string {
+	switch {
+	case fs.Staged == '?' || fs.Working == '?':
+		return core_theme.IconGitUntracked
+	case fs.Staged == 'R' || fs.Working == 'R':
+		return core_theme.IconGitRenamed
+	case fs.Staged == 'D' || fs.Working == 'D':
+		return core_theme.IconGitDeleted
+	case fs.Staged != '.' && fs.Staged != 0 && fs.Working != '.' && fs.Working != 0:
+		// Staged with further unstaged working-tree changes.
+		return core_theme.IconGitPartiallyStaged
+	case fs.Staged != '.' && fs.Staged != 0:
+		return core_theme.IconGitStaged
+	default:
+		return core_theme.IconGitModified
+	}
+}
+
+// repoHeaderStyle emphasizes repo rows in the git changes overlay. It is bold
+// only, with no margins/padding, so styling a row does not change its line
+// count (see the note at its use site).
+var repoHeaderStyle = lipgloss.NewStyle().Bold(true)
+
+// renderGitChangesView renders the full-screen git changes overlay: a neo-tree
+// style trie of changed dirs/files scoped to the selected workspace (or all
+// member repos of a selected ecosystem row).
+func (m *Model) renderGitChangesView() string {
+	style := lipgloss.NewStyle().Width(m.width).Height(m.height).Padding(1, 2)
+
+	var b strings.Builder
+	b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconGit+" Git changes") + "\n\n")
+
+	if m.gitChangesLoading {
+		b.WriteString(core_theme.DefaultTheme.Muted.Render("Loading changes…"))
+		return style.Render(b.String())
+	}
+
+	rows := flattenGitChangeTree(m.gitChangesTree)
+	if len(rows) == 0 {
+		b.WriteString(core_theme.DefaultTheme.Muted.Render("No changes."))
+		return style.Render(b.String())
+	}
+
+	for i, row := range rows {
+		n := row.node
+
+		// Tree prefix mirrors the table's ├─ / └─ indentation (view.go ~260).
+		var prefix string
+		if row.depth > 0 {
+			indent := strings.Repeat("  ", row.depth-1)
+			if row.isLast {
+				prefix = indent + "└─ "
+			} else {
+				prefix = indent + "├─ "
+			}
+		}
+
+		var icon, label string
+		switch {
+		case n.IsRepo:
+			icon = core_theme.IconRepo
+			label = n.Name
+		case n.Path != "":
+			icon = gitStatusIcon(n.Status)
+			label = n.Name
+		default:
+			icon = core_theme.IconFolder
+			label = n.Name
+		}
+
+		line := prefix + icon + " " + label
+		if i == m.gitChangesCursor {
+			line = core_theme.DefaultTheme.Highlight.Render(line)
+		} else if n.IsRepo {
+			// Bold inline only — NOT theme.Header, whose MarginTop/MarginBottom
+			// inject blank lines above/below the row. Because repo rows toggle
+			// between Highlight (cursor) and this style as the cursor moves, any
+			// vertical margin here would reflow the whole tree on each keypress.
+			line = repoHeaderStyle.Render(line)
+		}
+		b.WriteString(line + "\n")
+	}
+
+	return style.Render(b.String())
 }
 
 // truncatePath shortens s to maxWidth visible characters, appending "…" if

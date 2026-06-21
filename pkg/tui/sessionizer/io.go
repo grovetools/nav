@@ -30,6 +30,13 @@ type gitStatusMapMsg struct {
 	statuses map[string]*git.ExtendedGitStatus
 }
 
+// gitChangesMsg carries the per-repo changed-file lists for the git changes
+// overlay, keyed by repository path. err is set if the bulk fetch failed.
+type gitChangesMsg struct {
+	changes map[string][]git.FileStatus
+	err     error
+}
+
 type noteCountsMapMsg struct {
 	counts map[string]*models.NoteCounts
 }
@@ -324,6 +331,38 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 
 		wg.Wait()
 		return gitStatusMapMsg{statuses: statuses}
+	}
+}
+
+// fetchGitChangesCmd concurrently fetches the per-file change list for each
+// target repo, mirroring fetchAllGitStatusesCmd's WaitGroup + mutex + semaphore
+// pattern. Results are keyed by repo Path and delivered as a gitChangesMsg.
+func fetchGitChangesCmd(repos []*api.Project) tea.Cmd {
+	return func() tea.Msg {
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		changes := make(map[string][]git.FileStatus)
+		semaphore := make(chan struct{}, 10)
+
+		for _, p := range repos {
+			wg.Add(1)
+			go func(proj *api.Project) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+
+				files, err := git.GetChangedFiles(proj.Path)
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				changes[proj.Path] = files
+				mu.Unlock()
+			}(p)
+		}
+
+		wg.Wait()
+		return gitChangesMsg{changes: changes}
 	}
 }
 
