@@ -434,11 +434,6 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 	branch := "-"
 	gitStatus := "-"
 	changes := "-"
-	// Mute behind counts for children of an ecosystem worktree while its scaffold
-	// summary is folded (all children share the same behind baseline — showing it
-	// per-child is noise). Keys on the parent container's vim-fold state, the
-	// single source of truth for the scaffold fold.
-	muteBehind := parentProj != nil && parentProj.Kind == workspace.KindEcosystemWorktree && m.foldedPaths[parentProj.Path]
 	if m.showBranch || m.showGitStatus {
 		if project.EnrichmentStatus["git"] == "loading" {
 			// Keep default dashes while loading to reduce visual noise
@@ -471,14 +466,14 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 							if status.AheadMainCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 							}
-							if !muteBehind && status.BehindMainCount > 0 {
+							if status.BehindMainCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 							}
 							if status.HasUpstream {
 								if status.AheadCount > 0 {
 									statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 								}
-								if !muteBehind && status.BehindCount > 0 {
+								if status.BehindCount > 0 {
 									statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 								}
 							}
@@ -487,7 +482,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 							if status.AheadCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("↑%d", status.AheadCount)))
 							}
-							if !muteBehind && status.BehindCount > 0 {
+							if status.BehindCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("↓%d", status.BehindCount)))
 							}
 						} else {
@@ -495,7 +490,7 @@ func (m *Model) formatProjectRow(project *api.Project, showCxColumn bool, taskVe
 							if status.AheadMainCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", status.AheadMainCount)))
 							}
-							if !muteBehind && status.BehindMainCount > 0 {
+							if status.BehindMainCount > 0 {
 								statusParts = append(statusParts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", status.BehindMainCount)))
 							}
 						}

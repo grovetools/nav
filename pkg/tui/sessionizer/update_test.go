@@ -47,7 +47,7 @@ func TestUpdateFiltered_ScaffoldFold(t *testing.T) {
 	clean := makeProject(cleanPath, "core", workspace.KindEcosystemWorktreeSubProject, containerPath, "", nil)
 	// Dirty sibling: active → must be visible
 	dirty := makeProject(dirtyPath, "nav", workspace.KindEcosystemWorktreeSubProject, containerPath, "",
-		&git.StatusInfo{IsDirty: true, AheadCount: 2, BehindMainCount: 3},
+		&git.StatusInfo{IsDirty: true, AheadMainCount: 2, BehindMainCount: 3},
 	)
 
 	projects := []*api.Project{container, anchor, clean, dirty}
