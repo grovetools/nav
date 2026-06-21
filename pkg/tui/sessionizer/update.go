@@ -349,6 +349,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// is only needed for cross-process/embedded environments. Refresh the
 		// key map so the (key) indicator updates with no delay.
 		if msg.update.UpdateType == "nav_bindings" {
+			// Refresh the in-process Manager cache from the daemon before the
+			// UI reads it via fetchKeyMapCmd. Without this, fetchKeyMapCmd would
+			// read a stale same-process cache that never saw the out-of-band
+			// edit. ReloadBindingsFromDaemon is idempotent (it no-ops on a
+			// self-echo of our own save), so it's safe to call unconditionally.
+			if err := m.store.ReloadBindingsFromDaemon(); err != nil {
+				fmt.Fprintf(os.Stderr, "sessionizer: reload bindings from daemon: %v\n", err)
+			}
 			return m, tea.Batch(fetchKeyMapCmd(m.store), m.listenToDaemon())
 		}
 
@@ -386,6 +394,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			// Recompute filtered view so ecosystem-container aggregate badges
+			// (AggregateAhead/AggregateBehind, computed in updateFiltered) pick
+			// up the new per-workspace git status on every delta.
+			m.updateFiltered()
 			return m, m.listenToDaemon()
 		}
 
@@ -448,11 +460,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Daemon stream is ready: bind it to the model and start listening.
 		m.streamCh = msg.ch
 		m.streamCancel = msg.cancel
-		return m, m.listenToDaemon()
+		// Successful (re)connect — reset the reconnect backoff. Any
+		// nav_bindings or workspace change emitted while the stream was down
+		// was missed, so re-sync both the project list and the in-process
+		// binding cache here.
+		m.streamBackoff = 0
+		if err := m.store.ReloadBindingsFromDaemon(); err != nil {
+			fmt.Fprintf(os.Stderr, "sessionizer: reload bindings from daemon: %v\n", err)
+		}
+		return m, tea.Batch(
+			m.listenToDaemon(),
+			reloadProjectsCmd(m.cfg.LoadProjects),
+			fetchKeyMapCmd(m.store),
+		)
 
 	case daemonStreamErrorMsg:
-		// Stream closed or errored - don't restart, just continue without streaming
-		return m, nil
+		// Stream closed or errored (daemon restart, `groved upgrade`, transient
+		// network blip). Cancel the dead stream and schedule an exponential
+		// backoff reconnect instead of permanently abandoning the stream.
+		if m.streamCancel != nil {
+			m.streamCancel()
+			m.streamCancel = nil
+		}
+		m.streamCh = nil
+		return m, m.scheduleDaemonReconnect()
+
+	case daemonReconnectMsg:
+		// Backoff elapsed — retry the SSE subscription. On success
+		// daemonStreamConnectedMsg resets the backoff and re-syncs.
+		return m, subscribeToDaemonCmd(m.activeWorkspacePath)
 
 	case spinnerTickMsg:
 		// Update spinner animation frame

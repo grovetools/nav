@@ -44,6 +44,7 @@ func (f *fakeKeymapStore) TakeSnapshot()                     {}
 func (f *fakeKeymapStore) Undo() error                       { return nil }
 func (f *fakeKeymapStore) Redo() error                       { return nil }
 func (f *fakeKeymapStore) RegenerateBindings() error         { return nil }
+func (f *fakeKeymapStore) ReloadBindingsFromDaemon() error   { return nil }
 
 func sessionFor(key, path string) models.TmuxSession {
 	return models.TmuxSession{Key: key, Path: path}

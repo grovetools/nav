@@ -43,6 +43,12 @@ type Store interface {
 	// Bindings regeneration (terminal may supply a no-op)
 	RegenerateBindings() error
 
+	// ReloadBindingsFromDaemon refreshes the in-process binding cache from
+	// the daemon's authoritative sessions file. Called when an out-of-band
+	// nav_bindings change is observed over SSE, so the cache is fresh before
+	// the UI reads it. Implementations that don't cache may no-op.
+	ReloadBindingsFromDaemon() error
+
 	// History
 	RecordProjectAccess(path string) error
 }

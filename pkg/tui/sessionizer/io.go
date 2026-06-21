@@ -88,6 +88,11 @@ type daemonStreamErrorMsg struct {
 	err error
 }
 
+// daemonReconnectMsg fires after a backoff interval to retry the SSE
+// subscription. Mirrors treemux's reconnect pattern so a daemon restart or
+// `groved upgrade` doesn't permanently abandon the sessionizer's stream.
+type daemonReconnectMsg struct{}
+
 // daemonStreamConnectedMsg is dispatched once subscribeToDaemonCmd has
 // successfully opened an SSE stream. The channel and cancel func are stored
 // on the Model so the stream can be torn down when the host closes the

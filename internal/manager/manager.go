@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -436,6 +437,80 @@ func (m *Manager) SetActiveGroup(group string) {
 			m.sessions = state.Sessions
 		}
 	}
+}
+
+// ReloadBindingsFromDaemon refreshes the in-process binding cache from the
+// daemon's authoritative sessions file. It is used when an out-of-band
+// nav_bindings change is observed (another nav process, or an embedded
+// `nav key manage` pane) so the in-memory Manager reflects the persisted
+// state before the UI reads it.
+//
+// It NEVER writes to disk — it only reads via the daemon client and updates
+// in-memory state. It is idempotent: if the fetched file already matches the
+// current state (the common case for same-process saves that echo back over
+// SSE) it returns without mutating, dropping the self-echo.
+func (m *Manager) ReloadBindingsFromDaemon() error {
+	loaded, err := m.daemonClient.GetNavBindings(context.Background())
+	if err != nil {
+		return err
+	}
+	if loaded == nil {
+		return nil
+	}
+
+	// Idempotent: if the fetched file equals our current state, this is a
+	// self-echo from a same-process save. Don't mutate.
+	if reflect.DeepEqual(*loaded, m.sessionsFile) &&
+		reflect.DeepEqual(loaded.LockedKeys, m.lockedKeys) {
+		return nil
+	}
+
+	m.sessionsFile = *loaded
+	m.lockedKeys = loaded.LockedKeys
+
+	// Re-extract m.sessions for the current active group using the SAME logic
+	// as SetActiveGroup's active-group branch.
+	if m.activeGroup == "default" {
+		m.sessions = m.sessionsFile.Sessions
+	} else {
+		groupCfg, exists := m.tmuxConfig.Groups[m.activeGroup]
+		isPersisted := false
+
+		if exists && groupCfg.Persist != nil && groupCfg.Persist != false && groupCfg.Persist != "false" && groupCfg.Persist != "" {
+			isPersisted = true
+			if persistStr, ok := groupCfg.Persist.(string); ok && persistStr != "true" {
+				targetPath := persistStr
+				if !filepath.IsAbs(targetPath) {
+					targetPath = filepath.Join(filepath.Dir(m.configPath), targetPath)
+				}
+				m.sessions = m.loadSessionsFromFile(targetPath)
+			} else {
+				if groupCfg.Sessions == nil {
+					m.sessions = make(map[string]TmuxSessionConfig)
+				} else {
+					m.sessions = groupCfg.Sessions
+				}
+			}
+		}
+
+		if !isPersisted {
+			if m.sessionsFile.Groups == nil {
+				m.sessionsFile.Groups = make(map[string]GroupState)
+			}
+			state, exists := m.sessionsFile.Groups[m.activeGroup]
+			if !exists {
+				state = GroupState{Sessions: make(map[string]TmuxSessionConfig)}
+				m.sessionsFile.Groups[m.activeGroup] = state
+			}
+			if state.Sessions == nil {
+				state.Sessions = make(map[string]TmuxSessionConfig)
+				m.sessionsFile.Groups[m.activeGroup] = state
+			}
+			m.sessions = state.Sessions
+		}
+	}
+
+	return nil
 }
 
 // GetGroupConfig returns the configuration for a specific group.

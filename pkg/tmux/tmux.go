@@ -109,6 +109,12 @@ func (m *Manager) RegenerateBindings() error {
 	return m.mgr.RegenerateBindings()
 }
 
+// ReloadBindingsFromDaemon refreshes the in-process binding cache from the
+// daemon's authoritative sessions file without writing to disk. Idempotent.
+func (m *Manager) ReloadBindingsFromDaemon() error {
+	return m.mgr.ReloadBindingsFromDaemon()
+}
+
 // GetGitStatuses returns git status for all configured repositories
 func (m *Manager) GetGitStatuses() (map[string]models.GitStatus, error) {
 	return m.mgr.GetGitStatuses()

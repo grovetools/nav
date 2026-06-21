@@ -183,6 +183,10 @@ type Model struct {
 	// wait for them to exit before returning. Hosts that rapidly create and
 	// destroy sessionizer instances must not leak SSE listener goroutines.
 	streamWg sync.WaitGroup
+	// streamBackoff is the current exponential-backoff interval used when the
+	// SSE stream errors/closes and we schedule a reconnect. Reset to 0 on a
+	// successful (re)connect. Mirrors treemux's daemonStreamState.backoff.
+	streamBackoff time.Duration
 
 	// activeWorkspacePath is the host-supplied "current workspace" used by
 	// CWD-aware keys. Seeded from cfg.ActiveWorkspacePath and refreshed on
@@ -225,6 +229,25 @@ func (m *Model) listenToDaemon() tea.Cmd {
 		defer m.streamWg.Done()
 		return inner()
 	}
+}
+
+// scheduleDaemonReconnect returns a tea.Cmd that fires daemonReconnectMsg
+// after an exponential backoff (500ms -> 1s -> 2s -> ... capped at 30s).
+// Mirrors treemux's scheduleDaemonReconnect so a transient daemon outage or
+// `groved upgrade` doesn't permanently abandon the SSE stream.
+func (m *Model) scheduleDaemonReconnect() tea.Cmd {
+	if m.streamBackoff == 0 {
+		m.streamBackoff = 500 * time.Millisecond
+	} else {
+		m.streamBackoff *= 2
+		if m.streamBackoff > 30*time.Second {
+			m.streamBackoff = 30 * time.Second
+		}
+	}
+	wait := m.streamBackoff
+	return tea.Tick(wait, func(time.Time) tea.Msg {
+		return daemonReconnectMsg{}
+	})
 }
 
 // SetEmbedMode enables or disables embed mode. When enabled, View()
