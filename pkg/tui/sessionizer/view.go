@@ -758,6 +758,34 @@ func (m *Model) gitChangesRowCount() int {
 	return len(flattenGitChangeTree(m.gitChangesTree))
 }
 
+// gitChangesVisibleHeight is the number of trie rows the overlay can show at
+// once: the terminal height minus the overlay chrome (1 top padding + header +
+// blank separator + 1 bottom padding = 4 lines). It is the single source of
+// truth shared by the scroll math (update.go) and the row slice
+// (renderGitChangesView), keeping the rendered height constant so the tree
+// never overflows the terminal.
+func (m *Model) gitChangesVisibleHeight() int {
+	h := m.height - 4
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// adjustGitChangesScroll nudges the viewport offset so the cursor stays within
+// the visible window [scroll, scroll+visibleHeight-1].
+func (m *Model) adjustGitChangesScroll() {
+	visibleHeight := m.gitChangesVisibleHeight()
+	if m.gitChangesCursor < m.gitChangesScroll {
+		m.gitChangesScroll = m.gitChangesCursor
+	} else if m.gitChangesCursor >= m.gitChangesScroll+visibleHeight {
+		m.gitChangesScroll = m.gitChangesCursor - visibleHeight + 1
+	}
+	if m.gitChangesScroll < 0 {
+		m.gitChangesScroll = 0
+	}
+}
+
 // gitStatusIcon maps a porcelain v2 X/Y status to a theme-driven glyph. All
 // glyphs come from core_theme.Icon* constants — no literal nerd-font runes.
 func gitStatusIcon(fs git.FileStatus) string {
@@ -790,7 +818,11 @@ func (m *Model) renderGitChangesView() string {
 	style := lipgloss.NewStyle().Width(m.width).Height(m.height).Padding(1, 2)
 
 	var b strings.Builder
-	b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconGit+" Git changes") + "\n\n")
+	title := "Git changes"
+	if m.gitChangesBase == "main" {
+		title = "Changes since main"
+	}
+	b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconGit+" "+title) + "\n\n")
 
 	if m.gitChangesLoading {
 		b.WriteString(core_theme.DefaultTheme.Muted.Render("Loading changes…"))
@@ -803,7 +835,25 @@ func (m *Model) renderGitChangesView() string {
 		return style.Render(b.String())
 	}
 
-	for i, row := range rows {
+	// Render only the rows inside the viewport window so a tree taller than
+	// the terminal scrolls instead of overflowing. The total rendered height
+	// stays bounded by visibleHeight, preserving the constant-height guarantee.
+	visibleHeight := m.gitChangesVisibleHeight()
+	start := m.gitChangesScroll
+	if start > len(rows)-1 {
+		start = len(rows) - 1
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := start + visibleHeight
+	if end > len(rows) {
+		end = len(rows)
+	}
+
+	for i, row := range rows[start:end] {
+		// Recover the absolute row index for the cursor-highlight check.
+		actualIdx := start + i
 		n := row.node
 
 		// Tree prefix mirrors the table's ├─ / └─ indentation (view.go ~260).
@@ -831,7 +881,7 @@ func (m *Model) renderGitChangesView() string {
 		}
 
 		line := prefix + icon + " " + label
-		if i == m.gitChangesCursor {
+		if actualIdx == m.gitChangesCursor {
 			line = core_theme.DefaultTheme.Highlight.Render(line)
 		} else if n.IsRepo {
 			// Bold inline only — NOT theme.Header, whose MarginTop/MarginBottom

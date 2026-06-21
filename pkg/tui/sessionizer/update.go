@@ -196,6 +196,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gitChangesMsg:
 		m.gitChangesLoading = false
 		m.gitChangesCursor = 0
+		m.gitChangesScroll = 0
 		if msg.err != nil {
 			m.gitChangesTree = &GitChangeNode{}
 			return m, nil
@@ -598,24 +599,59 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle git changes overlay: intercept all keys while open.
 		if m.gitChangesMode {
+			// The overlay returns early, before the root loop's
+			// m.sequence.Process, so run the gg (Top) sequence machinery
+			// locally here. SequencePending yields to wait for the next key.
+			switch res, _ := m.sequence.Process(msg, m.keys.Top); res {
+			case keymap.SequenceMatch:
+				m.sequence.Clear()
+				m.gitChangesCursor = 0
+				m.adjustGitChangesScroll()
+				return m, nil
+			case keymap.SequencePending:
+				return m, nil
+			case keymap.SequenceNone:
+				m.sequence.Clear()
+			}
+
+			rowCount := m.gitChangesRowCount()
+			halfPage := m.gitChangesVisibleHeight() / 2
+			if halfPage < 1 {
+				halfPage = 1
+			}
+
 			switch {
 			case msg.Type == tea.KeyEsc, key.Matches(msg, m.keys.Quit):
 				m.gitChangesMode = false
 				m.gitChangesLoading = false
 				m.gitChangesTree = nil
 				m.gitChangesCursor = 0
+				m.gitChangesScroll = 0
 				return m, nil
 			case key.Matches(msg, m.keys.Up):
-				if m.gitChangesCursor > 0 {
-					m.gitChangesCursor--
-				}
-				return m, nil
+				m.gitChangesCursor--
 			case key.Matches(msg, m.keys.Down):
-				if m.gitChangesCursor < m.gitChangesRowCount()-1 {
-					m.gitChangesCursor++
-				}
-				return m, nil
+				m.gitChangesCursor++
+			case key.Matches(msg, m.keys.PageUp):
+				m.gitChangesCursor -= halfPage
+			case key.Matches(msg, m.keys.PageDown):
+				m.gitChangesCursor += halfPage
+			case key.Matches(msg, m.keys.Bottom):
+				m.gitChangesCursor = rowCount - 1
 			}
+
+			// Clamp the cursor into range, then scroll so it stays visible.
+			if rowCount > 0 {
+				if m.gitChangesCursor >= rowCount {
+					m.gitChangesCursor = rowCount - 1
+				}
+				if m.gitChangesCursor < 0 {
+					m.gitChangesCursor = 0
+				}
+			} else {
+				m.gitChangesCursor = 0
+			}
+			m.adjustGitChangesScroll()
 			return m, nil
 		}
 
@@ -1136,31 +1172,46 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = m.buildState().Save(m.configDir)
 			return m, m.enrichVisibleProjects()
 
-		case key.Matches(msg, m.keys.ToggleGitChanges):
+		case key.Matches(msg, m.keys.ToggleGitChanges), key.Matches(msg, m.keys.ToggleGitChangesMain):
 			if m.cursor >= len(m.filtered) {
 				return m, nil
 			}
 			target := m.filtered[m.cursor]
 
+			// S = working-tree changes; m = changes since local main.
+			base := "working"
+			if key.Matches(msg, m.keys.ToggleGitChangesMain) {
+				base = "main"
+			}
+
 			var repos []*api.Project
 			if target.IsEcosystem() {
 				// Collect every project the table groups under this row so the
-				// change tree mirrors the folded children the user sees.
-				key := target.GetGroupingKey()
+				// change tree mirrors the folded children the user sees. This is
+				// the SAME ancestry predicate updateFiltered uses to gather a
+				// focused ecosystem's rows — GetGroupingKey only groups
+				// project-worktree children, so a group row would match only
+				// itself.
 				for _, p := range m.projects {
-					if p.GetGroupingKey() == key {
+					if p.Path == target.Path ||
+						p.IsChildOf(target.Path) ||
+						p.RootEcosystemPath == target.Path ||
+						p.ParentEcosystemPath == target.Path {
 						repos = append(repos, p)
 					}
 				}
 			} else {
+				// Single (non-ecosystem) rows scope strictly to themselves.
 				repos = []*api.Project{target}
 			}
 
 			m.gitChangesMode = true
+			m.gitChangesBase = base
 			m.gitChangesLoading = true
 			m.gitChangesTree = nil
 			m.gitChangesCursor = 0
-			return m, fetchGitChangesCmd(repos)
+			m.gitChangesScroll = 0
+			return m, fetchGitChangesCmd(repos, base)
 
 		case key.Matches(msg, m.keys.ToggleBranch):
 			m.showBranch = !m.showBranch

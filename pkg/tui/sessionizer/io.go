@@ -337,7 +337,11 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 // fetchGitChangesCmd concurrently fetches the per-file change list for each
 // target repo, mirroring fetchAllGitStatusesCmd's WaitGroup + mutex + semaphore
 // pattern. Results are keyed by repo Path and delivered as a gitChangesMsg.
-func fetchGitChangesCmd(repos []*api.Project) tea.Cmd {
+//
+// base selects the diff base: "main" lists everything that differs from the
+// repo's local main/master (committed + working tree); anything else lists the
+// working-tree changes.
+func fetchGitChangesCmd(repos []*api.Project, base string) tea.Cmd {
 	return func() tea.Msg {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
@@ -351,7 +355,13 @@ func fetchGitChangesCmd(repos []*api.Project) tea.Cmd {
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 
-				files, err := git.GetChangedFiles(proj.Path)
+				var files []git.FileStatus
+				var err error
+				if base == "main" {
+					files, err = git.GetChangedFilesSinceMain(proj.Path)
+				} else {
+					files, err = git.GetChangedFiles(proj.Path)
+				}
 				if err != nil {
 					return
 				}

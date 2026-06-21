@@ -30,6 +30,7 @@ type SessionizeKeyMap struct {
 	GoToMappingCwd       key.Binding
 	ToggleGitStatus      key.Binding
 	ToggleGitChanges     key.Binding
+	ToggleGitChangesMain key.Binding
 	ToggleBranch         key.Binding
 	ToggleNoteCounts     key.Binding
 	TogglePlanStats      key.Binding
@@ -98,6 +99,7 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			k.ToggleCx,
 			k.ToggleGitStatus,
 			k.ToggleGitChanges,
+			k.ToggleGitChangesMain,
 			k.ToggleBranch,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
@@ -159,6 +161,7 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 			k.ToggleCx,
 			k.ToggleGitStatus,
 			k.ToggleGitChanges,
+			k.ToggleGitChangesMain,
 			k.ToggleBranch,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
@@ -262,6 +265,13 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		ToggleGitChanges: key.NewBinding(
 			key.WithKeys("S"),
 			key.WithHelp("S", "browse git changes"),
+		),
+		// `m` (mnemonic: main) is free in both keymaps — `M` is MapToGroup,
+		// lowercase `m` is unbound and is not a vim-sequence prefix (g/d/z/y).
+		// It pairs with `S` as the since-local-main variant of the change tree.
+		ToggleGitChangesMain: key.NewBinding(
+			key.WithKeys("m"),
+			key.WithHelp("m", "browse changes since main"),
 		),
 		ToggleBranch: key.NewBinding(
 			key.WithKeys("b"),
