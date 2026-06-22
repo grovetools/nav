@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -640,14 +641,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, m.keys.Bottom):
 				m.gitChangesCursor = rowCount - 1
 			case key.Matches(msg, m.keys.ToggleTaskResults):
-				// `v` opens the changed file under the cursor in a host
-				// editor diff-split. The overlay intercepts keys before the
-				// table's normal v=ToggleTaskResults, so the key is free here.
-				// Only meaningful when nav is embedded in a host (treemux)
-				// that can create the BSP split; leader-x closes it host-side.
-				if !m.embedMode {
-					return m, nil
-				}
+				// `v` opens the changed file under the cursor in its diff.
+				// The overlay intercepts keys before the table's normal
+				// v=ToggleTaskResults, so the key is free here.
 				rows := flattenGitChangeTree(m.gitChangesTree)
 				if m.gitChangesCursor < 0 || m.gitChangesCursor >= len(rows) {
 					return m, nil
@@ -667,19 +663,36 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					base = "main"
 				}
 				args := strings.Fields(strings.ReplaceAll(m.gitDiffCommand, "{{base}}", base))
-
 				path := n.Path
-				return m, func() tea.Msg {
-					return embed.SplitEditorRequestMsg{
-						Path: path,
-						// Ratio is the fraction the ORIGIN (nav) keeps; the editor
-						// diff sibling gets 1-Ratio. 0.15 → the diff takes ~85% of
-						// the row so it's actually readable.
-						Ratio:     0.15,
-						Focus:     false,
-						ExtraArgs: args,
+
+				if m.embedMode {
+					// Embedded in a host (treemux): ask it for a BSP split.
+					// Ratio is the fraction the ORIGIN (nav) keeps; the editor
+					// diff sibling gets 1-Ratio. 0.15 → the diff takes ~85% of
+					// the row so it's actually readable. leader-x closes it
+					// host-side.
+					return m, func() tea.Msg {
+						return embed.SplitEditorRequestMsg{
+							Path:      path,
+							Ratio:     0.15,
+							Focus:     false,
+							ExtraArgs: args,
+						}
 					}
 				}
+
+				// Standalone (plain terminal, or a tuimux shell pane): there is
+				// no host pane manager to make a BSP split, so suspend nav and
+				// run the diff full-screen in this terminal, returning to the
+				// overlay when the editor exits. Mirror the host's editor
+				// resolution ($EDITOR, falling back to nvim for the fugitive
+				// default command).
+				editor := os.Getenv("EDITOR")
+				if editor == "" {
+					editor = "nvim"
+				}
+				cmdArgs := append(append([]string{}, args...), path)
+				return m, tea.ExecProcess(exec.Command(editor, cmdArgs...), func(error) tea.Msg { return nil })
 			}
 
 			// Clamp the cursor into range, then scroll so it stays visible.
