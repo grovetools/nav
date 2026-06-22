@@ -173,7 +173,8 @@ type Model struct {
 	gitChangesLoading bool
 	gitChangesTree    *GitChangeNode
 	gitChangesCursor  int
-	gitChangesScroll  int // index of the top visible row (viewport offset)
+	gitChangesScroll  int               // index of the top visible row (viewport offset)
+	gitChangesSummary gitChangesSummary // aggregate divergence/dirty for the header
 
 	// gitDiffCommand is the editor diff-split command template from the
 	// [nav] config section, resolved (default-applied) at construction.

@@ -197,6 +197,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.gitChangesLoading = false
 		m.gitChangesCursor = 0
 		m.gitChangesScroll = 0
+		m.gitChangesSummary = msg.summary
 		if msg.err != nil {
 			m.gitChangesTree = &GitChangeNode{}
 			return m, nil
@@ -670,8 +671,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				path := n.Path
 				return m, func() tea.Msg {
 					return embed.SplitEditorRequestMsg{
-						Path:      path,
-						Ratio:     0.5,
+						Path: path,
+						// Ratio is the fraction the ORIGIN (nav) keeps; the editor
+						// diff sibling gets 1-Ratio. 0.15 → the diff takes ~85% of
+						// the row so it's actually readable.
+						Ratio:     0.15,
 						Focus:     false,
 						ExtraArgs: args,
 					}

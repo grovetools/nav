@@ -754,13 +754,13 @@ func (m *Model) gitChangesRowCount() int {
 }
 
 // gitChangesVisibleHeight is the number of trie rows the overlay can show at
-// once: the terminal height minus the overlay chrome (1 top padding + header +
-// blank separator + 1 bottom padding = 4 lines). It is the single source of
-// truth shared by the scroll math (update.go) and the row slice
+// once: the terminal height minus the overlay chrome (1 top padding + title +
+// summary + blank separator + 1 bottom padding = 5 lines). It is the single
+// source of truth shared by the scroll math (update.go) and the row slice
 // (renderGitChangesView), keeping the rendered height constant so the tree
 // never overflows the terminal.
 func (m *Model) gitChangesVisibleHeight() int {
-	h := m.height - 4
+	h := m.height - 5
 	if h < 1 {
 		h = 1
 	}
@@ -787,6 +787,10 @@ func gitStatusIcon(fs git.FileStatus) string {
 	switch {
 	case fs.Staged == '?' || fs.Working == '?':
 		return core_theme.IconGitUntracked
+	case fs.Staged == 'A' || fs.Working == 'A':
+		// Added (the since-main diff emits 'A'); the untracked glyph is
+		// cod-diff_added, the right symbol for a brand-new file.
+		return core_theme.IconGitUntracked
 	case fs.Staged == 'R' || fs.Working == 'R':
 		return core_theme.IconGitRenamed
 	case fs.Staged == 'D' || fs.Working == 'D':
@@ -799,6 +803,89 @@ func gitStatusIcon(fs git.FileStatus) string {
 	default:
 		return core_theme.IconGitModified
 	}
+}
+
+// gitStatusStyle maps a file's porcelain/diff status to the SAME theme colors
+// the sessionizer CHANGES column uses (Success=new/added, Error=deleted,
+// Info=renamed, Warning=modified) so the overlay reads consistently with the
+// table. It keys off either column, mirroring gitStatusIcon.
+func gitStatusStyle(fs git.FileStatus) lipgloss.Style {
+	switch {
+	case fs.Staged == '?' || fs.Working == '?',
+		fs.Staged == 'A' || fs.Working == 'A':
+		return core_theme.DefaultTheme.Success
+	case fs.Staged == 'R' || fs.Working == 'R':
+		return core_theme.DefaultTheme.Info
+	case fs.Staged == 'D' || fs.Working == 'D':
+		return core_theme.DefaultTheme.Error
+	default:
+		return core_theme.DefaultTheme.Warning
+	}
+}
+
+// fileStatsSuffix renders a file's per-line churn as a leading-padded "+A -R"
+// fragment (Success/Error), or "" when there is none (binary or untracked,
+// which numstat does not report). The colors are self-contained so the suffix
+// can be appended after a highlighted row and still render correctly.
+func fileStatsSuffix(fs git.FileStatus) string {
+	if fs.LinesAdded == 0 && fs.LinesDeleted == 0 {
+		return ""
+	}
+	var parts []string
+	if fs.LinesAdded > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("+%d", fs.LinesAdded)))
+	}
+	if fs.LinesDeleted > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("-%d", fs.LinesDeleted)))
+	}
+	return "  " + strings.Join(parts, " ")
+}
+
+// gitChangesTotals sums the changed-file count and per-line churn across all
+// file leaves of the overlay's trie (repo/dir nodes are skipped).
+func gitChangesTotals(rows []gitChangeRow) (files, added, deleted int) {
+	for _, r := range rows {
+		n := r.node
+		if n == nil || n.IsRepo || n.Path == "" {
+			continue
+		}
+		files++
+		added += n.Status.LinesAdded
+		deleted += n.Status.LinesDeleted
+	}
+	return files, added, deleted
+}
+
+// renderGitChangesSummary builds the one-line aggregate shown under the overlay
+// title, mirroring the sessionizer GIT + CHANGES columns: a dirty marker, the
+// ⇡/⇣ divergence from local main, and the changed-file + line totals.
+func (m *Model) renderGitChangesSummary(rows []gitChangeRow) string {
+	var parts []string
+
+	if m.gitChangesSummary.dirty {
+		parts = append(parts, core_theme.DefaultTheme.Warning.Render(core_theme.IconGitModified))
+	}
+	if m.gitChangesSummary.aheadMain > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Info.Render(fmt.Sprintf("⇡%d", m.gitChangesSummary.aheadMain)))
+	}
+	if m.gitChangesSummary.behindMain > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("⇣%d", m.gitChangesSummary.behindMain)))
+	}
+
+	files, added, deleted := gitChangesTotals(rows)
+	noun := "files"
+	if files == 1 {
+		noun = "file"
+	}
+	parts = append(parts, core_theme.DefaultTheme.Muted.Render(fmt.Sprintf("%d %s", files, noun)))
+	if added > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Success.Render(fmt.Sprintf("+%d", added)))
+	}
+	if deleted > 0 {
+		parts = append(parts, core_theme.DefaultTheme.Error.Render(fmt.Sprintf("-%d", deleted)))
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // repoHeaderStyle emphasizes repo rows in the git changes overlay. It is bold
@@ -817,18 +904,21 @@ func (m *Model) renderGitChangesView() string {
 	if m.gitChangesBase == "main" {
 		title = "Changes since main"
 	}
-	b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconGit+" "+title) + "\n\n")
+	b.WriteString(core_theme.DefaultTheme.Header.Render(core_theme.IconGit+" "+title) + "\n")
 
 	if m.gitChangesLoading {
-		b.WriteString(core_theme.DefaultTheme.Muted.Render("Loading changes…"))
+		b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("Loading changes…"))
 		return style.Render(b.String())
 	}
 
 	rows := flattenGitChangeTree(m.gitChangesTree)
 	if len(rows) == 0 {
-		b.WriteString(core_theme.DefaultTheme.Muted.Render("No changes."))
+		b.WriteString("\n" + core_theme.DefaultTheme.Muted.Render("No changes."))
 		return style.Render(b.String())
 	}
+
+	// Summary line under the title mirrors the sessionizer GIT/CHANGES column.
+	b.WriteString(m.renderGitChangesSummary(rows) + "\n\n")
 
 	// Render only the rows inside the viewport window so a tree taller than
 	// the terminal scrolls instead of overflowing. The total rendered height
@@ -863,6 +953,7 @@ func (m *Model) renderGitChangesView() string {
 		}
 
 		var icon, label string
+		isFile := false
 		switch {
 		case n.IsRepo:
 			icon = core_theme.IconRepo
@@ -870,20 +961,36 @@ func (m *Model) renderGitChangesView() string {
 		case n.Path != "":
 			icon = gitStatusIcon(n.Status)
 			label = n.Name
+			isFile = true
 		default:
 			icon = core_theme.IconFolder
 			label = n.Name
 		}
 
-		line := prefix + icon + " " + label
-		if actualIdx == m.gitChangesCursor {
-			line = core_theme.DefaultTheme.Highlight.Render(line)
-		} else if n.IsRepo {
+		// Per-line churn ("+A -R") for file leaves. Rendered with self-contained
+		// colors and appended OUTSIDE any row-level styling so it keeps its
+		// green/red even on the highlighted cursor row.
+		stats := ""
+		if isFile {
+			stats = fileStatsSuffix(n.Status)
+		}
+
+		core := prefix + icon + " " + label
+		var line string
+		switch {
+		case actualIdx == m.gitChangesCursor:
+			line = core_theme.DefaultTheme.Highlight.Render(core) + stats
+		case n.IsRepo:
 			// Bold inline only — NOT theme.Header, whose MarginTop/MarginBottom
 			// inject blank lines above/below the row. Because repo rows toggle
 			// between Highlight (cursor) and this style as the cursor moves, any
 			// vertical margin here would reflow the whole tree on each keypress.
-			line = repoHeaderStyle.Render(line)
+			line = repoHeaderStyle.Render(core)
+		case isFile:
+			// Color the filename by its change state, mirroring the CHANGES column.
+			line = prefix + icon + " " + gitStatusStyle(n.Status).Render(label) + stats
+		default:
+			line = core
 		}
 		b.WriteString(line + "\n")
 	}
