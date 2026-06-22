@@ -668,13 +668,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.embedMode {
 					// Embedded in a host (treemux): ask it for a BSP split.
 					// Ratio is the fraction the ORIGIN (nav) keeps; the editor
-					// diff sibling gets 1-Ratio. 0.15 → the diff takes ~85% of
-					// the row so it's actually readable. leader-x closes it
-					// host-side.
+					// diff sibling gets 1-Ratio. Size nav to exactly the tree's
+					// natural width (so nothing wraps) and give the editor the
+					// rest, falling back to 0.15 before the first WindowSize.
+					// leader-x closes the split host-side.
+					ratio := 0.15
+					if m.width > 0 {
+						// +4 for the overlay's Padding(1,2) (2 cols each side).
+						navW := m.gitChangesContentWidth() + 4
+						if minW := 24; navW < minW {
+							navW = minW
+						}
+						if maxW := m.width / 2; navW > maxW {
+							navW = maxW
+						}
+						ratio = float64(navW) / float64(m.width)
+					}
 					return m, func() tea.Msg {
 						return embed.SplitEditorRequestMsg{
 							Path:      path,
-							Ratio:     0.15,
+							Ratio:     ratio,
 							Focus:     false,
 							ExtraArgs: args,
 						}

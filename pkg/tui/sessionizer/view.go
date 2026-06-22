@@ -888,6 +888,52 @@ func (m *Model) renderGitChangesSummary(rows []gitChangeRow) string {
 	return strings.Join(parts, " ")
 }
 
+// gitChangesContentWidth returns the widest visible line of the overlay — the
+// title, the summary, and every tree row (including the per-file "+A -R"
+// suffix) — measured ANSI-aware. The embed `v` handler uses it to size nav's
+// pane to exactly what the tree needs (so nothing wraps) and hand the rest to
+// the editor split. Mirrors the row composition in renderGitChangesView.
+func (m *Model) gitChangesContentWidth() int {
+	rows := flattenGitChangeTree(m.gitChangesTree)
+
+	title := "Git changes"
+	if m.gitChangesBase == "main" {
+		title = "Changes since main"
+	}
+	w := lipgloss.Width(core_theme.IconGit + " " + title)
+	if len(rows) > 0 {
+		if sw := lipgloss.Width(m.renderGitChangesSummary(rows)); sw > w {
+			w = sw
+		}
+	}
+
+	for _, row := range rows {
+		n := row.node
+		var prefix string
+		if row.depth > 0 {
+			// ├─ and └─ are the same width, so either measures correctly.
+			prefix = strings.Repeat("  ", row.depth-1) + "└─ "
+		}
+		var icon string
+		switch {
+		case n.IsRepo:
+			icon = core_theme.IconRepo
+		case n.Path != "":
+			icon = gitStatusIcon(n.Status)
+		default:
+			icon = core_theme.IconFolder
+		}
+		lineW := lipgloss.Width(prefix + icon + " " + n.Name)
+		if n.Path != "" {
+			lineW += lipgloss.Width(fileStatsSuffix(n.Status))
+		}
+		if lineW > w {
+			w = lineW
+		}
+	}
+	return w
+}
+
 // repoHeaderStyle emphasizes repo rows in the git changes overlay. It is bold
 // only, with no margins/padding, so styling a row does not change its line
 // count (see the note at its use site).
