@@ -29,8 +29,6 @@ type SessionizeKeyMap struct {
 	GoToMappingCursor    key.Binding
 	GoToMappingCwd       key.Binding
 	ToggleGitStatus      key.Binding
-	ToggleGitChanges     key.Binding
-	ToggleGitChangesMain key.Binding
 	ToggleBranch         key.Binding
 	ToggleNoteCounts     key.Binding
 	TogglePlanStats      key.Binding
@@ -98,8 +96,6 @@ func (k SessionizeKeyMap) FullHelp() [][]key.Binding {
 			key.NewBinding(key.WithKeys(""), key.WithHelp("", "Column Toggles")),
 			k.ToggleCx,
 			k.ToggleGitStatus,
-			k.ToggleGitChanges,
-			k.ToggleGitChangesMain,
 			k.ToggleBranch,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
@@ -160,8 +156,6 @@ func (k SessionizeKeyMap) Sections() []keymap.Section {
 		keymap.NewSection("Columns",
 			k.ToggleCx,
 			k.ToggleGitStatus,
-			k.ToggleGitChanges,
-			k.ToggleGitChangesMain,
 			k.ToggleBranch,
 			k.ToggleNoteCounts,
 			k.TogglePlanStats,
@@ -258,20 +252,6 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		ToggleGitStatus: key.NewBinding(
 			key.WithKeys("s"),
 			key.WithHelp("s", "toggle git status"),
-		),
-		// `c` is ToggleCx and `d`/`D` are taken (`dd` vim sequence prefix /
-		// existing binding). `S` is free in both keymaps and pairs with `s`
-		// (git-status columns) as its drill-down into a browsable change tree.
-		ToggleGitChanges: key.NewBinding(
-			key.WithKeys("S"),
-			key.WithHelp("S", "browse git changes"),
-		),
-		// `m` (mnemonic: main) is free in both keymaps — `M` is MapToGroup,
-		// lowercase `m` is unbound and is not a vim-sequence prefix (g/d/z/y).
-		// It pairs with `S` as the since-local-main variant of the change tree.
-		ToggleGitChangesMain: key.NewBinding(
-			key.WithKeys("m"),
-			key.WithHelp("m", "browse changes since main"),
 		),
 		ToggleBranch: key.NewBinding(
 			key.WithKeys("b"),

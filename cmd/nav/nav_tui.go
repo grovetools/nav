@@ -298,7 +298,6 @@ func newSessionizeFactory(mgr *tmux.Manager, client *tmuxclient.Client, tuimuxEn
 			LoadProjects:        buildProjectLoader(mgr, configDir),
 			ReloadConfig:        reloadTmuxConfig,
 			KeyMap:              sessionizeKeys,
-			GitDiffCommand:      navUserConfig.GitDiffCommand,
 		}
 		if tuimuxEngine != nil {
 			driver := NewTuimuxDriver(tuimuxEngine)

@@ -65,12 +65,6 @@ type Config struct {
 	// validator per project per tick and pegs CPU at 400%+.
 	DisableCx bool
 
-	// GitDiffCommand is the editor diff-split command template (e.g.
-	// "+Gvdiffsplit {{base}}") read from grove.toml's [nav] section. It is
-	// plumbed onto the Model for the git-changes overlay's diff action.
-	// Empty falls back to the built-in default.
-	GitDiffCommand string
-
 	// ActiveWorkspacePath is the host's notion of "where the user is"
 	// for CWD-aware key bindings (FocusEcosystemCwd, GoToMappingCwd).
 	// When embedded in treemux, process-level os.Getwd() is stuck at
@@ -165,22 +159,6 @@ type Model struct {
 	mapToGroupCursor  int
 	mapToGroupPaths   []string
 
-	// Git changes overlay state. gitChangesMode short-circuits the table view
-	// and intercepts navigation keys; the trie is built on demand when the
-	// overlay opens (lazy GetChangedFiles fetch).
-	gitChangesMode    bool
-	gitChangesBase    string // diff base: "working" (S) or "main" (m)
-	gitChangesLoading bool
-	gitChangesTree    *GitChangeNode
-	gitChangesCursor  int
-	gitChangesScroll  int               // index of the top visible row (viewport offset)
-	gitChangesSummary gitChangesSummary // aggregate divergence/dirty for the header
-
-	// gitDiffCommand is the editor diff-split command template from the
-	// [nav] config section, resolved (default-applied) at construction.
-	// Consumed by the overlay's diff action; plumbed but not yet wired to
-	// a key handler.
-	gitDiffCommand string
 
 	selectedPaths map[string]bool
 
@@ -488,13 +466,6 @@ func New(cfg Config, projects []*api.Project) *Model {
 		showCx = false
 	}
 
-	// Resolve the diff-split command, applying the built-in default when the
-	// [nav] config leaves it empty so the overlay works out of the box.
-	gitDiffCommand := cfg.GitDiffCommand
-	if gitDiffCommand == "" {
-		gitDiffCommand = "+Gvdiffsplit {{base}}"
-	}
-
 	m := &Model{
 		cfg:             cfg,
 		rulesState:      make(map[string]grovecontext.RuleStatus),
@@ -543,7 +514,6 @@ func New(cfg Config, projects []*api.Project) *Model {
 		jumpIdx:             0,
 		panelFocused:        true, // assume focused until BlurMsg says otherwise
 		activeWorkspacePath: cfg.ActiveWorkspacePath,
-		gitDiffCommand:      gitDiffCommand,
 	}
 
 	if !features.Groups {

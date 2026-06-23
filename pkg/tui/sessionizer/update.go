@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -192,18 +191,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.showCx {
 			return m, fetchRulesStateCmd(m.projects)
 		}
-		return m, nil
-
-	case gitChangesMsg:
-		m.gitChangesLoading = false
-		m.gitChangesCursor = 0
-		m.gitChangesScroll = 0
-		m.gitChangesSummary = msg.summary
-		if msg.err != nil {
-			m.gitChangesTree = &GitChangeNode{}
-			return m, nil
-		}
-		m.gitChangesTree = buildGitChangeTree(msg.changes)
 		return m, nil
 
 	case noteCountsMapMsg:
@@ -597,145 +584,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.help, cmd = m.help.Update(msg)
 				return m, cmd
 			}
-		}
-
-		// Handle git changes overlay: intercept all keys while open.
-		if m.gitChangesMode {
-			// The overlay returns early, before the root loop's
-			// m.sequence.Process, so run the gg (Top) sequence machinery
-			// locally here. SequencePending yields to wait for the next key.
-			switch res, _ := m.sequence.Process(msg, m.keys.Top); res {
-			case keymap.SequenceMatch:
-				m.sequence.Clear()
-				m.gitChangesCursor = 0
-				m.adjustGitChangesScroll()
-				return m, nil
-			case keymap.SequencePending:
-				return m, nil
-			case keymap.SequenceNone:
-				m.sequence.Clear()
-			}
-
-			rowCount := m.gitChangesRowCount()
-			halfPage := m.gitChangesVisibleHeight() / 2
-			if halfPage < 1 {
-				halfPage = 1
-			}
-
-			switch {
-			case msg.Type == tea.KeyEsc, key.Matches(msg, m.keys.Quit):
-				m.gitChangesMode = false
-				m.gitChangesLoading = false
-				m.gitChangesTree = nil
-				m.gitChangesCursor = 0
-				m.gitChangesScroll = 0
-				return m, nil
-			case key.Matches(msg, m.keys.Up):
-				m.gitChangesCursor--
-			case key.Matches(msg, m.keys.Down):
-				m.gitChangesCursor++
-			case key.Matches(msg, m.keys.PageUp):
-				m.gitChangesCursor -= halfPage
-			case key.Matches(msg, m.keys.PageDown):
-				m.gitChangesCursor += halfPage
-			case key.Matches(msg, m.keys.Bottom):
-				m.gitChangesCursor = rowCount - 1
-			case key.Matches(msg, m.keys.ToggleTaskResults):
-				// `v` opens the changed file under the cursor in its diff.
-				// The overlay intercepts keys before the table's normal
-				// v=ToggleTaskResults, so the key is free here.
-				rows := flattenGitChangeTree(m.gitChangesTree)
-				if m.gitChangesCursor < 0 || m.gitChangesCursor >= len(rows) {
-					return m, nil
-				}
-				n := rows[m.gitChangesCursor].node
-				// Only act on file leaves: repo nodes and intermediate dirs
-				// have IsRepo set or an empty Path respectively.
-				if n == nil || n.IsRepo || n.Path == "" {
-					return m, nil
-				}
-
-				// Build the editor diff arguments from the configured command
-				// template, injecting the overlay's base: "main" for the
-				// since-main view, "" (collapsed by Fields) for working-tree.
-				base := ""
-				if m.gitChangesBase == "main" {
-					base = "main"
-				}
-				args := strings.Fields(strings.ReplaceAll(m.gitDiffCommand, "{{base}}", base))
-				path := n.Path
-
-				if m.embedMode {
-					// Embedded in a host (treemux): ask it for a BSP split.
-					// Ratio is the fraction the ORIGIN (nav) keeps; the editor
-					// diff sibling gets 1-Ratio. Size nav to exactly the tree's
-					// natural width (so nothing wraps) and give the editor the
-					// rest, falling back to 0.15 before the first WindowSize.
-					// leader-x closes the split host-side.
-					ratio := 0.15
-					if m.width > 0 {
-						// Provision nav for its full natural width so the tree —
-						// including each file's "+A -R" suffix — never wraps or
-						// truncates. Two fixed overheads sit on top of the tree's
-						// content width, and the ratio covers NEITHER on its own:
-						//   • overlayChrome (4): the overlay's own Padding(1,2).
-						//   • hostChrome (5): the host pane's focus gutter +
-						//     separator + border, which the ratio is applied
-						//     before, not after. Measured empirically — a
-						//     requested outer width of 34 came back as a 29-col
-						//     content pane (see tuimux resizePane).
-						// +1 slack absorbs int truncation in the host's
-						// firstW = int(w * ratio).
-						const overlayChrome, hostChrome, slack = 4, 5, 1
-						navW := m.gitChangesContentWidth() + overlayChrome + hostChrome + slack
-						if minW := 24; navW < minW {
-							navW = minW
-						}
-						// Cap only to leave the editor diff a usable minimum (40
-						// cols), not at half the screen, which would clip wide
-						// trees and wrap the stats back under the filename.
-						if maxW := m.width - 40; maxW >= 24 && navW > maxW {
-							navW = maxW
-						}
-						ratio = float64(navW) / float64(m.width)
-					}
-					return m, func() tea.Msg {
-						return embed.SplitEditorRequestMsg{
-							Path:      path,
-							Ratio:     ratio,
-							Focus:     false,
-							ExtraArgs: args,
-						}
-					}
-				}
-
-				// Standalone (plain terminal, or a tuimux shell pane): there is
-				// no host pane manager to make a BSP split, so suspend nav and
-				// run the diff full-screen in this terminal, returning to the
-				// overlay when the editor exits. Mirror the host's editor
-				// resolution ($EDITOR, falling back to nvim for the fugitive
-				// default command).
-				editor := os.Getenv("EDITOR")
-				if editor == "" {
-					editor = "nvim"
-				}
-				cmdArgs := append(append([]string{}, args...), path)
-				return m, tea.ExecProcess(exec.Command(editor, cmdArgs...), func(error) tea.Msg { return nil })
-			}
-
-			// Clamp the cursor into range, then scroll so it stays visible.
-			if rowCount > 0 {
-				if m.gitChangesCursor >= rowCount {
-					m.gitChangesCursor = rowCount - 1
-				}
-				if m.gitChangesCursor < 0 {
-					m.gitChangesCursor = 0
-				}
-			} else {
-				m.gitChangesCursor = 0
-			}
-			m.adjustGitChangesScroll()
-			return m, nil
 		}
 
 		// Handle map to group mode
@@ -1254,47 +1102,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showGitStatus = !m.showGitStatus
 			_ = m.buildState().Save(m.configDir)
 			return m, m.enrichVisibleProjects()
-
-		case key.Matches(msg, m.keys.ToggleGitChanges), key.Matches(msg, m.keys.ToggleGitChangesMain):
-			if m.cursor >= len(m.filtered) {
-				return m, nil
-			}
-			target := m.filtered[m.cursor]
-
-			// S = working-tree changes; m = changes since local main.
-			base := "working"
-			if key.Matches(msg, m.keys.ToggleGitChangesMain) {
-				base = "main"
-			}
-
-			var repos []*api.Project
-			if target.IsEcosystem() {
-				// Collect every project the table groups under this row so the
-				// change tree mirrors the folded children the user sees. This is
-				// the SAME ancestry predicate updateFiltered uses to gather a
-				// focused ecosystem's rows — GetGroupingKey only groups
-				// project-worktree children, so a group row would match only
-				// itself.
-				for _, p := range m.projects {
-					if p.Path == target.Path ||
-						p.IsChildOf(target.Path) ||
-						p.RootEcosystemPath == target.Path ||
-						p.ParentEcosystemPath == target.Path {
-						repos = append(repos, p)
-					}
-				}
-			} else {
-				// Single (non-ecosystem) rows scope strictly to themselves.
-				repos = []*api.Project{target}
-			}
-
-			m.gitChangesMode = true
-			m.gitChangesBase = base
-			m.gitChangesLoading = true
-			m.gitChangesTree = nil
-			m.gitChangesCursor = 0
-			m.gitChangesScroll = 0
-			return m, fetchGitChangesCmd(repos, base)
 
 		case key.Matches(msg, m.keys.ToggleBranch):
 			m.showBranch = !m.showBranch
@@ -2516,11 +2323,6 @@ func (m *Model) View() string {
 	// If help is visible, show it and return
 	if m.help.ShowAll {
 		return pageStyle.Render(m.help.View())
-	}
-
-	// Git changes overlay takes over the whole view when active.
-	if m.gitChangesMode {
-		return pageStyle.Render(m.renderGitChangesView())
 	}
 
 	var b strings.Builder

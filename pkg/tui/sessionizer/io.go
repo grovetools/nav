@@ -30,26 +30,6 @@ type gitStatusMapMsg struct {
 	statuses map[string]*git.ExtendedGitStatus
 }
 
-// gitChangesMsg carries the per-repo changed-file lists for the git changes
-// overlay, keyed by repository path. err is set if the bulk fetch failed.
-// summary aggregates each repo's divergence-from-main and dirty state so the
-// overlay can render a header mirroring the sessionizer GIT/CHANGES column.
-type gitChangesMsg struct {
-	changes map[string][]git.FileStatus
-	summary gitChangesSummary
-	err     error
-}
-
-// gitChangesSummary is the aggregate git state shown above the change tree.
-// File and line totals are derived from the tree at render time; this carries
-// only the per-repo divergence/dirty signals that the tree itself does not hold.
-type gitChangesSummary struct {
-	repoCount  int
-	aheadMain  int
-	behindMain int
-	dirty      bool
-}
-
 type noteCountsMapMsg struct {
 	counts map[string]*models.NoteCounts
 }
@@ -344,63 +324,6 @@ func fetchAllGitStatusesCmd(projects []*api.Project) tea.Cmd {
 
 		wg.Wait()
 		return gitStatusMapMsg{statuses: statuses}
-	}
-}
-
-// fetchGitChangesCmd concurrently fetches the per-file change list for each
-// target repo, mirroring fetchAllGitStatusesCmd's WaitGroup + mutex + semaphore
-// pattern. Results are keyed by repo Path and delivered as a gitChangesMsg.
-//
-// base selects the diff base: "main" lists everything that differs from the
-// repo's local main/master (committed + working tree); anything else lists the
-// working-tree changes.
-func fetchGitChangesCmd(repos []*api.Project, base string) tea.Cmd {
-	return func() tea.Msg {
-		var wg sync.WaitGroup
-		var mu sync.Mutex
-		changes := make(map[string][]git.FileStatus)
-		summary := gitChangesSummary{}
-		semaphore := make(chan struct{}, 10)
-
-		for _, p := range repos {
-			wg.Add(1)
-			go func(proj *api.Project) {
-				defer wg.Done()
-				semaphore <- struct{}{}
-				defer func() { <-semaphore }()
-
-				var files []git.FileStatus
-				var err error
-				if base == "main" {
-					files, err = git.GetChangedFilesSinceMain(proj.Path)
-				} else {
-					files, err = git.GetChangedFiles(proj.Path)
-				}
-				if err != nil {
-					return
-				}
-
-				// Divergence-from-main + dirty for the summary header. Computed
-				// fresh (not from cached enrichment) so the overlay is accurate
-				// the moment it opens. Best-effort: errors leave the repo out.
-				ext, statErr := git.GetExtendedStatus(proj.Path)
-
-				mu.Lock()
-				changes[proj.Path] = files
-				if statErr == nil && ext != nil && ext.StatusInfo != nil {
-					summary.repoCount++
-					summary.aheadMain += ext.AheadMainCount
-					summary.behindMain += ext.BehindMainCount
-					if ext.IsDirty {
-						summary.dirty = true
-					}
-				}
-				mu.Unlock()
-			}(p)
-		}
-
-		wg.Wait()
-		return gitChangesMsg{changes: changes, summary: summary}
 	}
 }
 
