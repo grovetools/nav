@@ -674,12 +674,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// leader-x closes the split host-side.
 					ratio := 0.15
 					if m.width > 0 {
-						// +4 for the overlay's Padding(1,2) (2 cols each side).
-						navW := m.gitChangesContentWidth() + 4
+						// Provision nav for its full natural width so the tree —
+						// including each file's "+A -R" suffix — never wraps or
+						// truncates. Two fixed overheads sit on top of the tree's
+						// content width, and the ratio covers NEITHER on its own:
+						//   • overlayChrome (4): the overlay's own Padding(1,2).
+						//   • hostChrome (5): the host pane's focus gutter +
+						//     separator + border, which the ratio is applied
+						//     before, not after. Measured empirically — a
+						//     requested outer width of 34 came back as a 29-col
+						//     content pane (see tuimux resizePane).
+						// +1 slack absorbs int truncation in the host's
+						// firstW = int(w * ratio).
+						const overlayChrome, hostChrome, slack = 4, 5, 1
+						navW := m.gitChangesContentWidth() + overlayChrome + hostChrome + slack
 						if minW := 24; navW < minW {
 							navW = minW
 						}
-						if maxW := m.width / 2; navW > maxW {
+						// Cap only to leave the editor diff a usable minimum (40
+						// cols), not at half the screen, which would clip wide
+						// trees and wrap the stats back under the filename.
+						if maxW := m.width - 40; maxW >= 24 && navW > maxW {
 							navW = maxW
 						}
 						ratio = float64(navW) / float64(m.width)

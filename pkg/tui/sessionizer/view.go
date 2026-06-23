@@ -808,7 +808,9 @@ func gitStatusIcon(fs git.FileStatus) string {
 // gitStatusStyle maps a file's porcelain/diff status to the SAME theme colors
 // the sessionizer CHANGES column uses (Success=new/added, Error=deleted,
 // Info=renamed, Warning=modified) so the overlay reads consistently with the
-// table. It keys off either column, mirroring gitStatusIcon.
+// table. It keys off either column, mirroring gitStatusIcon. Applied to the
+// status icon (not the filename) so state color never collides with the
+// selection Highlight that recolors the filename.
 func gitStatusStyle(fs git.FileStatus) lipgloss.Style {
 	switch {
 	case fs.Staged == '?' || fs.Working == '?',
@@ -888,6 +890,15 @@ func (m *Model) renderGitChangesSummary(rows []gitChangeRow) string {
 	return strings.Join(parts, " ")
 }
 
+// gitChangesGutterWidth is the visible width of the left-margin selection
+// gutter (the cursor arrow plus its trailing space). Every tree row reserves
+// this many columns — the arrow on the cursor row, blanks elsewhere — so the
+// tree stays aligned. Computed from the active icon set so it is correct in
+// both nerd-font ("󰜴 ", 2 cols) and ascii ("=> ", 3 cols) modes.
+func gitChangesGutterWidth() int {
+	return lipgloss.Width(core_theme.IconArrowRightBold) + 1
+}
+
 // gitChangesContentWidth returns the widest visible line of the overlay — the
 // title, the summary, and every tree row (including the per-file "+A -R"
 // suffix) — measured ANSI-aware. The embed `v` handler uses it to size nav's
@@ -923,7 +934,7 @@ func (m *Model) gitChangesContentWidth() int {
 		default:
 			icon = core_theme.IconFolder
 		}
-		lineW := lipgloss.Width(prefix + icon + " " + n.Name)
+		lineW := gitChangesGutterWidth() + lipgloss.Width(prefix+icon+" "+n.Name)
 		if n.Path != "" {
 			lineW += lipgloss.Width(fileStatsSuffix(n.Status))
 		}
@@ -1021,6 +1032,27 @@ func (m *Model) renderGitChangesView() string {
 			stats = fileStatsSuffix(n.Status)
 		}
 
+		// Left-margin selection indicator: a bold arrow on the cursor row, a
+		// blank gutter of the same visible width on every other row so the tree
+		// stays aligned. gitChangesGutterWidth() also feeds the width calc so
+		// the gutter is never the thing that forces a wrap.
+		gutter := strings.Repeat(" ", gitChangesGutterWidth())
+		if actualIdx == m.gitChangesCursor {
+			gutter = core_theme.DefaultTheme.Highlight.Render(core_theme.IconArrowRightBold) + " "
+		}
+
+		// Hard guarantee against wrapping: truncate the filename so the whole
+		// row — gutter + prefix + icon + "+A -R" stats — fits the overlay's
+		// inner width (terminal minus the Padding(1,2) = 4 cols), no matter how
+		// the v-split width math rounds. The line-change stats are never
+		// dropped; only the name shrinks, mirroring the table's truncatePath.
+		if avail := m.width - 4; avail > 0 {
+			used := gitChangesGutterWidth() + lipgloss.Width(prefix+icon+" ") + lipgloss.Width(stats)
+			if budget := avail - used; budget > 0 && lipgloss.Width(label) > budget {
+				label = truncatePath(label, budget)
+			}
+		}
+
 		core := prefix + icon + " " + label
 		var line string
 		switch {
@@ -1033,12 +1065,16 @@ func (m *Model) renderGitChangesView() string {
 			// vertical margin here would reflow the whole tree on each keypress.
 			line = repoHeaderStyle.Render(core)
 		case isFile:
-			// Color the filename by its change state, mirroring the CHANGES column.
-			line = prefix + icon + " " + gitStatusStyle(n.Status).Render(label) + stats
+			// Color only the status ICON by change state (modified = Warning
+			// yellow/orange, matching the sessionizer CHANGES column); leave the
+			// filename default-colored. The selection Highlight is then the only
+			// thing that ever recolors a filename, keeping "selected" visually
+			// distinct from "modified" — the two previously shared a near hue.
+			line = prefix + gitStatusStyle(n.Status).Render(icon) + " " + label + stats
 		default:
 			line = core
 		}
-		b.WriteString(line + "\n")
+		b.WriteString(gutter + line + "\n")
 	}
 
 	return style.Render(b.String())
