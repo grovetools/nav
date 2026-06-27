@@ -156,6 +156,95 @@ func TestUpdateFiltered_ScaffoldUnfold(t *testing.T) {
 	}
 }
 
+// TestUpdateFiltered_FocusedEcosystem_ShowsContainerChildren verifies that when
+// nav is focused on an ecosystem, the sub-projects nested inside its ecosystem
+// worktree containers are NOT skipped — they flow into the filtered set, nest
+// under their container, and the scaffold-fold partition still hides clean
+// non-anchor children behind the [+N clean] badge. This is the regression guard
+// for the previous behavior where focusing on an ecosystem collapsed every
+// container into a single detail-less row.
+func TestUpdateFiltered_FocusedEcosystem_ShowsContainerChildren(t *testing.T) {
+	const (
+		ecoPath       = "/eco"
+		ecoFlowPath   = "/eco/flow"
+		containerPath = "/wt/eco/feature"
+		anchorPath    = "/wt/eco/feature/flow"
+		cleanPath     = "/wt/eco/feature/core"
+		dirtyPath     = "/wt/eco/feature/nav"
+	)
+
+	eco := makeProject(ecoPath, "grovetools", workspace.KindEcosystemRoot, "", "", nil)
+	eco.RootEcosystemPath = ecoPath
+
+	// Ecosystem worktree container anchored on "flow", rooted in the focused eco.
+	container := makeProject(containerPath, "feature", workspace.KindEcosystemWorktree, ecoPath, ecoFlowPath, nil)
+	container.RootEcosystemPath = ecoPath
+	// Container sub-projects: hierarchy resolution sets RootEcosystemPath to the
+	// origin ecosystem, which is how they qualify for the focused-ecosystem set.
+	anchor := makeProject(anchorPath, "flow", workspace.KindEcosystemWorktreeSubProject, containerPath, "", nil)
+	anchor.RootEcosystemPath = ecoPath
+	clean := makeProject(cleanPath, "core", workspace.KindEcosystemWorktreeSubProject, containerPath, "", nil)
+	clean.RootEcosystemPath = ecoPath
+	dirty := makeProject(dirtyPath, "nav", workspace.KindEcosystemWorktreeSubProject, containerPath, "",
+		&git.StatusInfo{IsDirty: true, AheadMainCount: 2},
+	)
+	dirty.RootEcosystemPath = ecoPath
+
+	projects := []*api.Project{eco, container, anchor, clean, dirty}
+	projectMap := make(map[string]*api.Project, len(projects))
+	for _, p := range projects {
+		projectMap[p.Path] = p
+	}
+
+	ti := textinput.New()
+	m := &Model{
+		projects:       projects,
+		projectMap:     projectMap,
+		filterInput:    ti,
+		focusedProject: eco,
+		// Folded container → scaffold SUMMARY (clean child hidden, anchor + dirty shown).
+		foldedPaths:      map[string]bool{containerPath: true},
+		hasChildren:      make(map[string]bool),
+		contextOnlyPaths: make(map[string]bool),
+		keyMap:           make(map[string]string),
+		selectedPaths:    make(map[string]bool),
+		rulesState:       make(map[string]grovecontext.RuleStatus),
+	}
+	m.updateFiltered()
+
+	filtered := make(map[string]bool)
+	for _, p := range m.filtered {
+		filtered[p.Path] = true
+	}
+
+	if !filtered[ecoPath] {
+		t.Error("focused ecosystem root should be visible")
+	}
+	if !filtered[containerPath] {
+		t.Error("ecosystem worktree container should be visible")
+	}
+	if !filtered[anchorPath] {
+		t.Error("anchor child should be visible under the focused container (was previously skipped)")
+	}
+	if !filtered[dirtyPath] {
+		t.Error("dirty child should be visible under the focused container (was previously skipped)")
+	}
+	if filtered[cleanPath] {
+		t.Error("clean non-anchor child should be hidden behind [+N clean] when the container is folded")
+	}
+
+	// Container nests its children, and scaffold fold rolls up child git stats.
+	if !m.hasChildren[containerPath] {
+		t.Error("container should be marked as having children when focused")
+	}
+	if container.HiddenCleanCount != 1 {
+		t.Errorf("container.HiddenCleanCount = %d, want 1 (the clean core child)", container.HiddenCleanCount)
+	}
+	if container.AggregateAhead != 2 {
+		t.Errorf("container.AggregateAhead = %d, want 2 (dirty child AheadMainCount=2)", container.AggregateAhead)
+	}
+}
+
 // TestUpdateFiltered_EcosystemPicker_AnchoredContainer verifies that the "@"
 // ecosystem picker nests an anchored XDG container under its ORIGIN ecosystem.
 // Such a container has ParentProjectPath pointing at its owner sub-repo (which

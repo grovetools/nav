@@ -2086,19 +2086,14 @@ func (m *Model) updateFiltered() {
 	// 1. Determine base set of projects (Focus vs Global)
 	var baseProjects []*api.Project
 	if m.focusedProject != nil {
-		// Build a set of ecosystem worktree paths to filter out their subprojects
-		ecoWorktreePaths := make(map[string]bool)
+		// Include the focused ecosystem, its direct sub-projects, and the
+		// sub-projects nested inside its ecosystem worktree containers. The
+		// container sub-projects carry RootEcosystemPath == focused ecosystem
+		// (set during hierarchy resolution), so they flow in here and then nest
+		// under their container via GetHierarchicalParent during tree building.
+		// The scaffold-fold partition in the flatten pass keeps clean children
+		// collapsed behind the [+N clean] badge when the container is folded.
 		for _, p := range m.projects {
-			if p.Kind == workspace.KindEcosystemWorktree && p.RootEcosystemPath == m.focusedProject.Path {
-				ecoWorktreePaths[p.Path] = true
-			}
-		}
-
-		for _, p := range m.projects {
-			// Skip subprojects that are inside ecosystem worktrees (show only the worktree parent itself)
-			if p.ParentEcosystemPath != "" && ecoWorktreePaths[p.ParentEcosystemPath] {
-				continue
-			}
 			if p.Path == m.focusedProject.Path || p.IsChildOf(m.focusedProject.Path) || p.RootEcosystemPath == m.focusedProject.Path || p.ParentEcosystemPath == m.focusedProject.Path {
 				baseProjects = append(baseProjects, p)
 			}
