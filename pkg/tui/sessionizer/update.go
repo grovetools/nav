@@ -472,6 +472,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.listenToDaemon(),
 			reloadProjectsCmd(m.cfg.LoadProjects),
 			fetchKeyMapCmd(m.store),
+			// Focus is in-memory in the daemon and is wiped on a daemon restart /
+			// `groved upgrade`. Re-post the visible set on every (re)connect so the
+			// daemon's focus-driven git watcher keeps watching what we're looking at;
+			// otherwise git status silently falls back to the slow timer collector
+			// until the user next scrolls.
+			updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()),
 		)
 
 	case daemonStreamErrorMsg:
