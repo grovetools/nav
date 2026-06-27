@@ -1260,6 +1260,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusTimeout = time.Now().Add(30 * time.Second)
 			return m, nil
 
+		case key.Matches(msg, m.keys.ViewGit):
+			// Ask the host (treemux) to open git-viewer scoped to the workspace
+			// under the cursor, without switching the active workspace. Skip
+			// context-only rows (no real selection); no-op when standalone.
+			if m.cursor >= len(m.filtered) {
+				return m, nil
+			}
+			project := m.filtered[m.cursor]
+			if project == nil || m.contextOnlyPaths[project.Path] {
+				return m, nil
+			}
+			path := project.Path
+			return m, func() tea.Msg { return api.ViewGitRequestMsg{Path: path} }
+
 		case key.Matches(msg, m.keys.GoToMappingCursor):
 			// Switch to the group containing this project's mapping and apply group filter
 			if m.cursor >= len(m.filtered) {

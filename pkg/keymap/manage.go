@@ -11,6 +11,7 @@ import (
 type ManageKeyMap struct {
 	keymap.Base
 	Edit           key.Binding // Overrides Base.Edit with "map CWD" behavior
+	ViewGit        key.Binding
 	SetKey         key.Binding
 	Open           key.Binding
 	Delete         key.Binding // Overrides Base.Delete with "clear mapping" behavior
@@ -97,6 +98,10 @@ func NewManageKeyMap(cfg *config.Config) ManageKeyMap {
 		Edit: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "map CWD"),
+		),
+		ViewGit: key.NewBinding(
+			key.WithKeys("V"),
+			key.WithHelp("V", "view git changes"),
 		),
 		SetKey: key.NewBinding(
 			key.WithKeys("h"),
