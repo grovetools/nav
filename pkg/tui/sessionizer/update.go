@@ -1984,8 +1984,26 @@ func (m *Model) updateFiltered() {
 				continue
 			}
 
-			if p.IsWorktree() && p.ParentProjectPath != "" {
-				worktreesByParent[p.ParentProjectPath] = append(worktreesByParent[p.ParentProjectPath], p)
+			if p.IsWorktree() {
+				// Group ecosystem worktrees / containers under their ORIGIN
+				// ecosystem so they render beneath it. Legacy ecosystem worktrees
+				// (<eco>/.grove-worktrees/<name>) set ParentProjectPath to the
+				// ecosystem root, so either key works for them. Anchored XDG
+				// containers, however, set ParentProjectPath to their owner
+				// sub-repo (e.g. .../grovetools/nav) — which is NOT an ecosystem
+				// root and so never appears as a main ecosystem — while
+				// RootEcosystemPath still points at the true origin ecosystem
+				// (e.g. grovetools). Keying on ParentProjectPath therefore silently
+				// dropped containers from the "@" picker; prefer RootEcosystemPath.
+				parentKey := p.RootEcosystemPath
+				if parentKey == "" {
+					parentKey = p.ParentProjectPath
+				}
+				if parentKey != "" {
+					worktreesByParent[parentKey] = append(worktreesByParent[parentKey], p)
+				} else {
+					mainEcosystemsMap[p.Path] = p
+				}
 			} else {
 				mainEcosystemsMap[p.Path] = p
 			}
@@ -2032,6 +2050,29 @@ func (m *Model) updateFiltered() {
 				})
 				m.filtered = append(m.filtered, worktrees...)
 			}
+		}
+
+		// Safety net: surface any worktree groups whose origin ecosystem is not
+		// itself listed as a main ecosystem (e.g. a container whose root
+		// ecosystem was filtered out by the text search, or could not be
+		// resolved). Without this they would be silently dropped — the original
+		// cause of anchored containers being invisible under "@".
+		var orphanKeys []string
+		for parentKey, worktrees := range worktreesByParent {
+			if _, shown := mainEcosystemsMap[parentKey]; shown {
+				continue
+			}
+			if len(worktrees) > 0 {
+				orphanKeys = append(orphanKeys, parentKey)
+			}
+		}
+		sort.Strings(orphanKeys)
+		for _, parentKey := range orphanKeys {
+			worktrees := worktreesByParent[parentKey]
+			sort.Slice(worktrees, func(i, j int) bool {
+				return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
+			})
+			m.filtered = append(m.filtered, worktrees...)
 		}
 		return
 	}

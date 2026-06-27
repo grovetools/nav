@@ -155,3 +155,69 @@ func TestUpdateFiltered_ScaffoldUnfold(t *testing.T) {
 		t.Errorf("container.HiddenCleanCount = %d, want 0 when not folding", container.HiddenCleanCount)
 	}
 }
+
+// TestUpdateFiltered_EcosystemPicker_AnchoredContainer verifies that the "@"
+// ecosystem picker nests an anchored XDG container under its ORIGIN ecosystem.
+// Such a container has ParentProjectPath pointing at its owner sub-repo (which
+// is not an ecosystem root) and RootEcosystemPath pointing at the true origin
+// ecosystem. The picker previously grouped worktrees by ParentProjectPath, so
+// the container's bucket keyed off a non-ecosystem path and was never rendered.
+func TestUpdateFiltered_EcosystemPicker_AnchoredContainer(t *testing.T) {
+	const (
+		ecoPath       = "/eco"
+		navRepoPath   = "/eco/nav"
+		containerPath = "/xdg/eco-abc123/feature"
+	)
+
+	// Ecosystem root → becomes a "main ecosystem" in the picker.
+	eco := makeProject(ecoPath, "grovetools", workspace.KindEcosystemRoot, "", "", nil)
+	eco.RootEcosystemPath = ecoPath
+	// Anchored container: owner is the nav sub-repo (ParentProjectPath), origin
+	// ecosystem is grovetools (RootEcosystemPath). This is the shape that used
+	// to vanish from the "@" picker.
+	container := makeProject(containerPath, "feature", workspace.KindEcosystemWorktree, ecoPath, navRepoPath, nil)
+	container.RootEcosystemPath = ecoPath
+
+	projects := []*api.Project{eco, container}
+	projectMap := make(map[string]*api.Project, len(projects))
+	for _, p := range projects {
+		projectMap[p.Path] = p
+	}
+
+	ti := textinput.New()
+	m := &Model{
+		projects:            projects,
+		projectMap:          projectMap,
+		filterInput:         ti,
+		ecosystemPickerMode: true,
+		foldedPaths:         make(map[string]bool),
+		hasChildren:         make(map[string]bool),
+		contextOnlyPaths:    make(map[string]bool),
+		keyMap:              make(map[string]string),
+		selectedPaths:       make(map[string]bool),
+		rulesState:          make(map[string]grovecontext.RuleStatus),
+	}
+	m.updateFiltered()
+
+	ecoIdx, containerIdx := -1, -1
+	for i, p := range m.filtered {
+		switch p.Path {
+		case ecoPath:
+			ecoIdx = i
+		case containerPath:
+			containerIdx = i
+		}
+	}
+	if ecoIdx == -1 {
+		t.Fatal("ecosystem root should be visible in the picker")
+	}
+	if containerIdx == -1 {
+		t.Fatal("anchored container should be visible in the picker (grouped under its origin ecosystem)")
+	}
+	if containerIdx < ecoIdx {
+		t.Errorf("container (idx %d) should render after its ecosystem (idx %d)", containerIdx, ecoIdx)
+	}
+	if !m.hasChildren[ecoPath] {
+		t.Error("ecosystem root should be marked as having children (the container nests under it)")
+	}
+}
