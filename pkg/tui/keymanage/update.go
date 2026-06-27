@@ -569,6 +569,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch {
+	case key.Matches(msg, m.keys.ViewGit):
+		// Open git-viewer for the session row's workspace via the host. Rows
+		// can carry an empty path (unmapped key); skip those. The host guards
+		// non-resolvable paths, so no provider coupling is needed here.
+		if m.cursor < len(m.sessions) {
+			if path := m.sessions[m.cursor].Path; path != "" {
+				return m, func() tea.Msg { return api.ViewGitRequestMsg{Path: path} }
+			}
+		}
+		return m, nil
+
 	case key.Matches(msg, m.keys.Select):
 		if m.cursor < len(m.sessions) {
 			k := m.sessions[m.cursor].Key

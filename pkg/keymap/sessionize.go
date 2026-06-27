@@ -11,6 +11,7 @@ import (
 type SessionizeKeyMap struct {
 	keymap.Base
 	EditKey              key.Binding
+	ViewGit              key.Binding
 	ClearKey             key.Binding
 	CloseSession         key.Binding
 	FocusEcosystem       key.Binding
@@ -180,6 +181,10 @@ func NewSessionizeKeyMap(cfg *config.Config) SessionizeKeyMap {
 		EditKey: key.NewBinding(
 			key.WithKeys("e"),
 			key.WithHelp("e", "edit key mapping"),
+		),
+		ViewGit: key.NewBinding(
+			key.WithKeys("V"),
+			key.WithHelp("V", "view git changes"),
 		),
 		ClearKey: key.NewBinding(
 			key.WithKeys("x", "ctrl+x"),
