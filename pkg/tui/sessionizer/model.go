@@ -65,6 +65,12 @@ type Config struct {
 	// validator per project per tick and pegs CPU at 400%+.
 	DisableCx bool
 
+	// EcosystemEnterSelects changes the ecosystem picker ("@") Enter
+	// behavior from "focus-filter the nav view" to "select the ecosystem
+	// and quit" so an embedding host (treemux) can navigate to it. Standalone
+	// nav leaves this false and keeps the focus-filter behavior.
+	EcosystemEnterSelects bool
+
 	// ActiveWorkspacePath is the host's notion of "where the user is"
 	// for CWD-aware key bindings (FocusEcosystemCwd, GoToMappingCwd).
 	// When embedded in treemux, process-level os.Getwd() is stuck at
@@ -158,7 +164,6 @@ type Model struct {
 	mapToGroupOptions []string
 	mapToGroupCursor  int
 	mapToGroupPaths   []string
-
 
 	selectedPaths map[string]bool
 

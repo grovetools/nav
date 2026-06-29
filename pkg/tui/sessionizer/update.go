@@ -720,6 +720,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Handle ecosystem picker mode
 				if m.ecosystemPickerMode {
 					if m.cursor < len(m.filtered) {
+						// Embedded hosts (treemux) navigate to the chosen
+						// ecosystem instead of focus-filtering nav's own view.
+						if m.cfg.EcosystemEnterSelects {
+							m.selected = m.filtered[m.cursor]
+							// Save cache before quitting to persist enrichment data
+							projects := make([]api.Project, len(m.projects))
+							for i, p := range m.projects {
+								projects[i] = *p
+							}
+							_ = api.SaveProjectCache(m.configDir, projects)
+							return m, tea.Quit
+						}
 						// Set focused project (already a pointer)
 						selected := m.filtered[m.cursor]
 						m.focusedProject = selected
@@ -1475,6 +1487,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Handle ecosystem picker mode
 			if m.ecosystemPickerMode {
 				if m.cursor < len(m.filtered) {
+					// Embedded hosts (treemux) navigate to the chosen
+					// ecosystem instead of focus-filtering nav's own view.
+					if m.cfg.EcosystemEnterSelects {
+						m.selected = m.filtered[m.cursor]
+						// Save cache before quitting to persist enrichment data
+						projects := make([]api.Project, len(m.projects))
+						for i, p := range m.projects {
+							projects[i] = *p
+						}
+						_ = api.SaveProjectCache(m.configDir, projects)
+						return m, tea.Quit
+					}
 					// Set focused project (already a pointer)
 					selected := m.filtered[m.cursor]
 					m.focusedProject = selected
@@ -1964,20 +1988,8 @@ func (m *Model) updateFiltered() {
 		// Separate into main ecosystems and worktrees
 		mainEcosystemsMap := make(map[string]*api.Project)
 		worktreesByParent := make(map[string][]*api.Project)
-		ecoOrder := make(map[string]int)
 
-		for i, p := range m.projects {
-			// Track earliest occurrence to sort ecosystems by recent access
-			if p.IsEcosystem() && !p.IsWorktree() {
-				if _, exists := ecoOrder[p.Path]; !exists {
-					ecoOrder[p.Path] = i
-				}
-			} else if p.RootEcosystemPath != "" {
-				if _, exists := ecoOrder[p.RootEcosystemPath]; !exists {
-					ecoOrder[p.RootEcosystemPath] = i
-				}
-			}
-
+		for _, p := range m.projects {
 			if !p.IsEcosystem() {
 				continue
 			}
@@ -2019,17 +2031,31 @@ func (m *Model) updateFiltered() {
 		for _, eco := range mainEcosystemsMap {
 			mainEcosystems = append(mainEcosystems, eco)
 		}
+		// Stable order mirroring normal mode (active-first → cx-repos → name).
+		// The old ecoOrder (first-seen index in m.projects) caused jitter because
+		// the daemon pushes non-deterministically ordered project snapshots.
+		hasActive := func(path string) bool {
+			for _, p := range m.projects {
+				if (p.Path == path || p.RootEcosystemPath == path || p.ParentProjectPath == path) && m.runningSessions[p.Identifier("_")] {
+					return true
+				}
+			}
+			return false
+		}
 		sort.Slice(mainEcosystems, func(i, j int) bool {
+			activeI := hasActive(mainEcosystems[i].Path)
+			activeJ := hasActive(mainEcosystems[j].Path)
+			if activeI && !activeJ {
+				return true
+			}
+			if !activeI && activeJ {
+				return false
+			}
 			if mainEcosystems[i].Name == "cx-repos" {
 				return true
 			}
 			if mainEcosystems[j].Name == "cx-repos" {
 				return false
-			}
-			idxI, okI := ecoOrder[mainEcosystems[i].Path]
-			idxJ, okJ := ecoOrder[mainEcosystems[j].Path]
-			if okI && okJ && idxI != idxJ {
-				return idxI < idxJ
 			}
 			return strings.ToLower(mainEcosystems[i].Name) < strings.ToLower(mainEcosystems[j].Name)
 		})
@@ -2079,6 +2105,33 @@ func (m *Model) updateFiltered() {
 				return strings.ToLower(worktrees[i].Name) < strings.ToLower(worktrees[j].Name)
 			})
 			m.filtered = append(m.filtered, worktrees...)
+		}
+
+		// Compute git divergence aggregates for worktree-container rows so the
+		// view (view.go:504-523) can render ⇡N ⇣M for them. The flatten-path
+		// aggregate (isEcoWT block ~2316-2335) never runs in picker mode because
+		// of this early return. Restrict to KindEcosystemWorktree: ecosystem
+		// roots render their own per-row git and only worktree containers have
+		// per-row divergence suppressed (view.go:460), so aggregating on roots
+		// would double-count. AggregateAhead/Behind are shared-pointer transient
+		// fields reused across SSE deltas — zero them first.
+		for _, p := range m.filtered {
+			p.AggregateAhead = 0
+			p.AggregateBehind = 0
+			if p.Kind != workspace.KindEcosystemWorktree {
+				continue
+			}
+			for _, child := range m.projects {
+				if child.RootEcosystemPath != p.Path && child.ParentProjectPath != p.Path {
+					continue
+				}
+				if git := child.GetGitStatus(); git != nil {
+					p.AggregateAhead += git.AheadMainCount
+					if git.BehindMainCount > p.AggregateBehind {
+						p.AggregateBehind = git.BehindMainCount
+					}
+				}
+			}
 		}
 		return
 	}
