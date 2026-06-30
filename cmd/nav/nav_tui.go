@@ -149,7 +149,7 @@ func runNavTUIWithTab(initialTab navapp.Tab, opts NavTUIOptions) error {
 	clientDaemon := daemon.NewWithAutoStart()
 	if clientDaemon.IsRunning() {
 		ctxDaemon, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		_ = clientDaemon.SetFocus(ctxDaemon, []string{})
+		_ = clientDaemon.SetFocus(ctxDaemon, "nav", []string{})
 		cancel()
 	}
 	clientDaemon.Close()

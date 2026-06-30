@@ -528,7 +528,7 @@ func updateDaemonFocusCmd(dir string, paths []string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
-		_ = client.SetFocus(ctx, paths)
+		_ = client.SetFocus(ctx, "nav", paths)
 		return nil
 	}
 }
