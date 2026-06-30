@@ -157,7 +157,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fetchKeyMapCmd(m.store),
 			updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()),
 		}
-		if m.streamCh == nil {
+		if !m.daemonStreaming() {
 			cmds = append(cmds, m.enrichVisibleProjects())
 		}
 		return m, tea.Batch(cmds...)
@@ -165,6 +165,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case embed.BlurMsg:
 		m.panelFocused = false
 		return m, nil
+
+	case embed.NavBindingsUpdatedMsg:
+		// The host (or navapp) observed a nav key-binding change and has
+		// already refreshed the shared Manager cache off the event loop.
+		// Re-read the (key) indicator map from that now-fresh store. We do
+		// NOT call ReloadBindingsFromDaemon here — that would be a blocking
+		// daemon GET on the event loop (the old root cause) and is redundant
+		// with navapp's off-loop reload.
+		return m, fetchKeyMapCmd(m.store)
 
 	case embed.SetWorkspaceMsg:
 		if msg.Node != nil {
@@ -543,7 +552,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Only refresh fast/dynamic data on tick.
 		// Expensive/static data (release, binary, link, cxstats) only refresh on toggle or manual refresh.
 		// Skip enrichment fetches if daemon is streaming updates (it pushes all enrichment data)
-		if m.streamCh == nil {
+		if !m.daemonStreaming() {
 			if m.showGitStatus {
 				m.enrichmentLoading["git"] = true
 				startedEnrichment = true
@@ -2588,7 +2597,7 @@ func (m *Model) enrichVisibleProjects() tea.Cmd {
 		return nil
 	}
 
-	if m.streamCh != nil {
+	if m.daemonStreaming() {
 		return nil
 	}
 

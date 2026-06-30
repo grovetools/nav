@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	grovelogging "github.com/grovetools/core/logging"
 	"github.com/grovetools/core/pkg/models"
 	"github.com/grovetools/core/pkg/mux"
+	coretmux "github.com/grovetools/core/pkg/tmux"
 	"github.com/grovetools/core/pkg/workspace"
 	tablecomponent "github.com/grovetools/core/tui/components/table"
 	core_theme "github.com/grovetools/core/tui/theme"
@@ -923,7 +923,7 @@ var keyRegenerateCmd = &cobra.Command{
 		}
 
 		// Auto-reload tmux on all running servers
-		reloadAllTmuxServers()
+		coretmux.ReloadAllServers()
 
 		ulogKey.Success("Bindings regenerated").
 			Pretty(core_theme.IconSuccess + " Bindings regenerated and tmux reloaded!").
@@ -931,29 +931,6 @@ var keyRegenerateCmd = &cobra.Command{
 			Emit()
 		return nil
 	},
-}
-
-// reloadAllTmuxServers reloads the nav bindings on all running tmux servers
-func reloadAllTmuxServers() {
-	bindingsFile := filepath.Join(os.Getenv("HOME"), ".cache", "grove", "nav", "generated-bindings.conf")
-
-	// List all tmux sockets and reload each one
-	socketsDir := "/tmp"
-	if entries, err := os.ReadDir(socketsDir); err == nil {
-		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), "tmux-") {
-				socketPath := filepath.Join(socketsDir, entry.Name())
-				if sockets, err := os.ReadDir(socketPath); err == nil {
-					for _, sock := range sockets {
-						serverName := sock.Name()
-						_ = exec.Command("tmux", "-L", serverName, "source-file", bindingsFile).Run()
-					}
-				}
-			}
-		}
-	}
-	// Also try default server (no -L flag)
-	_ = exec.Command("tmux", "source-file", bindingsFile).Run()
 }
 
 func init() {

@@ -79,6 +79,18 @@ type Config struct {
 	// here (and via embed.SetWorkspaceMsg for subsequent switches).
 	// Empty falls back to os.Getwd().
 	ActiveWorkspacePath string
+
+	// HostManagesStream tells the sessionizer NOT to open its own daemon
+	// SSE stream because an embedding host (treemux) owns the single
+	// subscription and pushes updates top-down (ProjectsUpdateMsg for
+	// workspace/enrichment data, embed.NavBindingsUpdatedMsg for key
+	// bindings). This removes the redundant per-panel stream — the
+	// previous design's root cause for flaky, sometimes-stale keymap
+	// propagation across multiple open instances — while standalone nav
+	// (HostManagesStream=false) keeps its own stream. When true the
+	// enrichment gates that would otherwise fork git locally treat the
+	// panel as "being streamed to" (see daemonStreaming).
+	HostManagesStream bool
 }
 
 // jumpState captures the view state for the jump list (C-o/C-i navigation).
@@ -218,6 +230,17 @@ func (m *Model) Close() error {
 	}
 	m.streamWg.Wait()
 	return nil
+}
+
+// daemonStreaming reports whether live daemon updates are reaching this
+// model — either via its own SSE stream (m.streamCh != nil, standalone nav)
+// or because an embedding host owns the stream and pushes updates top-down
+// (cfg.HostManagesStream, embedded in treemux). The enrichment paths use it
+// to decide whether to fork git/notes/plan fetches locally: when the daemon
+// is streaming (directly or via the host) the daemon already owns that data,
+// so forking locally would race it for no gain.
+func (m *Model) daemonStreaming() bool {
+	return m.streamCh != nil || m.cfg.HostManagesStream
 }
 
 // listenToDaemon wraps listenToDaemonCmd so the Model's WaitGroup tracks
@@ -606,8 +629,16 @@ func (m *Model) Init() tea.Cmd {
 		fetchRunningSessionsCmd(m.cfg.SessionStateProvider),
 		fetchKeyMapCmd(m.store),
 		tickCmd(),
-		subscribeToDaemonCmd(m.activeWorkspacePath),
 		updateDaemonFocusCmd(m.activeWorkspacePath, m.getVisiblePaths()),
+	}
+
+	// Only open our own daemon SSE stream when no host owns it. When
+	// embedded in treemux (HostManagesStream), the host holds the single
+	// subscription and pushes ProjectsUpdateMsg + embed.NavBindingsUpdatedMsg
+	// down to us, so a per-panel stream would just be a redundant second
+	// listener — the root cause of flaky keymap propagation we're removing.
+	if !m.cfg.HostManagesStream {
+		cmds = append(cmds, subscribeToDaemonCmd(m.activeWorkspacePath))
 	}
 
 	if !m.usedCache {

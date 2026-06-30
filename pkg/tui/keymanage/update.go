@@ -34,6 +34,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case embed.BlurMsg:
 		return m, nil
 
+	case embed.NavBindingsUpdatedMsg:
+		// A nav key-binding change was observed top-down (host SSE stream or
+		// the reconciliation poll); navapp already refreshed the shared
+		// Manager cache off the event loop. Rebuild the mapping list from the
+		// now-fresh store so the change appears even while this panel is the
+		// focused-and-idle tab (no FocusMsg would otherwise arrive once the
+		// sessionizer's own stream is gone). Skip while the user is mid-edit
+		// (key entry, group naming, a pending map, or a confirmation prompt)
+		// so a background push can't clobber unsaved in-memory changes.
+		if !m.IsTextInputFocused() && m.confirmMode == "" && m.pendingMapProject == nil {
+			m.sessions, _ = m.store.GetSessions()
+			m.rebuildSessionsOrder()
+		}
+		return m, nil
+
 	case embed.SetWorkspaceMsg:
 		// Workspace changed — re-read from the Store.
 		m.sessions, _ = m.store.GetSessions()

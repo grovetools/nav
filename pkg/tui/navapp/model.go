@@ -83,6 +83,17 @@ type Config struct {
 	// OnReenterGroups is invoked every time the user switches back to an
 	// already-initialized groups tab. May be nil.
 	OnReenterGroups func()
+
+	// NavBindingsReloader refreshes the shared nav binding cache (the
+	// *tmux.Manager that backs all sub-panels) from the daemon's
+	// authoritative sessions file. It is invoked OFF the bubbletea event
+	// loop when an embed.NavBindingsUpdatedMsg arrives, before the panels
+	// re-read, so a cross-process key-binding change converges without a
+	// blocking daemon GET on the event loop. Standalone nav leaves this nil
+	// (it keeps its own per-panel SSE stream); embedded hosts (treemux) set
+	// it to the shared store's ReloadBindingsFromDaemon. The reload is
+	// idempotent — a self-echo of our own save is dropped.
+	NavBindingsReloader func() error
 }
 
 // Model is the meta-panel tea.Model. It delegates tab navigation and

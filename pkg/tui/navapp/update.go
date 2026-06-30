@@ -38,6 +38,25 @@ func requestSwitchTab(to Tab) tea.Cmd {
 	return func() tea.Msg { return embed.SwitchTabMsg{TabIndex: int(to)} }
 }
 
+// navBindingsReloadedMsg is emitted once the shared Manager cache has been
+// refreshed from the daemon (off the event loop). On receipt the meta-panel
+// fans an embed.NavBindingsUpdatedMsg out to every initialized sub-panel so
+// each rebuilds its view from the now-current shared store.
+type navBindingsReloadedMsg struct{}
+
+// reloadNavBindingsCmd runs the shared-Manager reload OFF the bubbletea event
+// loop (it performs a blocking daemon GET) and then signals completion. A nil
+// reloader (standalone nav, which keeps its own per-panel stream) just signals
+// completion immediately so the panels still refresh from the shared store.
+func reloadNavBindingsCmd(reload func() error) tea.Cmd {
+	return func() tea.Msg {
+		if reload != nil {
+			_ = reload()
+		}
+		return navBindingsReloadedMsg{}
+	}
+}
+
 // Update is the meta-panel's main event loop. It handles cross-TUI
 // message routing above the pager and delegates everything else
 // (window sizing, tab navigation keys, active-page forwarding) to
@@ -118,6 +137,52 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case embed.NavBindingsUpdatedMsg:
+		// The host observed a nav key-binding change (SSE stream or the
+		// periodic reconciliation poll). Refresh the shared *tmux.Manager
+		// cache ONCE, off the event loop, then fan out to the panels — never
+		// reload synchronously here (a blocking daemon GET on the event loop
+		// was the original root cause of the flaky, UI-stalling propagation).
+		return m, reloadNavBindingsCmd(m.state.cfg.NavBindingsReloader)
+
+	case navBindingsReloadedMsg:
+		// Shared cache is now current. Deliver embed.NavBindingsUpdatedMsg to
+		// every initialized sub-panel so each rebuilds its view from the
+		// fresh store, regardless of which tab is focused. We bypass the
+		// pager (which only routes to the active page) deliberately — a
+		// binding change arriving while keymanage/groups is the idle tab must
+		// still land.
+		var cmds []tea.Cmd
+		refresh := embed.NavBindingsUpdatedMsg{}
+		if m.state.sessionize != nil {
+			updated, cmd := m.state.sessionize.Update(refresh)
+			if sm, ok := updated.(*sessionizer.Model); ok {
+				m.state.sessionize = sm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.state.keymanage != nil {
+			updated, cmd := m.state.keymanage.Update(refresh)
+			if km, ok := updated.(*keymanage.Model); ok {
+				m.state.keymanage = km
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		if m.state.groups != nil {
+			updated, cmd := m.state.groups.Update(refresh)
+			if gm, ok := updated.(*groups.Model); ok {
+				m.state.groups = gm
+			}
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
 
 	// ---- Cross-TUI routing ------------------------------------------------
 

@@ -29,6 +29,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case embed.BlurMsg:
 		return m, nil
 
+	case embed.NavBindingsUpdatedMsg:
+		// A nav key-binding change was observed top-down (host SSE stream or
+		// the reconciliation poll); navapp already refreshed the shared
+		// Manager cache off the event loop. Re-read the group list so the
+		// change appears even while this panel is the focused-and-idle tab.
+		// Skip while the user is mid-edit (naming/renaming a group or a
+		// confirmation prompt) so a background push can't disrupt input.
+		if m.inputMode == "" && !m.confirmMode {
+			m.Reset()
+		}
+		return m, nil
+
 	case embed.SetWorkspaceMsg:
 		// Workspace changed — re-read from the Store (the new workspace
 		// reuses the same Store in standalone nav; terminal may swap
